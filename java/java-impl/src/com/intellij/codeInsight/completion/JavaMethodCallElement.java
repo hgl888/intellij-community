@@ -15,17 +15,21 @@
  */
 package com.intellij.codeInsight.completion;
 
+import com.intellij.codeInsight.AutoPopupController;
 import com.intellij.codeInsight.completion.util.MethodParenthesesHandler;
 import com.intellij.codeInsight.lookup.*;
 import com.intellij.codeInsight.lookup.impl.JavaElementLookupRenderer;
-import com.intellij.codeInsight.template.Template;
-import com.intellij.codeInsight.template.TemplateManager;
+import com.intellij.codeInsight.template.*;
 import com.intellij.codeInsight.template.impl.ConstantNode;
+import com.intellij.codeInsight.template.impl.TemplateImpl;
 import com.intellij.codeInsight.template.impl.TemplateManagerImpl;
 import com.intellij.codeInsight.template.impl.TemplateState;
 import com.intellij.featureStatistics.FeatureUsageTracker;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.event.DocumentAdapter;
+import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.util.ClassConditionKey;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
@@ -39,6 +43,8 @@ import com.intellij.psi.util.PsiUtil;
 import com.intellij.psi.util.TypeConversionUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author peter
@@ -174,10 +180,7 @@ public class JavaMethodCallElement extends LookupItem<PsiMethod> implements Type
       }
     }
 
-    context.commitDocument();
-    if (hasParams && context.getCompletionChar() != Lookup.COMPLETE_STATEMENT_SELECT_CHAR && Registry.is("java.completion.argument.live.template")) {
-      startArgumentLiveTemplate(context, method);
-    }
+    startArgumentLiveTemplate(context, method);
   }
 
   private void importOrQualify(Document document, PsiFile file, PsiMethod method, int startOffset) {
@@ -192,7 +195,7 @@ public class JavaMethodCallElement extends LookupItem<PsiMethod> implements Type
     qualifyMethodCall(file, startOffset, document);
   }
 
-  public static final Key<JavaMethodCallElement> ARGUMENT_TEMPLATE_ACTIVE = Key.create("ARGUMENT_TEMPLATE_ACTIVE");
+  public static final Key<PsiMethod> ARGUMENT_TEMPLATE_ACTIVE = Key.create("ARGUMENT_TEMPLATE_ACTIVE");
   @NotNull
   private static Template createArgTemplate(PsiMethod method,
                                             int caretOffset,
@@ -206,26 +209,39 @@ public class JavaMethodCallElement extends LookupItem<PsiMethod> implements Type
         template.addTextSegment(", ");
       }
       String name = StringUtil.notNullize(parameters[i].getName());
-      template.addVariable(name, new ConstantNode(name), new ConstantNode(name), true);
+      Expression expression = Registry.is("java.completion.argument.live.template.completion") ? new AutoPopupCompletion() : new ConstantNode(name);
+      template.addVariable(name, expression, new ConstantNode(name), true);
+    }
+    boolean finishInsideParens = method.isVarArgs();
+    if (finishInsideParens) {
+      template.addEndVariable();
     }
     template.addTextSegment(argList.getText().substring(caretOffset - argRange.getStartOffset(), argList.getTextLength()));
-    template.addEndVariable();
+    if (!finishInsideParens) {
+      template.addEndVariable();
+    }
     return template;
   }
 
-  private void startArgumentLiveTemplate(InsertionContext context, PsiMethod method) {
-    Editor editor = context.getEditor();
+  public static boolean startArgumentLiveTemplate(InsertionContext context, PsiMethod method) {
+    if (method.getParameterList().getParametersCount() == 0 ||
+        context.getCompletionChar() == Lookup.COMPLETE_STATEMENT_SELECT_CHAR ||
+        !Registry.is("java.completion.argument.live.template")) {
+      return false;
+    }
 
-    PsiCallExpression call = PsiTreeUtil.findElementOfClassAtOffset(context.getFile(), context.getStartOffset(), PsiCallExpression.class, false);
+    Editor editor = context.getEditor();
+    context.commitDocument();
+    PsiCall call = PsiTreeUtil.findElementOfClassAtOffset(context.getFile(), context.getStartOffset(), PsiCall.class, false);
     PsiExpressionList argList = call == null ? null : call.getArgumentList();
     if (argList == null || argList.getExpressions().length > 0) {
-      return;
+      return false;
     }
 
     TextRange argRange = argList.getTextRange();
     int caretOffset = editor.getCaretModel().getOffset();
     if (!argRange.contains(caretOffset)) {
-      return;
+      return false;
     }
 
     Template template = createArgTemplate(method, caretOffset, argList, argRange);
@@ -234,12 +250,51 @@ public class JavaMethodCallElement extends LookupItem<PsiMethod> implements Type
     TemplateManager.getInstance(method.getProject()).startTemplate(editor, template);
 
     TemplateState templateState = TemplateManagerImpl.getTemplateState(editor);
-    if (templateState == null) return;
+    if (templateState == null) return false;
 
-    editor.putUserData(ARGUMENT_TEMPLATE_ACTIVE, this);
+    setupNonFilledArgumentRemoving(editor, templateState);
+
+    editor.putUserData(ARGUMENT_TEMPLATE_ACTIVE, method);
     Disposer.register(templateState, () -> {
-      if (editor.getUserData(ARGUMENT_TEMPLATE_ACTIVE) == this) {
+      if (editor.getUserData(ARGUMENT_TEMPLATE_ACTIVE) == method) {
         editor.putUserData(ARGUMENT_TEMPLATE_ACTIVE, null);
+      }
+    });
+    return true;
+  }
+
+  private static void setupNonFilledArgumentRemoving(final Editor editor, final TemplateState templateState) {
+    AtomicInteger maxEditedVariable = new AtomicInteger(-1);
+    editor.getDocument().addDocumentListener(new DocumentAdapter() {
+      @Override
+      public void documentChanged(DocumentEvent e) {
+        maxEditedVariable.set(Math.max(maxEditedVariable.get(), templateState.getCurrentVariableNumber()));
+      }
+    }, templateState);
+
+    templateState.addTemplateStateListener(new TemplateEditingAdapter() {
+      @Override
+      public void currentVariableChanged(TemplateState templateState, Template template, int oldIndex, int newIndex) {
+        maxEditedVariable.set(Math.max(maxEditedVariable.get(), oldIndex));
+      }
+
+      @Override
+      public void beforeTemplateFinished(TemplateState state, Template template, boolean brokenOff) {
+        if (brokenOff) {
+          removeUntouchedArguments((TemplateImpl)template);
+        }
+      }
+
+      private void removeUntouchedArguments(TemplateImpl template) {
+        int firstUnchangedVar = maxEditedVariable.get() + 1;
+        if (firstUnchangedVar >= template.getVariableCount()) return;
+
+        TextRange startRange = templateState.getVariableRange(template.getVariableNameAt(firstUnchangedVar));
+        TextRange endRange = templateState.getVariableRange(template.getVariableNameAt(template.getVariableCount() - 1));
+        if (startRange == null || endRange == null) return;
+
+        WriteCommandAction.runWriteCommandAction(editor.getProject(), () ->
+          editor.getDocument().deleteString(startRange.getStartOffset(), endRange.getEndOffset()));
       }
     });
   }
@@ -352,5 +407,25 @@ public class JavaMethodCallElement extends LookupItem<PsiMethod> implements Type
       }
     }
     
+  }
+
+  private static class AutoPopupCompletion extends Expression {
+    @Nullable
+    @Override
+    public Result calculateResult(ExpressionContext context) {
+      return new InvokeActionResult(() -> AutoPopupController.getInstance(context.getProject()).scheduleAutoPopup(context.getEditor()));
+    }
+
+    @Nullable
+    @Override
+    public Result calculateQuickResult(ExpressionContext context) {
+      return null;
+    }
+
+    @Nullable
+    @Override
+    public LookupElement[] calculateLookupItems(ExpressionContext context) {
+      return null;
+    }
   }
 }

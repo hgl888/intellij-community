@@ -273,6 +273,10 @@ public abstract class AbstractExpandableItemsHandler<KeyType, ComponentType exte
     return false;
   }
 
+  private static boolean isFocused(Window window) {
+    return window != null && (window.isFocused() || isFocused(window.getOwner()));
+  }
+
   private boolean noIntersections(Rectangle bounds) {
     Window owner = SwingUtilities.getWindowAncestor(myComponent);
     Window popup = SwingUtilities.getWindowAncestor(myTipComponent);
@@ -280,9 +284,9 @@ public abstract class AbstractExpandableItemsHandler<KeyType, ComponentType exte
     if (focus == owner.getOwner()) {
       focus = null; // do not check intersection with parent
     }
-    boolean focused = SystemInfo.isWindows || owner.isFocused();
+    boolean focused = SystemInfo.isWindows || isFocused(owner);
     for (Window other : owner.getOwnedWindows()) {
-      if (!focused && !SystemInfo.isWindows) {
+      if (!focused) {
         focused = other.isFocused();
       }
       if (popup != other && other.isVisible() && bounds.x + 10 >= other.getX() && bounds.intersects(other.getBounds())) {
@@ -347,7 +351,7 @@ public abstract class AbstractExpandableItemsHandler<KeyType, ComponentType exte
     Point location = new Point(visMaxX, cellBounds.y);
     SwingUtilities.convertPointToScreen(location, myComponent);
 
-    Rectangle screen = getScreenRectangle(location);
+    Rectangle screen = ScreenUtil.getScreenRectangle(location);
 
     int borderWidth = isPaintBorder() ? 1 : 0;
     int width = Math.min(screen.width + screen.x - location.x - borderWidth, cellMaxX - visMaxX);
@@ -378,12 +382,6 @@ public abstract class AbstractExpandableItemsHandler<KeyType, ComponentType exte
     myTipComponent.setBorder(border);
     myTipComponent.setPreferredSize(size);
     return location;
-  }
-
-  public static Rectangle getScreenRectangle(Point location) {
-    return !Registry.is("ide.expansion.hints.on.all.screens")
-                         ? ScreenUtil.getScreenRectangle(location)
-                         : ScreenUtil.getAllScreensRectangle();
   }
 
   protected boolean isPaintBorder() {

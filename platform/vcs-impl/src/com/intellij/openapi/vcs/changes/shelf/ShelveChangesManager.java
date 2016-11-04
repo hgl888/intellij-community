@@ -40,6 +40,7 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.*;
 import com.intellij.openapi.vcs.changes.*;
@@ -359,7 +360,7 @@ public class ShelveChangesManager extends AbstractProjectComponent implements JD
 
   private void baseRevisionsOfDvcsIntoContext(List<Change> textChanges, CommitContext commitContext) {
     ProjectLevelVcsManager vcsManager = ProjectLevelVcsManager.getInstance(myProject);
-    if (vcsManager.dvcsUsedInProject() && VcsConfiguration.getInstance(myProject).INCLUDE_TEXT_INTO_SHELF) {
+    if (dvcsUsedInProject() && VcsConfiguration.getInstance(myProject).INCLUDE_TEXT_INTO_SHELF) {
       final Set<Change> big = SelectFilesToAddTextsToPatchPanel.getBig(textChanges);
       final ArrayList<FilePath> toKeep = new ArrayList<>();
       for (Change change : textChanges) {
@@ -374,6 +375,11 @@ public class ShelveChangesManager extends AbstractProjectComponent implements JD
       commitContext.putUserData(BaseRevisionTextPatchEP.ourPutBaseRevisionTextKey, true);
       commitContext.putUserData(BaseRevisionTextPatchEP.ourBaseRevisionPaths, toKeep);
     }
+  }
+
+  private boolean dvcsUsedInProject() {
+    return Arrays.stream(ProjectLevelVcsManager.getInstance(myProject).getAllActiveVcss()).
+           anyMatch(vcs -> VcsType.distributed.equals(vcs.getType()));
   }
 
   public ShelvedChangeList importFilePatches(final String fileName, final List<FilePatch> patches, final PatchEP[] patchTransitExtensions)
@@ -464,7 +470,10 @@ public class ShelveChangesManager extends AbstractProjectComponent implements JD
     File afterFile = afterRevision == null ? null : afterRevision.getFile().getIOFile();
     String shelvedPath = null;
     if (afterFile != null) {
-      File shelvedFile = new File(schemePatchDir, afterFile.getName());
+      String shelvedFileName = afterFile.getName();
+      String name = FileUtil.getNameWithoutExtension(shelvedFileName);
+      String extension = FileUtilRt.getExtension(shelvedFileName);
+      File shelvedFile = FileUtil.findSequentNonexistentFile(schemePatchDir, name, extension);
       FileUtil.copy(afterRevision.getFile().getIOFile(), shelvedFile);
       shelvedPath = shelvedFile.getPath();
     }
@@ -557,11 +566,11 @@ public class ShelveChangesManager extends AbstractProjectComponent implements JD
     }
     catch (IOException e) {
       LOG.info(e);
-      PatchApplier.showError(myProject, "Cannot load patch(es): " + e.getMessage(), true);
+      PatchApplier.showError(myProject, "Cannot load patch(es): " + e.getMessage());
       return;
     }
     catch (PatchSyntaxException e) {
-      PatchApplier.showError(myProject, "Cannot load patch(es): " + e.getMessage(), true);
+      PatchApplier.showError(myProject, "Cannot load patch(es): " + e.getMessage());
       LOG.info(e);
       return;
     }

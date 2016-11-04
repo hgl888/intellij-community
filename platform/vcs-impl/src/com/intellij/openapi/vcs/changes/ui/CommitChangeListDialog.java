@@ -55,7 +55,6 @@ import com.intellij.util.Alarm;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.AbstractLayoutManager;
-import com.intellij.util.ui.ButtonlessScrollBarUI;
 import com.intellij.util.ui.GridBag;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NonNls;
@@ -1009,13 +1008,9 @@ public class CommitChangeListDialog extends DialogWrapper implements CheckinProj
     JPanel mainPanel;
     if (myAdditionalOptionsPanel != null) {
       JScrollPane optionsPane = ScrollPaneFactory.createScrollPane(myAdditionalOptionsPanel, true);
-      if (!Registry.is("ide.scroll.new.layout")) {
-        optionsPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
-        optionsPane.getVerticalScrollBar().setUI(ButtonlessScrollBarUI.createTransparent());
-      }
       JPanel infoPanel = JBUI.Panels.simplePanel(optionsPane).withBorder(JBUI.Borders.emptyLeft(10));
 
-      mainPanel = new JPanel(new MyOptionsLayout(mySplitter, infoPanel, JBUI.scale(250)));
+      mainPanel = new JPanel(new MyOptionsLayout(mySplitter, infoPanel, JBUI.scale(150), JBUI.scale(400)));
       mainPanel.add(mySplitter);
       mainPanel.add(infoPanel);
     } else {
@@ -1353,11 +1348,13 @@ public class CommitChangeListDialog extends DialogWrapper implements CheckinProj
     private final JComponent myPanel;
     private final JComponent myOptions;
     private final int myMinOptionsWidth;
+    private final int myMaxOptionsWidth;
 
-    public MyOptionsLayout(@NotNull JComponent panel, @NotNull JComponent options, int minOptionsWidth) {
+    public MyOptionsLayout(@NotNull JComponent panel, @NotNull JComponent options, int minOptionsWidth, int maxOptionsWidth) {
       myPanel = panel;
       myOptions = options;
       myMinOptionsWidth = minOptionsWidth;
+      myMaxOptionsWidth = maxOptionsWidth;
     }
 
     @Override
@@ -1370,9 +1367,8 @@ public class CommitChangeListDialog extends DialogWrapper implements CheckinProj
     @Override
     public void layoutContainer(Container parent) {
       Rectangle bounds = parent.getBounds();
-      int availableWidth = bounds.width - myPanel.getPreferredSize().width;
       int preferredWidth = myOptions.getPreferredSize().width;
-      int optionsWidth = Math.max(Math.min(availableWidth, preferredWidth), myMinOptionsWidth);
+      int optionsWidth = Math.max(Math.min(myMaxOptionsWidth, preferredWidth), myMinOptionsWidth);
       myPanel.setBounds(new Rectangle(0, 0, bounds.width - optionsWidth, bounds.height));
       myOptions.setBounds(new Rectangle(bounds.width - optionsWidth, 0, optionsWidth, bounds.height));
     }

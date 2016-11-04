@@ -371,7 +371,7 @@ public class RedundantCastUtil {
             final PsiExpressionList argList = newCall.getArgumentList();
             LOG.assertTrue(argList != null);
             PsiExpression[] newArgs = argList.getExpressions();
-            LOG.assertTrue(newArgs.length == args.length, "oldCall: " + expression.getText() + "; newCall: " + newCall.getText());
+            LOG.assertTrue(newArgs.length == args.length, "oldCall: " + expression.getText() + "; old length: " + args.length + "; newCall: " + newCall.getText() + "; new length: " + newArgs.length);
             PsiTypeCastExpression castExpression = (PsiTypeCastExpression) deparenthesizeExpression(newArgs[i]);
             final PsiTypeElement castTypeElement = cast.getCastType();
             final PsiType castType = castTypeElement != null ? castTypeElement.getType() : null;
@@ -794,8 +794,6 @@ public class RedundantCastUtil {
     }
     else if (castType instanceof PsiClassType && ((PsiClassType)castType).hasParameters()) {
       if (opType instanceof PsiClassType && ((PsiClassType)opType).isRaw()) return true;
-    } else if (castType instanceof PsiClassType && ((PsiClassType)castType).isRaw()) {
-      if (opType instanceof PsiClassType && ((PsiClassType)opType).hasParameters()) return true;
     }
 
     final PsiExpression stripParenthesisOperand = PsiUtil.skipParenthesizedExprDown(operand);
@@ -805,6 +803,13 @@ public class RedundantCastUtil {
         for (PsiType type : ((PsiIntersectionType)castType).getConjuncts()) {
           if (isCastToSerializable(type)) return true;
         }
+      }
+    }
+    else if (stripParenthesisOperand instanceof PsiConditionalExpression) {
+      final PsiExpression thenExpr = PsiUtil.skipParenthesizedExprDown(((PsiConditionalExpression)stripParenthesisOperand).getThenExpression());
+      final PsiExpression elseExpr = PsiUtil.skipParenthesizedExprDown(((PsiConditionalExpression)stripParenthesisOperand).getElseExpression());
+      if (thenExpr instanceof PsiFunctionalExpression || elseExpr instanceof PsiFunctionalExpression) {
+        return true;
       }
     }
 

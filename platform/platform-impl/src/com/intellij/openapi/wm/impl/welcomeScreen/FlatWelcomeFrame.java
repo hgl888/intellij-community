@@ -28,6 +28,7 @@ import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.JBProtocolCommand;
+import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.application.ex.ApplicationInfoEx;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.DumbAwareAction;
@@ -48,6 +49,7 @@ import com.intellij.ui.*;
 import com.intellij.ui.border.CustomLineBorder;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBSlidingPanel;
+import com.intellij.ui.components.JBTextField;
 import com.intellij.ui.components.labels.ActionLink;
 import com.intellij.ui.components.panels.NonOpaquePanel;
 import com.intellij.ui.popup.PopupFactoryImpl;
@@ -55,6 +57,7 @@ import com.intellij.ui.popup.list.GroupedItemsListRenderer;
 import com.intellij.util.ParameterizedRunnable;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.Convertor;
+import com.intellij.util.ui.EmptyIcon;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.MouseEventAdapter;
 import com.intellij.util.ui.UIUtil;
@@ -83,6 +86,7 @@ import java.util.List;
  * @author Konstantin Bulenkov
  */
 public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, AccessibleContextAccessor {
+  public static final String BOTTOM_PANEL = "BOTTOM_PANEL";
   private static final String ACTION_GROUP_KEY = "ACTION_GROUP_KEY";
   private BalloonLayout myBalloonLayout;
   private final FlatWelcomeScreen myScreen;
@@ -96,8 +100,7 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
       @Override
       public void addNotify() {
         super.addNotify();
-        //noinspection SSBasedInspection
-        SwingUtilities.invokeLater(() -> JBProtocolCommand.handleCurrentCommand());
+        TransactionGuard.submitTransaction(FlatWelcomeFrame.this, () -> JBProtocolCommand.handleCurrentCommand());
       }
     };
 
@@ -199,6 +202,17 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
 
   protected String getWelcomeFrameTitle() {
     return "Welcome to " + ApplicationNamesInfo.getInstance().getFullProductName();
+  }
+
+  @Nullable
+  public static JComponent getPreferredFocusedComponent(@NotNull Pair<JPanel, JBList> pair) {
+    if (pair.second.getModel().getSize() == 1) {
+      JBTextField textField = UIUtil.uiTraverser(pair.first).filter(JBTextField.class).first();
+      if (textField != null) {
+        return textField;
+      }
+    }
+    return pair.second;
   }
 
   private class FlatWelcomeScreen extends JPanel implements WelcomeScreen {
@@ -398,7 +412,7 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
           }
           Icon icon = presentation.getIcon();
           if (icon.getIconHeight() != JBUI.scale(16) || icon.getIconWidth() != JBUI.scale(16)) {
-            icon = JBUI.emptyIcon(16);
+            icon = JBUI.scale(EmptyIcon.create(16));
           }
           action = wrapGroups(action);
           ActionLink link = new ActionLink(text, icon, action, createUsageTracker(action));
@@ -476,7 +490,10 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
           for (ListSelectionListener listener : listeners) {
             listener.valueChanged(new ListSelectionEvent(list, list.getSelectedIndex(), list.getSelectedIndex(), true));
           }
-          list.requestFocus();
+          JComponent toFocus = FlatWelcomeFrame.getPreferredFocusedComponent(panel);
+          if (toFocus != null) {
+            toFocus.requestFocus();
+          }
         };
         final String name = action.getClass().getName();
         mySlidingPanel.add(name, panel.first);
@@ -682,6 +699,12 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
         return new AnAction(presentation.getText(),
                             presentation.getDescription(),
                             null) {
+
+          @Override
+          public boolean startInTransaction() {
+            return child.startInTransaction();
+          }
+
           @Override
           public void actionPerformed(@NotNull AnActionEvent e) {
             child.actionPerformed(e);
@@ -770,15 +793,15 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
     private JPanel root;
     private JPanel actions;
   }
-
+  
   public static Pair<JPanel, JBList> createActionGroupPanel(final ActionGroup action, final JComponent parent, final Runnable backAction) {
     JPanel actionsListPanel = new JPanel(new BorderLayout());
     actionsListPanel.setBackground(getProjectsBackground());
     final List<AnAction> groups = flattenActionGroups(action);
-    final JBList list = new JBList(groups);
+    final JBList<AnAction> list = new JBList<>(groups);
 
     list.setBackground(getProjectsBackground());
-    list.setCellRenderer(new GroupedItemsListRenderer(new ListItemDescriptorAdapter<AnAction>() {
+    list.setCellRenderer(new GroupedItemsListRenderer<AnAction>(new ListItemDescriptorAdapter<AnAction>() {
        @Nullable
        @Override
        public String getTextFor(AnAction value) {
@@ -820,10 +843,10 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
        }
 
        @Override
-       protected void customizeComponent(JList list, Object value, boolean isSelected) {
+       protected void customizeComponent(JList<? extends AnAction> list, AnAction value, boolean isSelected) {
          if (myTextLabel != null) {
-           myTextLabel.setText(getActionText(((AnAction)value)));
-           myTextLabel.setIcon(((AnAction)value).getTemplatePresentation().getIcon());
+           myTextLabel.setText(getActionText(value));
+           myTextLabel.setIcon(value.getTemplatePresentation().getIcon());
          }
        }
      }
@@ -832,51 +855,51 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
     JScrollPane pane = ScrollPaneFactory.createScrollPane(list, true);
     pane.setBackground(getProjectsBackground());
     actionsListPanel.add(pane, BorderLayout.CENTER);
-    if (backAction != null) {
-      final JLabel back = new JLabel(AllIcons.Actions.Back);
-      back.setBorder(JBUI.Borders.empty(3, 7, 10, 7));
-      back.setHorizontalAlignment(SwingConstants.LEFT);
-      new ClickListener() {
-        @Override
-        public boolean onClick(@NotNull MouseEvent event, int clickCount) {
-          backAction.run();
-          return true;
-        }
-      }.installOn(back);
-      actionsListPanel.add(back, BorderLayout.SOUTH);
-    }
+
+    boolean singleProjectGenerator = list.getModel().getSize() == 1;
+
     final Ref<Component> selected = Ref.create();
     final JPanel main = new JPanel(new BorderLayout());
     main.add(actionsListPanel, BorderLayout.WEST);
 
-    ListSelectionListener selectionListener = new ListSelectionListener() {
-      @Override
-      public void valueChanged(ListSelectionEvent e) {
-        if (e.getValueIsAdjusting()) {
-          // Update when a change has been finalized.
-          // For instance, selecting an element with mouse fires two consecutive ListSelectionEvent events.
-          return;
-        }
-        if (!selected.isNull()) {
-          main.remove(selected.get());
-        }
-        Object value = list.getSelectedValue();
-        if (value instanceof AbstractActionWithPanel) {
-          JPanel panel = ((AbstractActionWithPanel)value).createPanel();
-          panel.setBorder(JBUI.Borders.empty(7, 10));
-          selected.set(panel);
-          main.add(selected.get());
+    final JComponent back = createBackLabel(backAction, singleProjectGenerator);
+    
+    if (back != null && !singleProjectGenerator) {
+      actionsListPanel.add(back, BorderLayout.SOUTH);
+    }
+    
+    ListSelectionListener selectionListener = e -> {
+      if (e.getValueIsAdjusting()) {
+        // Update when a change has been finalized.
+        // For instance, selecting an element with mouse fires two consecutive ListSelectionEvent events.
+        return;
+      }
+      if (!selected.isNull()) {
+        main.remove(selected.get());
+      }
+      Object value = list.getSelectedValue();
+      if (value instanceof AbstractActionWithPanel) {
+        JPanel panel = ((AbstractActionWithPanel)value).createPanel();
+        panel.setBorder(JBUI.Borders.empty(7, 10));
+        selected.set(panel);
+        main.add(selected.get());
 
-          for (JButton button : UIUtil.findComponentsOfType(main, JButton.class)) {
-            if (button.getClientProperty(DialogWrapper.DEFAULT_ACTION) == Boolean.TRUE) {
-              parent.getRootPane().setDefaultButton(button);
-              break;
-            }
+        if (singleProjectGenerator && back != null) {
+          JPanel first = UIUtil.uiTraverser(panel).traverse().filter(JPanel.class).filter((it) -> BOTTOM_PANEL.equals(it.getName())).first();
+          if (first != null) {
+            first.add(back, BorderLayout.WEST);
           }
-
-          main.revalidate();
-          main.repaint();
         }
+
+        for (JButton button : UIUtil.findComponentsOfType(main, JButton.class)) {
+          if (button.getClientProperty(DialogWrapper.DEFAULT_ACTION) == Boolean.TRUE) {
+            parent.getRootPane().setDefaultButton(button);
+            break;
+          }
+        }
+
+        main.revalidate();
+        main.repaint();
       }
     };
     list.addListSelectionListener(selectionListener);
@@ -889,18 +912,41 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, Ac
       }.registerCustomShortcutSet(KeyEvent.VK_ESCAPE, 0, main);
     }
     installQuickSearch(list);
+
+    if (singleProjectGenerator) {
+      actionsListPanel.setPreferredSize(new Dimension(0, 0));
+    }
+    
     return Pair.create(main, list);
   }
 
-  public static void installQuickSearch(JBList list) {
-    new ListSpeedSearch(list, new Convertor<Object, String>() {
+  @Nullable
+  private static JComponent createBackLabel(@Nullable Runnable backAction, boolean singleProjectGenerator) {
+    if (backAction == null) return null;
+    if (singleProjectGenerator) {
+      JButton button = new JButton("Back");
+      button.addActionListener(e -> backAction.run());
+      return button;
+    }
+    JLabel back = new JLabel(AllIcons.Actions.Back);
+    back.setBorder(JBUI.Borders.empty(3, 7, 10, 7));
+    back.setHorizontalAlignment(SwingConstants.LEFT);
+    new ClickListener() {
       @Override
-      public String convert(Object o) {
-        if (o instanceof AbstractActionWithPanel) { //to avoid dependency mess with ProjectSettingsStepBase
-          return ((AbstractActionWithPanel)o).getTemplatePresentation().getText();
-        }
-        return null;
+      public boolean onClick(@NotNull MouseEvent event, int clickCount) {
+        backAction.run();
+        return true;
       }
+    }.installOn(back);
+    return back;
+  }
+
+  public static void installQuickSearch(JBList list) {
+    new ListSpeedSearch(list, (Convertor<Object, String>)o -> {
+      if (o instanceof AbstractActionWithPanel) { //to avoid dependency mess with ProjectSettingsStepBase
+        return ((AbstractActionWithPanel)o).getTemplatePresentation().getText();
+      }
+      return null;
     });
   }
 

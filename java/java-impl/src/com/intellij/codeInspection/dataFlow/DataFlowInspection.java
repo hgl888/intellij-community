@@ -145,12 +145,12 @@ public class DataFlowInspection extends DataFlowInspectionBase {
         }
       });
 
-      myReportNullArguments = new JCheckBox("Report 'null' literals passed to not-null required parameter");
-      myTreatUnknownMembersAsNullable.setSelected(REPORT_NULLS_PASSED_TO_NOT_NULL_PARAMETER);
-      myTreatUnknownMembersAsNullable.getModel().addChangeListener(new ChangeListener() {
+      myReportNullArguments = new JCheckBox("Report not-null required parameter with null-literal argument usages");
+      myReportNullArguments.setSelected(REPORT_NULLS_PASSED_TO_NOT_NULL_PARAMETER);
+      myReportNullArguments.getModel().addChangeListener(new ChangeListener() {
         @Override
         public void stateChanged(ChangeEvent e) {
-          REPORT_NULLS_PASSED_TO_NOT_NULL_PARAMETER = myTreatUnknownMembersAsNullable.isSelected();
+          REPORT_NULLS_PASSED_TO_NOT_NULL_PARAMETER = myReportNullArguments.isSelected();
         }
       });
 

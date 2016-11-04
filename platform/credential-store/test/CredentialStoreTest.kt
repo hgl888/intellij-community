@@ -8,6 +8,12 @@ import java.util.*
 
 private const val TEST_SERVICE_NAME = "IntelliJ Platform Test"
 
+inline fun macTest(task: () -> Unit) {
+  if (SystemInfo.isMacIntel64 && !UsefulTestCase.IS_UNDER_TEAMCITY) {
+    task()
+  }
+}
+
 internal class CredentialStoreTest {
   @Test
   fun linux() {
@@ -20,39 +26,71 @@ internal class CredentialStoreTest {
 
   @Test
   fun mac() {
-    if (!SystemInfo.isMacIntel64 || UsefulTestCase.IS_UNDER_TEAMCITY) {
-      return
-    }
-
-    doTest(KeyChainCredentialStore())
+    macTest { doTest(KeyChainCredentialStore()) }
   }
 
   @Test
-  fun keepass() {
+  fun KeePass() {
     doTest(KeePassCredentialStore())
   }
 
   @Test
   fun `mac - testEmptyAccountName`() {
-    if (!SystemInfo.isMacIntel64 || UsefulTestCase.IS_UNDER_TEAMCITY) {
-      return
-    }
+    macTest { testEmptyAccountName(KeyChainCredentialStore()) }
+  }
 
-    testEmptyAccountName(KeyChainCredentialStore())
+  @Test
+  fun `mac - changedAccountName`() {
+    macTest { testChangedAccountName(KeyChainCredentialStore()) }
   }
 
   @Test
   fun `linux - testEmptyAccountName`() {
-    if (!SystemInfo.isLinux || UsefulTestCase.IS_UNDER_TEAMCITY) {
-      return
+    if (isLinuxSupported()) {
+      testEmptyAccountName(SecretCredentialStore("com.intellij.test"))
     }
+  }
 
-    testEmptyAccountName(SecretCredentialStore("com.intellij.test"))
+  private fun isLinuxSupported() = SystemInfo.isLinux && !UsefulTestCase.IS_UNDER_TEAMCITY
+
+  @Test
+  fun `KeePass - testEmptyAccountName`() {
+    testEmptyAccountName(KeePassCredentialStore())
   }
 
   @Test
-  fun `keepass - testEmptyAccountName`() {
-    testEmptyAccountName(KeePassCredentialStore())
+  fun `KeePass - changedAccountName`() {
+    testChangedAccountName(KeePassCredentialStore())
+  }
+
+  @Test
+  fun `KeePass - memoryOnlyPassword`() {
+    memoryOnlyPassword(KeePassCredentialStore())
+  }
+
+  @Test
+  fun `Keychain - memoryOnlyPassword`() {
+    macTest { memoryOnlyPassword(KeyChainCredentialStore()) }
+  }
+
+  @Test
+  fun `linux - memoryOnlyPassword`() {
+    if (isLinuxSupported()) {
+      memoryOnlyPassword(SecretCredentialStore("com.intellij.test"))
+    }
+  }
+
+
+  private fun memoryOnlyPassword(store: CredentialStore) {
+    val pass = randomString()
+    val userName = randomString()
+    val serviceName = randomString()
+    store.set(CredentialAttributes(serviceName, userName, isPasswordMemoryOnly = true), Credentials(userName, pass))
+
+    val credentials = store.get(CredentialAttributes(serviceName, userName))
+    assertThat(credentials).isNotNull()
+    assertThat(credentials!!.userName).isEqualTo(userName)
+    assertThat(credentials.password).isNullOrEmpty()
   }
 
   private fun doTest(store: CredentialStore) {
@@ -75,7 +113,7 @@ internal class CredentialStoreTest {
   private fun testEmptyAccountName(store: CredentialStore) {
     val serviceNameOnlyAttributes = CredentialAttributes("Test IJ — ${randomString()}")
     try {
-      val credentials = Credentials(randomString(), OneTimeString("pass"))
+      val credentials = Credentials(randomString(), "pass")
       store.set(serviceNameOnlyAttributes, credentials)
       assertThat(store.get(serviceNameOnlyAttributes)).isEqualTo(credentials)
     }
@@ -93,6 +131,26 @@ internal class CredentialStoreTest {
       store.set(attributes, null)
     }
   }
+
+  private fun testChangedAccountName(store: CredentialStore) {
+    val serviceNameOnlyAttributes = CredentialAttributes("Test IJ — ${randomString()}")
+    try {
+      val credentials = Credentials(randomString(), "pass")
+      var newUserName = randomString()
+      val newPassword = randomString()
+      store.set(serviceNameOnlyAttributes, credentials)
+      assertThat(store.get(serviceNameOnlyAttributes)).isEqualTo(credentials)
+      store.set(CredentialAttributes(serviceNameOnlyAttributes.serviceName, newUserName), Credentials(newUserName, newPassword))
+      assertThat(store.get(serviceNameOnlyAttributes)).isEqualTo(Credentials(newUserName, newPassword))
+
+      newUserName = randomString()
+      store.set(CredentialAttributes(serviceNameOnlyAttributes.serviceName, newUserName), Credentials(newUserName, newPassword))
+      assertThat(store.get(serviceNameOnlyAttributes)!!.userName).isEqualTo(newUserName)
+    }
+    finally {
+      store.set(serviceNameOnlyAttributes, null)
+    }
+  }
 }
 
-private fun randomString() = UUID.randomUUID().toString()
+internal fun randomString() = UUID.randomUUID().toString()

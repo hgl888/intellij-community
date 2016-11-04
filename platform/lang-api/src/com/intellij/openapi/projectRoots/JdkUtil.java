@@ -33,6 +33,7 @@ import com.intellij.openapi.util.text.StringUtilRt;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.encoding.EncodingManager;
 import com.intellij.util.PathUtil;
+import com.intellij.util.PathsList;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.execution.ParametersListUtil;
 import com.intellij.util.lang.ClassPath;
@@ -104,7 +105,6 @@ public class JdkUtil {
 
   /** @deprecated to be removed in IDEA 2018 */
   @Nullable
-  @SuppressWarnings("unused")
   public static String getJarMainAttribute(@NotNull VirtualFile jarRoot, @NotNull Attributes.Name attribute) {
     VirtualFile manifestFile = jarRoot.findFileByRelativePath(JarFile.MANIFEST_NAME);
     if (manifestFile != null) {
@@ -167,33 +167,36 @@ public class JdkUtil {
                                                        final boolean forceDynamicClasspath) {
     final GeneralCommandLine commandLine = new GeneralCommandLine(exePath);
 
-    final ParametersList vmParametersList = javaParameters.getVMParametersList();
+    final ParametersList vmParameters = javaParameters.getVMParametersList();
     commandLine.withEnvironment(javaParameters.getEnv());
     commandLine.withParentEnvironmentType(javaParameters.isPassParentEnvs() ? ParentEnvironmentType.CONSOLE : ParentEnvironmentType.NONE);
 
     final Class commandLineWrapper;
     boolean passProgramParametersViaClassPathJar = false;
-    if ((commandLineWrapper = getCommandLineWrapperClass()) != null) {
-      if (forceDynamicClasspath && !vmParametersList.hasParameter("-classpath") && !vmParametersList.hasParameter("-cp")) {
-        if (isClassPathJarEnabled(javaParameters, PathUtil.getJarPathForClass(ClassPath.class))) {
-          passProgramParametersViaClassPathJar = javaParameters.isPassProgramParametersViaClasspathJar();
-          appendJarClasspathParams(javaParameters, commandLine, vmParametersList, commandLineWrapper, passProgramParametersViaClassPathJar);
-        }
-        else {
-          appendOldCommandLineWrapper(javaParameters, commandLine, vmParametersList, commandLineWrapper);
-        }
+    if (forceDynamicClasspath &&
+        !explicitClassPath(vmParameters) &&
+        javaParameters.getModulePath().isEmpty() &&
+        (commandLineWrapper = getCommandLineWrapperClass()) != null) {
+      if (isClassPathJarEnabled(javaParameters, PathUtil.getJarPathForClass(ClassPath.class))) {
+        passProgramParametersViaClassPathJar = javaParameters.isPassProgramParametersViaClasspathJar();
+        appendJarClasspathParams(javaParameters, commandLine, vmParameters, commandLineWrapper, passProgramParametersViaClassPathJar);
       }
       else {
-        appendParamsEncodingClasspath(javaParameters, commandLine, vmParametersList);
+        appendOldCommandLineWrapper(javaParameters, commandLine, vmParameters, commandLineWrapper);
       }
     }
     else {
-      appendParamsEncodingClasspath(javaParameters, commandLine, vmParametersList);
+      appendParamsEncodingClasspath(javaParameters, commandLine, vmParameters);
     }
 
     final String mainClass = javaParameters.getMainClass();
+    final String moduleName = javaParameters.getModuleName();
     final String jarPath = javaParameters.getJarPath();
-    if (mainClass != null) {
+    if (moduleName != null && mainClass != null) {
+      commandLine.addParameter("-m");
+      commandLine.addParameter(moduleName + '/' + mainClass);
+    }
+    else if (mainClass != null) {
       commandLine.addParameter(mainClass);
     }
     else if (jarPath != null) {
@@ -210,10 +213,18 @@ public class JdkUtil {
     return commandLine;
   }
 
+  private static boolean explicitClassPath(ParametersList vmParameters) {
+    return vmParameters.hasParameter("-cp") || vmParameters.hasParameter("-classpath") || vmParameters.hasParameter("--class-path");
+  }
+
+  private static boolean explicitModulePath(ParametersList vmParameters) {
+    return vmParameters.hasParameter("-p") || vmParameters.hasParameter("--module-path");
+  }
+
   private static void appendOldCommandLineWrapper(SimpleJavaParameters javaParameters,
                                                   GeneralCommandLine commandLine,
-                                                  ParametersList vmParametersList, Class commandLineWrapper) {
-    File classpathFile = null;
+                                                  ParametersList vmParametersList,
+                                                  Class commandLineWrapper) {
     File vmParamsFile = null;
     if (javaParameters.isDynamicVMOptions() && useDynamicVMOptions()) {
       try {
@@ -243,6 +254,8 @@ public class JdkUtil {
     else {
       commandLine.addParameters(vmParametersList.getList());
     }
+
+    File classpathFile = null;
     try {
       classpathFile = FileUtil.createTempFile("classpath", null);
       final PrintWriter writer = new PrintWriter(classpathFile);
@@ -273,6 +286,7 @@ public class JdkUtil {
       LOG.info(e);
       throwUnableToCreateTempFile();
     }
+
     appendEncoding(javaParameters, commandLine, vmParametersList);
     commandLine.addParameter(commandLineWrapper.getName());
     commandLine.addParameter(classpathFile.getAbsolutePath());
@@ -294,8 +308,8 @@ public class JdkUtil {
                                                boolean storeProgramParametersInJar) {
     try {
       final Manifest manifest = new Manifest();
-      manifest.getMainAttributes().putValue("Created-By",
-                                            ApplicationNamesInfo.getInstance().getFullProductName());
+      manifest.getMainAttributes().putValue("Created-By", ApplicationNamesInfo.getInstance().getFullProductName());
+
       final boolean writeDynamicVMOptions = javaParameters.isDynamicVMOptions() && useDynamicVMOptions();
       if (writeDynamicVMOptions) {
         List<String> dParams = new ArrayList<>();
@@ -306,13 +320,15 @@ public class JdkUtil {
         }
 
         manifest.getMainAttributes().putValue("VM-Options", ParametersListUtil.join(dParams));
-        final ArrayList<String> restParams = new ArrayList<>(vmParametersList.getList());
+
+        final List<String> restParams = new ArrayList<>(vmParametersList.getList());
         restParams.removeAll(dParams);
         commandLine.addParameters(restParams);
       }
       else {
         commandLine.addParameters(vmParametersList.getList());
       }
+
       if (storeProgramParametersInJar) {
         manifest.getMainAttributes().putValue("Program-Parameters", ParametersListUtil.join(javaParameters.getProgramParametersList().getList()));
       }
@@ -349,7 +365,7 @@ public class JdkUtil {
   private static boolean isClassPathJarEnabled(SimpleJavaParameters javaParameters, String currentPath) {
     if (javaParameters.isUseClasspathJar() && useClasspathJar()) {
       try {
-        final ArrayList<URL> urls = new ArrayList<>();
+        final List<URL> urls = new ArrayList<>();
         for (String path : javaParameters.getClassPath().getPathList()) {
           if (!path.equals(currentPath)) {
             try {
@@ -374,12 +390,21 @@ public class JdkUtil {
 
   private static void appendParamsEncodingClasspath(SimpleJavaParameters javaParameters,
                                                     GeneralCommandLine commandLine,
-                                                    ParametersList parametersList) {
-    commandLine.addParameters(parametersList.getList());
-    appendEncoding(javaParameters, commandLine, parametersList);
-    if (!parametersList.hasParameter("-classpath") && !parametersList.hasParameter("-cp") && !javaParameters.getClassPath().getPathList().isEmpty()){
+                                                    ParametersList vmParameters) {
+    commandLine.addParameters(vmParameters.getList());
+
+    appendEncoding(javaParameters, commandLine, vmParameters);
+
+    PathsList classPath = javaParameters.getClassPath();
+    if (!classPath.isEmpty() && !explicitClassPath(vmParameters)) {
       commandLine.addParameter("-classpath");
-      commandLine.addParameter(javaParameters.getClassPath().getPathsString());
+      commandLine.addParameter(classPath.getPathsString());
+    }
+
+    PathsList modulePath = javaParameters.getModulePath();
+    if (!modulePath.isEmpty() && !explicitModulePath(vmParameters)) {
+      commandLine.addParameter("-p");
+      commandLine.addParameter(modulePath.getPathsString());
     }
   }
 

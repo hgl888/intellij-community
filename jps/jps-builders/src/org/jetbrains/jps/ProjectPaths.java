@@ -56,12 +56,6 @@ public class ProjectPaths {
     return getClasspathFiles(chunk, JpsJavaClasspathKind.compile(chunk.containsTests()), excludeMainModuleOutput, ClasspathPart.AFTER_JDK, true);
   }
 
-  // todo: implementation can be changed
-  @NotNull
-  public static Collection<File> getCompilationModulePath(ModuleChunk chunk) {
-    return getClasspathFiles(chunk, JpsJavaClasspathKind.compile(chunk.containsTests()), true, ClasspathPart.MODULE_PATH, true);
-  }
-
   @NotNull
   private static Collection<File> getClasspathFiles(ModuleChunk chunk,
                                                     JpsJavaClasspathKind kind,
@@ -79,9 +73,6 @@ public class ProjectPaths {
       }
       else if (classpathPart == ClasspathPart.AFTER_JDK) {
         enumerator = enumerator.satisfying(new AfterJavaSdkItemFilter(module));
-      }
-      else if (classpathPart == ClasspathPart.MODULE_PATH) {
-        enumerator = enumerator.satisfying(new ModuleSourceElementsFilter());
       }
       JpsJavaDependenciesRootsEnumerator rootsEnumerator = enumerator.classes();
       if (excludeMainModuleOutput) {
@@ -187,7 +178,7 @@ public class ProjectPaths {
     return StringUtil.isEmpty(sourceDirName)? outputDir : new File(outputDir, sourceDirName);
   }
 
-  private enum ClasspathPart {WHOLE, BEFORE_JDK, AFTER_JDK, MODULE_PATH}
+  private enum ClasspathPart {WHOLE, BEFORE_JDK, AFTER_JDK}
 
   private static class BeforeJavaSdkItemFilter implements Condition<JpsDependencyElement> {
     private JpsModule myModule;
@@ -224,15 +215,6 @@ public class ProjectPaths {
         }
       }
       return mySdkFound;
-    }
-  }
-
-  private static class ModuleSourceElementsFilter implements Condition<JpsDependencyElement> {
-    private ModuleSourceElementsFilter() { }
-
-    @Override
-    public boolean value(JpsDependencyElement dependency) {
-      return dependency instanceof JpsModuleDependency || dependency instanceof JpsModuleSourceDependency;
     }
   }
 }

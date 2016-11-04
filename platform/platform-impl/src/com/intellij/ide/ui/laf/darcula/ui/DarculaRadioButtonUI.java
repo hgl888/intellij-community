@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.intellij.openapi.ui.GraphicsConfig;
 import com.intellij.ui.ColorUtil;
 import com.intellij.ui.Gray;
 import com.intellij.ui.JBGradientPaint;
+import com.intellij.util.ui.EmptyIcon;
 import com.intellij.util.ui.GraphicsUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
@@ -167,10 +168,20 @@ public class DarculaRadioButtonUI extends MetalRadioButtonUI {
                                                   mnemIndex, textRect.x, textRect.y + fm.getAscent());
       }
     }
+
+    if(b.hasFocus() && b.isFocusPainted() &&
+       textRect.width > 0 && textRect.height > 0 ) {
+        paintFocus(g, textRect, b.getSize());
+    }
+  }
+
+  @Override
+  protected void paintFocus(Graphics g, Rectangle t, Dimension d) {
+
   }
 
   @Override
   public Icon getDefaultIcon() {
-    return JBUI.emptyIcon(20).asUIResource();
+    return JBUI.scale(EmptyIcon.create(20)).asUIResource();
   }
 }

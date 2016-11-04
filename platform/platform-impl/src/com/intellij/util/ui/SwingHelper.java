@@ -24,7 +24,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileChooser.FileChooserDescriptor;
-import com.intellij.openapi.fileChooser.FileChooserFactory;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.options.ex.SingleConfigurableEditor;
 import com.intellij.openapi.options.newEditor.SettingsDialog;
@@ -35,6 +34,7 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.HyperlinkLabel;
 import com.intellij.ui.TextFieldWithHistory;
 import com.intellij.ui.TextFieldWithHistoryWithBrowseButton;
+import com.intellij.ui.components.ComponentsKt;
 import com.intellij.ui.components.panels.NonOpaquePanel;
 import com.intellij.util.Consumer;
 import com.intellij.util.NotNullProducer;
@@ -192,6 +192,7 @@ public class SwingHelper {
 
   public static void adjustDialogSizeToFitPreferredSize(@NotNull DialogWrapper dialogWrapper) {
     JRootPane rootPane = dialogWrapper.getRootPane();
+    if (rootPane == null) return;
     Dimension componentSize = rootPane.getSize();
     Dimension componentPreferredSize = rootPane.getPreferredSize();
     if (componentPreferredSize.width <= componentSize.width && componentPreferredSize.height <= componentSize.height) {
@@ -427,25 +428,8 @@ public class SwingHelper {
                                                        @NotNull @Nls(capitalization = Nls.Capitalization.Title) String browseDialogTitle,
                                                        @NotNull FileChooserDescriptor fileChooserDescriptor,
                                                        @NotNull TextComponentAccessor<T> textComponentAccessor) {
-    fileChooserDescriptor = fileChooserDescriptor.withShowHiddenFiles(SystemInfo.isUnix);
-    componentWithBrowseButton.addBrowseFolderListener(
-      project,
-      new ComponentWithBrowseButton.BrowseFolderActionListener<>(
-        browseDialogTitle,
-        null,
-        componentWithBrowseButton,
-        project,
-        fileChooserDescriptor,
-        textComponentAccessor
-      ),
-      true
-    );
-    FileChooserFactory.getInstance().installFileCompletion(
-      textField,
-      fileChooserDescriptor,
-      true,
-      project
-    );
+    ComponentsKt.installFileCompletionAndBrowseDialog(project, componentWithBrowseButton, textField, browseDialogTitle,
+                                                      fileChooserDescriptor.withShowHiddenFiles(SystemInfo.isUnix), textComponentAccessor);
   }
 
   @NotNull
@@ -625,7 +609,7 @@ public class SwingHelper {
       textPane = new JEditorPane();
     }
     textPane.setFont(font != null ? font : UIUtil.getLabelFont());
-    textPane.setContentType(UIUtil.HTML_MIME);
+    textPane.setEditorKit(UIUtil.getHTMLEditorKit());
     textPane.setEditable(false);
     if (background != null) {
       textPane.setBackground(background);
@@ -654,20 +638,7 @@ public class SwingHelper {
                                                                                                 @NotNull String browseDialogTitle,
                                                                                                 @NotNull FileChooserDescriptor fileChooserDescriptor,
                                                                                                 @Nullable NotNullProducer<List<String>> historyProvider) {
-    TextFieldWithHistoryWithBrowseButton textFieldWithHistoryWithBrowseButton = new TextFieldWithHistoryWithBrowseButton();
-    TextFieldWithHistory textFieldWithHistory = textFieldWithHistoryWithBrowseButton.getChildComponent();
-    textFieldWithHistory.setHistorySize(-1);
-    textFieldWithHistory.setMinimumAndPreferredWidth(0);
-    if (historyProvider != null) {
-      addHistoryOnExpansion(textFieldWithHistory, historyProvider);
-    }
-    installFileCompletionAndBrowseDialog(
-      project,
-      textFieldWithHistoryWithBrowseButton,
-      browseDialogTitle,
-      fileChooserDescriptor
-    );
-    return textFieldWithHistoryWithBrowseButton;
+    return ComponentsKt.textFieldWithHistoryWithBrowseButton(project, browseDialogTitle, fileChooserDescriptor, historyProvider == null ? null : () -> historyProvider.produce());
   }
 
   @NotNull

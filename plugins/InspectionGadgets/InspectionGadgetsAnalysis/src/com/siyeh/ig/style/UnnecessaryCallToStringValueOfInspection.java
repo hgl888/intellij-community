@@ -15,6 +15,7 @@
  */
 package com.siyeh.ig.style;
 
+import com.intellij.codeInsight.NullableNotNullManager;
 import com.intellij.codeInspection.CleanupLocalInspectionTool;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.project.Project;
@@ -120,7 +121,10 @@ public class UnnecessaryCallToStringValueOfInspection extends BaseInspection imp
       if (arguments.length != 1) {
         return;
       }
-      final PsiExpression argument = arguments[0];
+      final PsiExpression argument = ParenthesesUtils.stripParentheses(arguments[0]);
+      if (argument == null) {
+        return;
+      }
       final PsiType argumentType = argument.getType();
       if (argumentType instanceof PsiArrayType) {
         final PsiArrayType arrayType = (PsiArrayType)argumentType;
@@ -129,25 +133,42 @@ public class UnnecessaryCallToStringValueOfInspection extends BaseInspection imp
           return;
         }
       }
-      else if (!TypeUtils.isJavaLangString(argumentType)) {
+      final PsiMethod method = expression.resolveMethod();
+      if (method == null) {
+        return;
+      }
+      final PsiClass aClass = method.getContainingClass();
+      if (aClass == null) {
+        return;
+      }
+      final String qualifiedName = aClass.getQualifiedName();
+      if (!CommonClassNames.JAVA_LANG_STRING.equals(qualifiedName)) {
+        return;
+      }
+      if (!TypeUtils.isJavaLangString(argumentType)) {
         final boolean throwable = TypeUtils.expressionHasTypeOrSubtype(argument, "java.lang.Throwable");
         if (ExpressionUtils.isConversionToStringNecessary(expression, throwable)) {
           return;
         }
-        final PsiMethod method = expression.resolveMethod();
-        if (method == null) {
+      }
+      if (argument instanceof PsiReferenceExpression) {
+        if (couldChangeSemantics((PsiReferenceExpression)argument)) {
           return;
         }
-        final PsiClass aClass = method.getContainingClass();
-        if (aClass == null) {
-          return;
-        }
-        final String qualifiedName = aClass.getQualifiedName();
-        if (!CommonClassNames.JAVA_LANG_STRING.equals(qualifiedName)) {
+      }
+      else if (argument instanceof PsiMethodCallExpression) {
+        final PsiMethodCallExpression methodCallExpression = (PsiMethodCallExpression)argument;
+        if (couldChangeSemantics(methodCallExpression.getMethodExpression())) {
           return;
         }
       }
       registerError(expression, calculateReplacementText(argument));
+    }
+
+    private static boolean couldChangeSemantics(PsiReferenceExpression referenceExpression) {
+      final PsiElement target = referenceExpression.resolve();
+      // unwrapping when null will change semantics
+      return !(target instanceof PsiModifierListOwner && NullableNotNullManager.isNotNull((PsiModifierListOwner)target));
     }
   }
 }

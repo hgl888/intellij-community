@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,12 +24,10 @@ import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.source.resolve.reference.ReferenceProvidersRegistry;
-import com.intellij.psi.impl.source.tree.LeafElement;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.jetbrains.python.PyTokenTypes;
 import com.jetbrains.python.codeInsight.regexp.PythonVerboseRegexpLanguage;
-import com.jetbrains.python.lexer.PyStringLiteralLexer;
 import com.jetbrains.python.lexer.PythonHighlightingLexer;
 import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.types.PyType;
@@ -101,6 +99,7 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
     myDecodedFragments = null;
   }
 
+  @NotNull
   public List<TextRange> getStringValueTextRanges() {
     if (valueTextRanges == null) {
       int elStart = getTextRange().getStartOffset();
@@ -132,21 +131,7 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
   }
 
   public static int getPrefixLength(String text) {
-    int startOffset = 0;
-    startOffset = PyStringLiteralLexer.skipEncodingPrefix(text, startOffset);
-    startOffset = PyStringLiteralLexer.skipRawPrefix(text, startOffset);
-    startOffset = PyStringLiteralLexer.skipEncodingPrefix(text, startOffset);
-    startOffset = PyStringLiteralLexer.skipRawPrefix(text, startOffset);
-    return startOffset;
-  }
-
-  private static boolean isRaw(String text) {
-    int startOffset = PyStringLiteralLexer.skipEncodingPrefix(text, 0);
-    return PyStringLiteralLexer.skipRawPrefix(text, startOffset) > startOffset;
-  }
-
-  private static boolean isUnicode(String text) {
-    return text.length() > 0 && Character.toUpperCase(text.charAt(0)) == 'U';                       //TODO[ktisha]
+    return PyStringLiteralUtil.getPrefixEndOffset(text, 0);
   }
 
   private boolean isUnicodeByDefault() {
@@ -161,14 +146,6 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
     return false;
   }
 
-  private static boolean isBytes(String text) {
-    return text.length() > 0 && Character.toUpperCase(text.charAt(0)) == 'B';
-  }
-
-  private static boolean isChar(String text) {
-    return text.length() > 0 && Character.toUpperCase(text.charAt(0)) == 'C';
-  }
-
   @Override
   @NotNull
   public List<Pair<TextRange, String>> getDecodedFragments() {
@@ -181,7 +158,9 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
         final TextRange textRange = getNodeTextRange(text);
         final int offset = node.getTextRange().getStartOffset() - elementStart + textRange.getStartOffset();
         final String encoded = textRange.substring(text);
-        result.addAll(getDecodedFragments(encoded, offset, isRaw(text), unicodeByDefault || isUnicode(text)));
+        final boolean hasRawPrefix = PyStringLiteralUtil.isRawPrefix(PyStringLiteralUtil.getPrefix(text));
+        final boolean hasUnicodePrefix = PyStringLiteralUtil.isUnicodePrefix(PyStringLiteralUtil.getPrefix(text));
+        result.addAll(getDecodedFragments(encoded, offset, hasRawPrefix, unicodeByDefault || hasUnicodePrefix));
       }
       myDecodedFragments = result;
     }
@@ -262,6 +241,7 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
     return matcher.group(group.ordinal());
   }
 
+  @NotNull
   public List<ASTNode> getStringNodes() {
     return Arrays.asList(getNode().getChildren(PyTokenTypes.STRING_NODES));
   }
@@ -347,11 +327,7 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
   }
 
   public PsiLanguageInjectionHost updateText(@NotNull String text) {
-    // TODO is this the correct implementation? most likely not
-    ASTNode valueNode = getNode().getFirstChildNode();
-    assert valueNode instanceof LeafElement;
-    ((LeafElement)valueNode).replaceWithText(text);
-    return this;
+    return ElementManipulators.handleContentChange(this, text);
   }
 
   @NotNull

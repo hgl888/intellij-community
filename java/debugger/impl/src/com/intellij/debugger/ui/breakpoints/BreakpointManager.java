@@ -47,7 +47,6 @@ import com.intellij.openapi.util.Key;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.psi.PsiField;
-import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.xdebugger.XDebuggerManager;
 import com.intellij.xdebugger.XDebuggerUtil;
@@ -114,7 +113,12 @@ public class BreakpointManager {
   private static boolean checkAndNotifyPossiblySlowBreakpoint(XBreakpoint breakpoint) {
     if (breakpoint.isEnabled() &&
         (breakpoint.getType() instanceof JavaMethodBreakpointType || breakpoint.getType() instanceof JavaWildcardMethodBreakpointType)) {
-      XDebugSessionImpl.NOTIFICATION_GROUP.createNotification("Method breakpoints may dramatically slow down debugging", MessageType.WARNING)
+      Breakpoint bpt = getJavaBreakpoint(breakpoint);
+      if (bpt instanceof MethodBreakpoint && ((MethodBreakpoint)bpt).isEmulated()) {
+        return false;
+      }
+      XDebugSessionImpl.NOTIFICATION_GROUP
+        .createNotification(DebuggerBundle.message("method.breakpoints.slowness.warning"), MessageType.WARNING)
         .notify(((XBreakpointBase)breakpoint).getProject());
       return true;
     }
@@ -303,12 +307,7 @@ public class BreakpointManager {
     for (Element element : parentNode.getChildren()) {
       myOriginalBreakpointsNodes.put(element.getName(), element.clone());
     }
-    if (myProject.isOpen()) {
-      doRead(parentNode);
-    }
-    else {
-      myStartupManager.registerPostStartupActivity(() -> doRead(parentNode));
-    }
+    myStartupManager.runWhenProjectIsInitialized(() -> doRead(parentNode));
   }
 
   private void doRead(@NotNull final Element parentNode) {
@@ -494,12 +493,8 @@ public class BreakpointManager {
 
   @NotNull
   public List<Breakpoint> getBreakpoints() {
-    return ApplicationManager.getApplication().runReadAction((Computable<List<Breakpoint>>)() -> ContainerUtil.mapNotNull(getXBreakpointManager().getAllBreakpoints(), new Function<XBreakpoint<?>, Breakpoint>() {
-      @Override
-      public Breakpoint fun(XBreakpoint<?> xBreakpoint) {
-        return getJavaBreakpoint(xBreakpoint);
-      }
-    }));
+    return ApplicationManager.getApplication().runReadAction((Computable<List<Breakpoint>>)() ->
+      ContainerUtil.mapNotNull(getXBreakpointManager().getAllBreakpoints(), BreakpointManager::getJavaBreakpoint));
   }
 
   @Nullable

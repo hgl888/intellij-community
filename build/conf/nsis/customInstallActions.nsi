@@ -1,4 +1,5 @@
-!define INSTALL_OPTION_ELEMENTS 4
+!include x64.nsh
+!define INSTALL_OPTION_ELEMENTS 5
 !define JAVA_REQUIREMENT 1.8
 
 Function customInstallActions
@@ -39,9 +40,20 @@ Function ConfirmDesktopShortcut
       ${If} $3 != ""
         !insertmacro INSTALLOPTIONS_WRITE "Desktop.ini" "Field 3" "Type" "checkbox"
         !insertmacro INSTALLOPTIONS_WRITE "Desktop.ini" "Field 3" "Text" $R1
+        ; if 64-bit Win OS and jre64 for the build is available then add checkbox to Installation Options dialog
+        ${If} ${RunningX64}
+          StrCmp "${LINK_TO_JRE64}" "null" association 0
+          inetc::head /SILENT /TOSTACK ${LINK_TO_JRE64} "" /END
+          Pop $0
+          ${If} $0 == "OK"
+            !insertmacro INSTALLOPTIONS_WRITE "Desktop.ini" "Field 4" "Type" "checkbox"
+            !insertmacro INSTALLOPTIONS_WRITE "Desktop.ini" "Field 4" "Text" "Download and install 64-bit JRE by JetBrains (will be used with 64-bit launcher)"
+          ${EndIf}
+        ${EndIf}
       ${EndIf}
     ${EndIf}
   ${EndIf}
+association:
   StrCmp "${ASSOCIATION}" "NoAssociation" skip_association
   StrCpy $R0 ${INSTALL_OPTION_ELEMENTS}
   push "${ASSOCIATION}"

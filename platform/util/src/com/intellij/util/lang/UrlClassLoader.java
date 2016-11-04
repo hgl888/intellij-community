@@ -18,6 +18,7 @@ package com.intellij.util.lang;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.io.win32.IdeaWin32;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.Function;
@@ -207,6 +208,11 @@ public class UrlClassLoader extends ClassLoader {
     return Collections.unmodifiableList(myURLs);
   }
 
+  public boolean hasLoadedClass(String name) {
+    Class<?> aClass = findLoadedClass(name);
+    return aClass != null && aClass.getClassLoader() == this;
+  }
+
   @Override
   protected Class findClass(final String name) throws ClassNotFoundException {
     Resource res = getClassPath().getResource(name.replace('.', '/').concat(CLASS_EXTENSION), false);
@@ -281,8 +287,7 @@ public class UrlClassLoader extends ClassLoader {
 
   @Nullable
   private Resource _getResource(final String name) {
-    String n = name;
-    n = StringUtil.trimStart(n, "/");
+    String n = StringUtil.trimStart(FileUtil.toCanonicalUriPath(name), "/");
     return getClassPath().getResource(n, true);
   }
 

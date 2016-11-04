@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import com.intellij.ide.util.projectWizard.ProjectTemplateFileProcessor;
 import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.components.PathMacroManager;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.ServiceManager;
@@ -56,7 +57,6 @@ public class SystemFileProcessor extends ProjectTemplateFileProcessor {
   protected String encodeFileText(String content, VirtualFile file, Project project) throws IOException {
     final String fileName = file.getName();
     if (file.getParent().getName().equals(Project.DIRECTORY_STORE_FOLDER) && fileName.equals("workspace.xml")) {
-
       List<Object> componentList = new ArrayList<>();
       for (String componentName : COMPONENT_NAMES) {
         Object component = project.getComponent(componentName);
@@ -89,9 +89,7 @@ public class SystemFileProcessor extends ProjectTemplateFileProcessor {
               }
             }
             else if (component instanceof PersistentStateComponent) {
-              AccessToken token = ApplicationManager.getApplication().acquireWriteActionLock(SystemFileProcessor.class);
-              Object state = ((PersistentStateComponent)component).getState();
-              token.finish();
+              Object state = WriteAction.compute(() -> ((PersistentStateComponent)component).getState());
 
               if(state == null){
                 return;

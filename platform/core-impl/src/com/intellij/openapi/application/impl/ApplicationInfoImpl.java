@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -620,6 +620,7 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
     return false;
   }
 
+  @NotNull
   public static ApplicationInfoEx getShadowInstance() {
     if (ourShadowInstance == null) {
       ourShadowInstance = new ApplicationInfoImpl();
@@ -868,12 +869,11 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
     }
 
     myPluginChooserPages = new ArrayList<PluginChooserPage>();
-    final List children = parentNode.getChildren(PLUGINS_PAGE_ELEMENT_NAME);
-    for(Object child: children) {
-      myPluginChooserPages.add(new PluginChooserPageImpl((Element) child));
+    for (Element child : parentNode.getChildren(PLUGINS_PAGE_ELEMENT_NAME)) {
+      myPluginChooserPages.add(new PluginChooserPageImpl(child));
     }
 
-    List<Element> essentialPluginsElements = JDOMUtil.getChildren(parentNode, ESSENTIAL_PLUGIN);
+    List<Element> essentialPluginsElements = parentNode.getChildren(ESSENTIAL_PLUGIN);
     Collection<String> essentialPluginsIds = ContainerUtil.mapNotNull(essentialPluginsElements, new Function<Element, String>() {
       @Override
       public String fun(Element element) {
@@ -943,20 +943,22 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
   }
 
   private static GregorianCalendar parseDate(final String dateString) {
-    @SuppressWarnings("MultipleVariablesInDeclaration")
-    int year = 0, month = 0, day = 0, hour = 0, minute = 0;
+    GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
     try {
-      year = Integer.parseInt(dateString.substring(0, 4));
-      month = Integer.parseInt(dateString.substring(4, 6));
-      day = Integer.parseInt(dateString.substring(6, 8));
+      calendar.set(Calendar.YEAR, Integer.parseInt(dateString.substring(0, 4)));
+      calendar.set(Calendar.MONTH, Integer.parseInt(dateString.substring(4, 6)) - 1);
+      calendar.set(Calendar.DAY_OF_MONTH, Integer.parseInt(dateString.substring(6, 8)));
       if (dateString.length() > 8) {
-        hour = Integer.parseInt(dateString.substring(8, 10));
-        minute = Integer.parseInt(dateString.substring(10, 12));
+        calendar.set(Calendar.HOUR_OF_DAY, Integer.parseInt(dateString.substring(8, 10)));
+        calendar.set(Calendar.MINUTE, Integer.parseInt(dateString.substring(10, 12)));
+      }
+      else {
+        calendar.set(Calendar.HOUR_OF_DAY, 0);
+        calendar.set(Calendar.MINUTE, 0);
       }
     }
     catch (Exception ignore) { }
-    if (month > 0) month--;
-    return new GregorianCalendar(year, month, day, hour, minute);
+    return calendar;
   }
 
   @SuppressWarnings("UseJBColor")

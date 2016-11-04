@@ -292,7 +292,7 @@ public class AbstractTreeUi {
     boolean canUpdateBusyState = false;
 
     if (forcedBusy) {
-      if (canYield() || element != null && getTreeStructure().isToBuildChildrenInBackground(element)) {
+      if (canYield() || isToBuildChildrenInBackground(element)) {
         canUpdateBusyState = true;
       }
     } else {
@@ -693,7 +693,7 @@ public class AbstractTreeUi {
 
 
     final Ref<NodeDescriptor> rootDescriptor = new Ref<>(null);
-    final boolean bgLoading = getTreeStructure().isToBuildChildrenInBackground(rootElement);
+    final boolean bgLoading = isToBuildChildrenInBackground(rootElement);
 
     Runnable build = new TreeRunnable("AbstractTreeUi.initRootNodeNowIfNeeded: build") {
       @Override
@@ -854,8 +854,7 @@ public class AbstractTreeUi {
       final AsyncPromise<Boolean> result = new AsyncPromise<>();
       promise = result;
 
-      Object element = getElementFromDescriptor(nodeDescriptor);
-      boolean bgLoading = getTreeStructure().isToBuildChildrenInBackground(element);
+      boolean bgLoading = isToBuildInBackground(nodeDescriptor);
 
       boolean edt = isEdt();
       if (bgLoading) {
@@ -1102,8 +1101,13 @@ public class AbstractTreeUi {
     });
   }
 
+  boolean isToBuildChildrenInBackground(Object element) {
+    AbstractTreeStructure structure = getTreeStructure();
+    return element != null && structure.isToBuildChildrenInBackground(element);
+  }
+
   private boolean isToBuildInBackground(NodeDescriptor descriptor) {
-    return getTreeStructure().isToBuildChildrenInBackground(getBuilder().getTreeStructureElement(descriptor));
+    return isToBuildChildrenInBackground(getElementFromDescriptor(descriptor));
   }
 
   @NotNull
@@ -1560,7 +1564,7 @@ public class AbstractTreeUi {
                       @Override
                       public Promise<?> run() {
                         expand(element, null);
-                        return Promise.DONE;
+                        return Promises.resolvedPromise();
                       }
                     }, pass, node);
                   }
@@ -1687,8 +1691,8 @@ public class AbstractTreeUi {
       @NotNull
       @Override
       public Promise<?> run() {
-        if (pass.isExpired()) return Promise.REJECTED;
-        if (childNodes.isEmpty()) return Promise.DONE;
+        if (pass.isExpired()) return Promises.<Void>rejectedPromise();
+        if (childNodes.isEmpty()) return Promises.resolvedPromise();
 
 
         List<Promise<?>> promises = new SmartList<>();
@@ -1723,7 +1727,7 @@ public class AbstractTreeUi {
 
           for (Promise<?> promise : promises) {
             if (promise.getState() == Promise.State.REJECTED) {
-              return Promise.REJECTED;
+              return Promises.<Void>rejectedPromise();
             }
           }
         }
@@ -1749,7 +1753,7 @@ public class AbstractTreeUi {
   private Promise<?> maybeYeild(@NotNull final AsyncRunnable processRunnable, @NotNull final TreeUpdatePass pass, final DefaultMutableTreeNode node) {
     if (isRerunNeeded(pass)) {
       getUpdater().requeue(pass);
-      return Promise.REJECTED;
+      return Promises.<Void>rejectedPromise();
     }
 
     if (isToYieldUpdateFor(node)) {
@@ -1799,7 +1803,7 @@ public class AbstractTreeUi {
       catch (ProcessCanceledException e) {
         pass.expire();
         cancelUpdate();
-        return Promise.REJECTED;
+        return Promises.<Void>rejectedPromise();
       }
     }
   }
@@ -2299,7 +2303,7 @@ public class AbstractTreeUi {
   }
 
   public long getClearOnHideDelay() {
-    return myClearOnHideDelay > 0 ? myClearOnHideDelay : Registry.intValue("ide.tree.clearOnHideTime");
+    return myClearOnHideDelay;
   }
 
   @NotNull
@@ -2685,7 +2689,10 @@ public class AbstractTreeUi {
           update(updateInfo.getDescriptor(), true);
         }
 
-        if (!updateInfo.isUpdateChildren()) return;
+        if (!updateInfo.isUpdateChildren()) {
+          nodeToProcessActions[0] = node;
+          return;
+        }
 
         Object element = getElementFromDescriptor(updateInfo.getDescriptor());
         if (element == null) {
@@ -2696,7 +2703,7 @@ public class AbstractTreeUi {
 
         elementFromDescriptor.set(element);
 
-        Object[] loadedElements = getChildrenFor(getBuilder().getTreeStructureElement(updateInfo.getDescriptor()));
+        Object[] loadedElements = getChildrenFor(element);
 
         final LoadedChildren loaded = new LoadedChildren(loadedElements);
         for (final Object each : loadedElements) {
@@ -2987,17 +2994,17 @@ public class AbstractTreeUi {
                                              final boolean forceUpdate,
                                              @Nullable LoadedChildren parentPreloadedChildren) {
     if (pass.isExpired()) {
-      return Promise.REJECTED;
+      return Promises.<Void>rejectedPromise();
     }
 
     if (childDescriptor == null) {
       pass.expire();
-      return Promise.REJECTED;
+      return Promises.<Void>rejectedPromise();
     }
     final Object oldElement = getElementFromDescriptor(childDescriptor);
     if (oldElement == null) {
       pass.expire();
-      return Promise.REJECTED;
+      return Promises.<Void>rejectedPromise();
     }
 
     Promise<Boolean> update;
@@ -3336,7 +3343,7 @@ public class AbstractTreeUi {
 
   @NotNull
   private Promise<Void> queueToBackground(@NotNull final Runnable bgBuildAction, @Nullable final Runnable edtPostRunnable) {
-    if (!canInitiateNewActivity()) return Promise.REJECTED;
+    if (!canInitiateNewActivity()) return Promises.rejectedPromise();
     final AsyncPromise<Void> result = new AsyncPromise<>();
     final AtomicReference<ProcessCanceledException> fail = new AtomicReference<>();
     final Runnable finalizer = new TreeRunnable("AbstractTreeUi.queueToBackground: finalizer") {
@@ -3799,7 +3806,7 @@ public class AbstractTreeUi {
 
             if (!runSelection) {
               if (elements.length > 0) {
-                selectVisible(elements[0], onDone, true, true, scrollToVisible);
+                selectVisible(elements[0], onDone, false, false, scrollToVisible);
               }
               return;
             }
@@ -4694,12 +4701,7 @@ public class AbstractTreeUi {
 
   private void _addNodeAction(Object element, NodeAction action, @NotNull Map<Object, List<NodeAction>> map) {
     maybeSetBusyAndScheduleWaiterForReady(true, element);
-    List<NodeAction> list = map.get(element);
-    if (list == null) {
-      list = new ArrayList<>();
-      map.put(element, list);
-    }
-    list.add(action);
+    map.computeIfAbsent(element, k -> new ArrayList<>()).add(action);
 
     addActivity();
   }

@@ -24,7 +24,6 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.options.SchemeManager
 import com.intellij.openapi.options.SchemeState
 import com.intellij.openapi.project.Project
-import com.intellij.profile.Profile
 import com.intellij.profile.ProfileChangeAdapter
 import com.intellij.util.containers.ContainerUtil
 import com.intellij.util.messages.MessageBus
@@ -46,23 +45,13 @@ abstract class BaseInspectionProfileManager(messageBus: MessageBus) :  Inspectio
     ContainerUtil.add(listener, profileListeners, parentDisposable)
   }
 
-  @Suppress("OverridingDeprecatedMember")
-  override final fun addProfileChangeListener(listener: ProfileChangeAdapter) {
-    profileListeners.add(listener)
-  }
-
-  @Suppress("OverridingDeprecatedMember")
-  override final fun removeProfileChangeListener(listener: ProfileChangeAdapter) {
-    profileListeners.remove(listener)
-  }
-
   internal fun cleanupSchemes(project: Project) {
     for (profile in schemeManager.allSchemes) {
       profile.cleanup(project)
     }
   }
 
-  override final fun fireProfileChanged(profile: Profile?) {
+  override final fun fireProfileChanged(profile: InspectionProfile?) {
     if (profile is InspectionProfileImpl) {
       profile.profileChanged()
     }
@@ -71,7 +60,7 @@ abstract class BaseInspectionProfileManager(messageBus: MessageBus) :  Inspectio
     }
   }
 
-  override final fun fireProfileChanged(oldProfile: Profile?, profile: Profile) {
+  override final fun fireProfileChanged(oldProfile: InspectionProfile?, profile: InspectionProfile) {
     for (adapter in profileListeners) {
       adapter.profileActivated(oldProfile, profile)
     }
@@ -81,7 +70,7 @@ abstract class BaseInspectionProfileManager(messageBus: MessageBus) :  Inspectio
     schemeManager.addScheme(profile)
   }
 
-  override final fun deleteProfile(name: String) {
+  fun deleteProfile(name: String) {
     schemeManager.removeScheme(name)?.let {
       schemeRemoved(it)
     }
@@ -95,8 +84,8 @@ abstract class BaseInspectionProfileManager(messageBus: MessageBus) :  Inspectio
   open protected fun schemeRemoved(scheme: InspectionProfile) {
   }
 
-  override fun updateProfile(profile: Profile) {
-    schemeManager.addScheme(profile as InspectionProfileImpl)
+  open fun updateProfile(profile: InspectionProfileImpl) {
+    schemeManager.addScheme(profile)
     fireProfileChanged(profile)
   }
 }

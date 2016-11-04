@@ -142,8 +142,8 @@ public final class CompletionServiceImpl extends CompletionService{
 
     @Override
     public void stopHere() {
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Completion stopped\n" + DebugUtil.currentStackTrace());
+      if (LOG.isTraceEnabled()) {
+        LOG.trace("Completion stopped\n" + DebugUtil.currentStackTrace());
       }
       super.stopHere();
       if (myOriginal != null) {
@@ -192,7 +192,8 @@ public final class CompletionServiceImpl extends CompletionService{
     }
   }
 
-  public static boolean assertPhase(Class<? extends CompletionPhase>... possibilities) {
+  @SafeVarargs
+  public static boolean assertPhase(@NotNull Class<? extends CompletionPhase>... possibilities) {
     if (!isPhase(possibilities)) {
       LOG.error(ourPhase + "; set at " + ourPhaseTrace);
       return false;
@@ -200,7 +201,8 @@ public final class CompletionServiceImpl extends CompletionService{
     return true;
   }
 
-  public static boolean isPhase(Class<? extends CompletionPhase>... possibilities) {
+  @SafeVarargs
+  public static boolean isPhase(@NotNull Class<? extends CompletionPhase>... possibilities) {
     CompletionPhase phase = getCompletionPhase();
     for (Class<? extends CompletionPhase> possibility : possibilities) {
       if (possibility.isInstance(phase)) {

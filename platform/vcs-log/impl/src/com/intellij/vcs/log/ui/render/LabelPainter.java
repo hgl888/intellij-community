@@ -33,6 +33,8 @@ package com.intellij.vcs.log.ui.render;
 import com.intellij.openapi.ui.GraphicsConfig;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.ui.ColorUtil;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
@@ -44,6 +46,7 @@ import com.intellij.vcs.log.RefGroup;
 import com.intellij.vcs.log.VcsLogRefManager;
 import com.intellij.vcs.log.VcsRef;
 import com.intellij.vcs.log.VcsRefType;
+import com.intellij.vcs.log.data.VcsLogData;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -52,71 +55,129 @@ import java.awt.*;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 public class LabelPainter implements ReferencePainter {
-  public static final int TOP_TEXT_PADDING = JBUI.scale(2);
-  public static final int BOTTOM_TEXT_PADDING = JBUI.scale(1);
-  public static final int GRADIENT_WIDTH = JBUI.scale(50);
-  public static final int RIGHT_PADDING = JBUI.scale(5);
-  public static final int MIDDLE_PADDING = JBUI.scale(5);
+  public static final int TOP_TEXT_PADDING = JBUI.scale(1);
+  public static final int BOTTOM_TEXT_PADDING = JBUI.scale(2);
+  public static final int RIGHT_PADDING = JBUI.scale(2);
+  public static final int LEFT_PADDING = JBUI.scale(2);
+  public static final int MIDDLE_PADDING = JBUI.scale(2);
   private static final int MAX_LENGTH = 22;
   private static final String THREE_DOTS = "...";
   private static final String TWO_DOTS = "..";
   private static final String SEPARATOR = "/";
+  @SuppressWarnings("UseJBColor") private static final JBColor BACKGROUND = new JBColor(Color.BLACK, Color.WHITE);
+  private static final float BALANCE = 0.08f;
 
-  @NotNull
-  private List<Pair<String, LabelIcon>> myLabels = ContainerUtil.newArrayList();
+  @NotNull private final VcsLogData myLogData;
+
+  @NotNull private List<Pair<String, LabelIcon>> myLabels = ContainerUtil.newArrayList();
   private int myHeight = JBUI.scale(22);
   private int myWidth = 0;
-  @NotNull
-  private Color myBackground = UIUtil.getTableBackground();
-  @NotNull
-  private Color myForeground = UIUtil.getTableForeground();
+  @NotNull private Color myBackground = UIUtil.getTableBackground();
+  @Nullable private Color myGreyBackground = null;
+  @NotNull private Color myForeground = UIUtil.getTableForeground();
+
+  public LabelPainter(@NotNull VcsLogData data) {
+    myLogData = data;
+  }
 
   public void customizePainter(@NotNull JComponent component,
                                @NotNull Collection<VcsRef> references,
-                               @Nullable VcsLogRefManager manager,
                                @NotNull Color background,
-                               @NotNull Color foreground) {
+                               @NotNull Color foreground,
+                               boolean isSelected,
+                               int availableWidth) {
     myBackground = background;
     myForeground = foreground;
 
     FontMetrics metrics = component.getFontMetrics(getReferenceFont());
     myHeight = metrics.getHeight() + TOP_TEXT_PADDING + BOTTOM_TEXT_PADDING;
-    myWidth = GRADIENT_WIDTH + RIGHT_PADDING;
 
-    myLabels = ContainerUtil.newArrayList();
-    if (manager == null) return;
+    VcsLogRefManager manager = ReferencePainter.getRefManager(myLogData, references);
+    List<RefGroup> refGroups = manager == null ? ContainerUtil.emptyList() : manager.groupForTable(references);
 
-    for (RefGroup group : manager.groupForTable(references)) {
-      if (group.isExpanded()) {
-        for (VcsRef ref : group.getRefs()) {
-          LabelIcon labelIcon = new LabelIcon(myHeight, myBackground, ref.getType().getBackgroundColor());
-          String text = shortenRefName(ref.getName());
+    myGreyBackground = calculateGreyBackground(refGroups, background, isSelected);
+    Pair<List<Pair<String, LabelIcon>>, Integer> presentation =
+      calculatePresentation(refGroups, metrics, myHeight, myGreyBackground != null ? myGreyBackground : myBackground, availableWidth);
 
-          myLabels.add(Pair.create(text, labelIcon));
-          myWidth += labelIcon.getIconWidth() + metrics.stringWidth(text) + MIDDLE_PADDING;
-        }
-      }
-      else {
-
-        LabelIcon labelIcon = new LabelIcon(myHeight, myBackground, getGroupColors(group));
-        String text = shortenRefName(group.getName());
-
-        myLabels.add(Pair.create(text, labelIcon));
-        myWidth += labelIcon.getIconWidth() + metrics.stringWidth(text) + MIDDLE_PADDING;
-      }
-    }
+    myLabels = presentation.first;
+    myWidth = presentation.second;
   }
 
   @NotNull
-  private static String shortenRefName(@NotNull String refName) {
-    int textLength = refName.length();
-    if (textLength > MAX_LENGTH) {
+  private static Pair<List<Pair<String, LabelIcon>>, Integer> calculatePresentation(@NotNull List<RefGroup> refGroups,
+                                                                                    @NotNull FontMetrics fontMetrics,
+                                                                                    int height,
+                                                                                    @NotNull Color background,
+                                                                                    int availableWidth) {
+    int width = LEFT_PADDING + RIGHT_PADDING;
+
+    List<Pair<String, LabelIcon>> labels = ContainerUtil.newArrayList();
+    if (refGroups.isEmpty()) return Pair.create(labels, width);
+
+    for (RefGroup group : refGroups) {
+      if (group.isExpanded()) {
+        for (VcsRef ref : group.getRefs()) {
+          LabelIcon labelIcon = new LabelIcon(height, background, ref.getType().getBackgroundColor());
+          width += labelIcon.getIconWidth() + MIDDLE_PADDING;
+
+          String text = shortenRefName(ref.getName(), fontMetrics, availableWidth - width);
+          width += fontMetrics.stringWidth(text);
+
+          labels.add(Pair.create(text, labelIcon));
+        }
+      }
+      else {
+        LabelIcon labelIcon = new LabelIcon(height, background, getGroupColors(group));
+        width += labelIcon.getIconWidth() + MIDDLE_PADDING;
+
+        String text = shortenRefName(group.getName(), fontMetrics, availableWidth - width);
+        width += fontMetrics.stringWidth(text);
+
+        labels.add(Pair.create(text, labelIcon));
+      }
+    }
+
+    return Pair.create(labels, width);
+  }
+
+  @Nullable
+  private static Color calculateGreyBackground(@NotNull List<RefGroup> refGroups, @NotNull Color background, boolean isSelected) {
+    if (isSelected) return null;
+
+    boolean paintGreyBackground;
+    for (RefGroup group : refGroups) {
+      if (group.isExpanded()) {
+        paintGreyBackground = ContainerUtil.find(group.getRefs(), ref -> !ref.getName().isEmpty()) != null;
+      }
+      else {
+        paintGreyBackground = !group.getName().isEmpty();
+      }
+
+      if (paintGreyBackground) return ColorUtil.mix(background, BACKGROUND, BALANCE);
+    }
+
+    return null;
+  }
+
+  @NotNull
+  private static String shortenRefName(@NotNull String refName, @NotNull FontMetrics fontMetrics, int availableWidth) {
+    if (fontMetrics.stringWidth(refName) > availableWidth && refName.length() > MAX_LENGTH) {
       int separatorIndex = refName.indexOf(SEPARATOR);
       if (separatorIndex > TWO_DOTS.length()) {
         refName = TWO_DOTS + refName.substring(separatorIndex);
+      }
+
+      if (fontMetrics.stringWidth(refName) <= availableWidth) return refName;
+
+      if (availableWidth > 0) {
+        for (int i = refName.length(); i > MAX_LENGTH; i--) {
+          String result = StringUtil.shortenTextWithEllipsis(refName, i, 0, THREE_DOTS);
+          if (fontMetrics.stringWidth(result) <= availableWidth) {
+            return result;
+          }
+        }
       }
       return StringUtil.shortenTextWithEllipsis(refName, MAX_LENGTH, 0, THREE_DOTS);
     }
@@ -124,7 +185,7 @@ public class LabelPainter implements ReferencePainter {
   }
 
   @NotNull
-  public Color[] getGroupColors(@NotNull RefGroup group) {
+  public static Color[] getGroupColors(@NotNull RefGroup group) {
     MultiMap<VcsRefType, VcsRef> referencesByType = ContainerUtil.groupBy(group.getRefs(), VcsRef::getType);
     Color[] colors;
     if (referencesByType.size() == 1) {
@@ -135,7 +196,13 @@ public class LabelPainter implements ReferencePainter {
       colors = multiple ? new Color[]{color, color} : new Color[]{color};
     }
     else {
-      List<Color> colorsList = referencesByType.keySet().stream().map(VcsRefType::getBackgroundColor).collect(Collectors.toList());
+      List<Color> colorsList = ContainerUtil.newArrayList();
+      for (VcsRefType type : referencesByType.keySet()) {
+        if (referencesByType.get(type).size() > 1) {
+          colorsList.add(type.getBackgroundColor());
+        }
+        colorsList.add(type.getBackgroundColor());
+      }
       colors = colorsList.toArray(new Color[colorsList.size()]);
     }
     return colors;
@@ -149,15 +216,19 @@ public class LabelPainter implements ReferencePainter {
     g2.setStroke(new BasicStroke(1.5f));
 
     FontMetrics fontMetrics = g2.getFontMetrics();
-
-    g2.setPaint(
-      new GradientPaint(x, y, new Color(myBackground.getRed(), myBackground.getGreen(), myBackground.getBlue(), 0), x + GRADIENT_WIDTH, y,
-                        myBackground));
-    g2.fill(new Rectangle(x, y, GRADIENT_WIDTH, height));
-    x += GRADIENT_WIDTH;
+    int baseLine = SimpleColoredComponent.getTextBaseLine(fontMetrics, height);
 
     g2.setColor(myBackground);
-    g2.fillRect(x, y, myWidth - GRADIENT_WIDTH, height);
+    g2.fillRect(x, y, myWidth, height);
+
+    if (myGreyBackground != null) {
+      g2.setColor(myGreyBackground);
+      g2.fillRect(x, y + baseLine - fontMetrics.getAscent() - TOP_TEXT_PADDING,
+                  myWidth - RIGHT_PADDING + LEFT_PADDING,
+                  fontMetrics.getHeight() + TOP_TEXT_PADDING + BOTTOM_TEXT_PADDING);
+    }
+
+    x += LEFT_PADDING;
 
     for (Pair<String, LabelIcon> label : myLabels) {
       LabelIcon icon = label.second;
@@ -167,7 +238,7 @@ public class LabelPainter implements ReferencePainter {
       x += icon.getIconWidth();
 
       g2.setColor(myForeground);
-      g2.drawString(text, x, y + SimpleColoredComponent.getTextBaseLine(fontMetrics, height));
+      g2.drawString(text, x, y + baseLine);
       x += fontMetrics.stringWidth(text) + MIDDLE_PADDING;
     }
 
@@ -182,6 +253,12 @@ public class LabelPainter implements ReferencePainter {
   @Override
   public boolean isLeftAligned() {
     return false;
+  }
+
+  @Override
+  public Font getReferenceFont() {
+    Font font = RectanglePainter.getFont();
+    return font.deriveFont(font.getSize() - 1f);
   }
 }
 

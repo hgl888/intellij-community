@@ -33,11 +33,11 @@ import org.jetbrains.annotations.Nullable;
  */
 public class DefaultFileTemplateUsageInspection extends BaseJavaLocalInspectionTool {
   // Fields are left for the compatibility
-  @Deprecated @SuppressWarnings("UnusedDeclaration")
+  @Deprecated
   public boolean CHECK_FILE_HEADER = true;
-  @Deprecated @SuppressWarnings("UnusedDeclaration")
+  @Deprecated
   public boolean CHECK_TRY_CATCH_SECTION = true;
-  @Deprecated @SuppressWarnings("UnusedDeclaration")
+  @Deprecated
   public boolean CHECK_METHOD_BODY = true;
 
   @Override
@@ -86,14 +86,8 @@ public class DefaultFileTemplateUsageInspection extends BaseJavaLocalInspectionT
 
     @Override
     @NotNull
-    public String getName() {
-      return InspectionsBundle.message("default.file.template.edit.template");
-    }
-
-    @Override
-    @NotNull
     public String getFamilyName() {
-      return getName();
+      return InspectionsBundle.message("default.file.template.edit.template");
     }
 
     @Override

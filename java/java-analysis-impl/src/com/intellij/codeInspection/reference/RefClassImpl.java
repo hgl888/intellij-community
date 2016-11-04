@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2013 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,9 +65,11 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
   private Set<RefElement> myInTypeReferences;
   private Set<RefElement> myInstanceReferences;
   private List<RefJavaElement> myClassExporters;
+  private RefModule myRefModule;
 
   RefClassImpl(PsiClass psiClass, RefManager manager) {
     super(psiClass, manager);
+    myRefModule = manager.getRefModule(ModuleUtilCore.findModuleForPsiElement(psiClass));
   }
 
   @Override
@@ -224,6 +226,12 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
   @Override
   public PsiClass getElement() {
     return (PsiClass)super.getElement();
+  }
+
+  @Nullable
+  @Override
+  public RefModule getModule() {
+    return myRefModule;
   }
 
   private static boolean isSelfInheritor(PsiClass psiClass, ArrayList<PsiClass> visited) {

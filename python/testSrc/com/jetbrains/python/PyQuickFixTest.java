@@ -551,7 +551,7 @@ public class PyQuickFixTest extends PyTestCase {
     myFixture.configureByFile(fileName);
     myFixture.enableInspections(PyShadowingBuiltinsInspection.class);
     myFixture.checkHighlighting(true, false, true);
-    final IntentionAction intentionAction = myFixture.getAvailableIntention("Rename element");
+    final IntentionAction intentionAction = myFixture.getAvailableIntention(PyBundle.message("QFIX.NAME.rename.element"));
     assertNotNull(intentionAction);
     myFixture.launchAction(intentionAction);
     myFixture.checkResultByFile(graftBeforeExt(fileName, "_after"));
@@ -563,7 +563,7 @@ public class PyQuickFixTest extends PyTestCase {
     myFixture.configureByFile(fileName);
     myFixture.enableInspections(PyShadowingBuiltinsInspection.class);
     myFixture.checkHighlighting(true, false, true);
-    final IntentionAction intentionAction = myFixture.getAvailableIntention("Rename element");
+    final IntentionAction intentionAction = myFixture.getAvailableIntention(PyBundle.message("QFIX.NAME.rename.element"));
     assertNotNull(intentionAction);
     myFixture.launchAction(intentionAction);
     myFixture.checkResultByFile(graftBeforeExt(fileName, "_after"));
@@ -586,6 +586,47 @@ public class PyQuickFixTest extends PyTestCase {
   public void testImplementAbstractProperty1() {
     doInspectionTest("ImplementAbstractProperty.py", PyAbstractClassInspection.class, PyBundle.message("QFIX.NAME.implement.methods"),
                      true, true);
+  }
+
+  public void testRemovingUnderscoresInNumericLiterals() {
+    myFixture.configureByText(PythonFileType.INSTANCE, "1_0_0");
+
+    final IntentionAction action = myFixture.findSingleIntention(PyBundle.message("QFIX.NAME.remove.underscores.in.numeric"));
+    myFixture.launchAction(action);
+
+    myFixture.checkResult("100");
+  }
+
+  // PY-20452
+  public void testRemoveRedundantEscapeInOnePartRegExp() {
+    myFixture.configureByText(PythonFileType.INSTANCE, "import re\nre.compile(\"(?P<foo>((\\/(?P<bar>.+))?))\")");
+
+    final List<IntentionAction> quickFixes = myFixture.getAllQuickFixes();
+    assertEquals(1, quickFixes.size());
+
+    final IntentionAction removeRedundantEscapeFix = quickFixes.get(0);
+    assertEquals("Remove redundant escape", removeRedundantEscapeFix.getText());
+
+    myFixture.launchAction(removeRedundantEscapeFix);
+    myFixture.checkResult("import re\nre.compile(\"(?P<foo>((/(?P<bar>.+))?))\")");
+  }
+
+  // PY-20452
+  public void testRemoveRedundantEscapeInMultiPartRegExp() {
+    myFixture.configureByText(PythonFileType.INSTANCE, "import re\n" +
+                                                       "re.compile(\"(?P<foo>\"\n" +
+                                                       "           \"((\\/(?P<bar>.+))?))\")");
+
+    final List<IntentionAction> quickFixes = myFixture.getAllQuickFixes();
+    assertEquals(1, quickFixes.size());
+
+    final IntentionAction removeRedundantEscapeFix = quickFixes.get(0);
+    assertEquals("Remove redundant escape", removeRedundantEscapeFix.getText());
+
+    myFixture.launchAction(removeRedundantEscapeFix);
+    myFixture.checkResult("import re\n" +
+                          "re.compile(\"(?P<foo>\"\n" +
+                          "           \"((/(?P<bar>.+))?))\")");
   }
 
   @Override

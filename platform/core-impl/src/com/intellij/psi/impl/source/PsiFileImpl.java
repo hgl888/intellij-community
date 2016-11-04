@@ -74,6 +74,7 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   private boolean myInvalidated;
   private volatile boolean myAstLoaded;
   private volatile boolean myUseStrongRefs;
+  private volatile boolean mySwitchingToStrongRefs;
   private AstPathPsiMap myRefToPsi;
   private final ThreadLocal<FileElement> myFileElementBeingLoaded = new ThreadLocal<FileElement>();
   protected final PsiManagerEx myManager;
@@ -276,7 +277,7 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
       StubBasedPsiElementBase psi = pair.first;
       AstPath path = pair.second;
       path.getNode().setPsi(psi);
-      myRefToPsi.cachePsi(path, psi);
+      associateAstPathWithPsi(path, psi);
       psi.setStubIndex(i + 1);
     }
   }
@@ -350,28 +351,11 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   void reportStubAstMismatch(String message, StubTree stubTree, Document cachedDocument) {
     rebuildStub();
     clearStub(STUB_PSI_MISMATCH);
-    scheduleDropCachesWithInvalidStubPsi();
 
     throw new AssertionError(message
                              + StubTreeLoader.getInstance().getStubAstMismatchDiagnostics(getViewProvider().getVirtualFile(), this,
                                                                                           stubTree, cachedDocument)
                              + "\n------------\n");
-  }
-
-  private void scheduleDropCachesWithInvalidStubPsi() {
-    // invokeLater even if already on EDT, because
-    // we might be inside an index query and write actions might result in deadlocks there (https://youtrack.jetbrains.com/issue/IDEA-123118)
-    ApplicationManager.getApplication().invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        ApplicationManager.getApplication().runWriteAction(new Runnable() {
-          @Override
-          public void run() {
-            ((PsiModificationTrackerImpl)getManager().getModificationTracker()).incCounter();
-          }
-        });
-      }
-    });
   }
 
   @NotNull
@@ -672,11 +656,11 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   public void onContentReload() {
     ApplicationManager.getApplication().assertWriteAccessAllowed();
 
-    myRefToPsi.invalidatePsi();
-
-    FileElement treeElement = derefTreeElement();
     DebugUtil.startPsiModification("onContentReload");
     try {
+      myRefToPsi.invalidatePsi();
+
+      FileElement treeElement = derefTreeElement();
       if (treeElement != null) {
         setTreeElementPointer(null);
         treeElement.detachFromFile();
@@ -1114,6 +1098,7 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
       public void run() {
         if (!myManager.isDisposed()) {
           myManager.dropResolveCaches();
+          ((PsiModificationTrackerImpl)myManager.getModificationTracker()).incCounter();
         }
 
         final VirtualFile vFile = getVirtualFile();
@@ -1147,6 +1132,8 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
 
   public final void beforeAstChange() {
     if (!useStrongRefs()) {
+      LOG.assertTrue(!mySwitchingToStrongRefs);
+      mySwitchingToStrongRefs = true;
       myRefToPsi.switchToStrongRefs();
 
       FileElement element = getTreeElement();
@@ -1157,6 +1144,7 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
       }
 
       myUseStrongRefs = true;
+      mySwitchingToStrongRefs = false;
     }
   }
 
@@ -1171,8 +1159,14 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
 
     synchronized (PsiLock.LOCK) {
       psi = myRefToPsi.getCachedPsi(path);
-      return psi != null ? psi : myRefToPsi.cachePsi(path, creator.create());
+      return psi != null ? psi : associateAstPathWithPsi(path, creator.create());
     }
+  }
+
+  @NotNull
+  private StubBasedPsiElementBase<?> associateAstPathWithPsi(@NotNull AstPath path, @NotNull StubBasedPsiElementBase<?> psi) {
+    LOG.assertTrue(!mySwitchingToStrongRefs);
+    return myRefToPsi.cachePsi(path, psi);
   }
 
   final AstPathPsiMap getRefToPsi() {

@@ -25,6 +25,7 @@ import com.intellij.diagnostic.ThreadDumper;
 import com.intellij.execution.CommandLineUtil;
 import com.intellij.execution.process.ProcessIOExecutorService;
 import com.intellij.ide.*;
+import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.idea.IdeaApplication;
 import com.intellij.idea.Main;
 import com.intellij.idea.StartupUtil;
@@ -42,10 +43,8 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.openapi.progress.EmptyProgressIndicator;
-import com.intellij.openapi.progress.ProcessCanceledException;
-import com.intellij.openapi.progress.ProgressIndicator;
-import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.*;
+import com.intellij.openapi.progress.impl.CoreProgressManager;
 import com.intellij.openapi.progress.util.ProgressWindow;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
@@ -107,6 +106,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   private final String myName;
 
   private final Stack<Class> myWriteActionsStack = new Stack<>(); // accessed from EDT only, no need to sync
+  private int myWriteStackBase = 0;
 
   private int myInEditorPaintCounter; // EDT only
   private final long myStartTime;
@@ -296,6 +296,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   @NotNull
   @Override
   public Future<?> executeOnPooledThread(@NotNull final Runnable action) {
+    ReadMostlyRWLock.SuspensionId suspensionId = myLock.currentReadPrivilege();
     return ourThreadExecutorsService.submit(new Runnable() {
       @Override
       public String toString() {
@@ -304,7 +305,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
 
       @Override
       public void run() {
-        try {
+        try (AccessToken ignored = myLock.applyReadPrivilege(suspensionId)) {
           action.run();
         }
         catch (ProcessCanceledException e) {
@@ -323,10 +324,11 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   @NotNull
   @Override
   public <T> Future<T> executeOnPooledThread(@NotNull final Callable<T> action) {
+    ReadMostlyRWLock.SuspensionId suspensionId = myLock.currentReadPrivilege();
     return ourThreadExecutorsService.submit(new Callable<T>() {
       @Override
       public T call() {
-        try {
+        try (AccessToken ignored = myLock.applyReadPrivilege(suspensionId)) {
           return action.call();
         }
         catch (ProcessCanceledException e) {
@@ -393,7 +395,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
       ProgressIndicator indicator = mySplash == null ? null : new EmptyProgressIndicator() {
         @Override
         public void setFraction(double fraction) {
-          mySplash.showProgress("", (float)(0.65 + getPercentageOfComponentsLoaded() * 0.35));
+          mySplash.showProgress("", (float)fraction);
         }
       };
       init(indicator, () -> {
@@ -454,6 +456,12 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
     // could be called before full initialization
     ProgressManager progressManager = (ProgressManager)getPicoContainer().getComponentInstance(ProgressManager.class.getName());
     return progressManager == null ? null : progressManager.getProgressIndicator();
+  }
+
+  @Override
+  protected void setProgressDuringInit(@NotNull ProgressIndicator indicator) {
+    float start = PluginManagerCore.PLUGINS_PROGRESS_PART + PluginManagerCore.LOADERS_PROGRESS_PART;
+    indicator.setFraction(start + (getPercentageOfComponentsLoaded() * (1 - start)));
   }
 
   private static void createLocatorFile() {
@@ -676,11 +684,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   @Override
   @NotNull
   public ModalityState getDefaultModalityState() {
-    if (isDispatchThread()) {
-      return getCurrentModalityState();
-    }
-    ProgressIndicator progress = ProgressManager.getInstance().getProgressIndicator();
-    return progress == null ? getNoneModalityState() : progress.getModalityState();
+    return isDispatchThread() ? getCurrentModalityState() : CoreProgressManager.getCurrentThreadProgressModality();
   }
 
   @Override
@@ -751,7 +755,6 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   private void doExit(boolean force, boolean exitConfirmed, boolean restart, String[] beforeRestart) {
     try {
       if (!force && !confirmExitIfNeeded(exitConfirmed)) {
-        saveAll();
         return;
       }
 
@@ -759,24 +762,30 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
 
       myDisposeInProgress = true;
 
-      saveSettings();
-
       if (!force && !canExit()) {
         return;
       }
 
+      saveSettings();
+
+
       boolean success = disposeSelf(!force);
-      if (!success || isUnitTestMode()) {
-        return;
+    if (!success || isUnitTestMode() || Boolean.getBoolean("idea.test.guimode")) {
+      if (Boolean.getBoolean("idea.test.guimode")) {
+        IdeaApplication.getInstance().shutdown();
       }
+      return;
+    }
 
       int exitCode = 0;
       if (restart && Restarter.isSupported()) {
         try {
-          exitCode = Restarter.scheduleRestart(beforeRestart);
+          Restarter.scheduleRestart(beforeRestart);
         }
-        catch (IOException e) {
-          LOG.error("Cannot restart", e);
+        catch (Throwable t) {
+          LOG.error("Restart failed", t);
+          Main.showMessage("Restart failed", t);
+          exitCode = Main.RESTART_FAILED;
         }
       }
       System.exit(exitCode);
@@ -788,7 +797,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   }
 
   private static boolean confirmExitIfNeeded(boolean exitConfirmed) {
-    final boolean hasUnsafeBgTasks = ProgressManager.getInstance().hasUnsafeProgressIndicator();
+    boolean hasUnsafeBgTasks = ProgressManager.getInstance().hasUnsafeProgressIndicator();
     if (exitConfirmed && !hasUnsafeBgTasks) {
       return true;
     }
@@ -822,15 +831,17 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
     };
 
     if (hasUnsafeBgTasks || option.isToBeShown()) {
-      String message = ApplicationBundle
-        .message(hasUnsafeBgTasks ? "exit.confirm.prompt.tasks" : "exit.confirm.prompt",
-                 ApplicationNamesInfo.getInstance().getFullProductName());
-
-      if (MessageDialogBuilder.yesNo(ApplicationBundle.message("exit.confirm.title"), message).yesText(ApplicationBundle.message("command.exit")).noText(CommonBundle.message("button.cancel"))
-            .doNotAsk(option).show() != Messages.YES) {
+      String name = ApplicationNamesInfo.getInstance().getFullProductName();
+      String message = ApplicationBundle.message(hasUnsafeBgTasks ? "exit.confirm.prompt.tasks" : "exit.confirm.prompt", name);
+      int result = MessageDialogBuilder.yesNo(ApplicationBundle.message("exit.confirm.title"), message)
+        .yesText(ApplicationBundle.message("command.exit"))
+        .noText(CommonBundle.message("button.cancel"))
+        .doNotAsk(option).show();
+      if (result != Messages.YES) {
         return false;
       }
     }
+
     return true;
   }
 
@@ -943,7 +954,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
 
   @Override
   public boolean hasWriteAction(@NotNull Class<?> actionClass) {
-    assertIsDispatchThread();
+    assertReadAccessAllowed();
 
     for (int i = myWriteActionsStack.size() - 1; i >= 0; i--) {
       Class action = myWriteActionsStack.get(i);
@@ -1125,8 +1136,10 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
       if (gatherStatistics && myWriteActionsStack.isEmpty() && !myWriteActionPending) {
         ActionPauses.WRITE.finished("write action ("+clazz+")");
       }
-      if (myWriteActionsStack.isEmpty()) {
+      if (myWriteActionsStack.size() == myWriteStackBase) {
         myLock.writeUnlock();
+      }
+      if (myWriteActionsStack.isEmpty()) {
         fireAfterWriteActionFinished(clazz);
       }
     }
@@ -1227,6 +1240,37 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   @Override
   public boolean isWriteActionInProgress() {
     return myLock.isWriteLocked();
+  }
+
+  public void executeSuspendingWriteAction(@Nullable Project project, @NotNull String title, @NotNull Runnable runnable) {
+    assertIsDispatchThread();
+    if (!myLock.isWriteLocked()) {
+      runModalProgress(project, title, runnable);
+      return;
+    }
+
+    TransactionGuard.getInstance().submitTransactionAndWait(() -> {
+      int prevBase = myWriteStackBase;
+      myWriteStackBase = myWriteActionsStack.size();
+      try (AccessToken ignored = myLock.writeSuspend()) {
+        runModalProgress(project, title, () -> {
+          try (AccessToken ignored1 = myLock.grantReadPrivilege()) {
+            runnable.run();
+          }
+        });
+      } finally {
+        myWriteStackBase = prevBase;
+      }
+    });
+  }
+
+  private static void runModalProgress(@Nullable Project project, @NotNull String title, @NotNull Runnable runnable) {
+    ProgressManager.getInstance().run(new Task.Modal(project, title, false) {
+      @Override
+      public void run(@NotNull ProgressIndicator indicator) {
+        runnable.run();
+      }
+    });
   }
 
   public void editorPaintStart() {

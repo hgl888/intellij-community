@@ -20,6 +20,7 @@ import com.intellij.openapi.diagnostic.Attachment;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.ThrowableNotNullFunction;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.VcsException;
@@ -105,7 +106,7 @@ public class GitLogProvider implements VcsLogProvider {
 
     boolean refresh = requirements instanceof VcsLogProviderRequirementsEx && ((VcsLogProviderRequirementsEx)requirements).isRefresh();
 
-    DetailedLogData data = GitHistoryUtils.loadMetadata(myProject, root, true, params);
+    DetailedLogData data = GitHistoryUtils.loadMetadata(myProject, root, params);
 
     Set<VcsRef> safeRefs = data.getRefs();
     Set<VcsRef> allRefs = new OpenTHashSet<>(safeRefs, DONT_CONSIDER_SHA);
@@ -291,7 +292,7 @@ public class GitLogProvider implements VcsLogProvider {
     params.add("--max-count=" + commitCount);
     params.addAll(unmatchedTags);
     sw.report();
-    return GitHistoryUtils.loadMetadata(myProject, root, true, ArrayUtil.toStringArray(params));
+    return GitHistoryUtils.loadMetadata(myProject, root, ArrayUtil.toStringArray(params));
   }
 
   @Override
@@ -310,6 +311,15 @@ public class GitLogProvider implements VcsLogProvider {
     GitHistoryUtils.readCommits(myProject, root, parameters, new CollectConsumer<>(userRegistry), new CollectConsumer<>(refs),
                                 commit -> commitConsumer.consume(parentFixer.fixCommit(commit)));
     return new LogDataImpl(refs, userRegistry);
+  }
+
+  @Override
+  public void readAllFullDetails(@NotNull VirtualFile root, @NotNull Consumer<VcsFullCommitDetails> commitConsumer) throws VcsException {
+    if (!isRepositoryReady(root)) {
+      return;
+    }
+
+    GitHistoryUtils.loadAllDetails(myProject, root, commitConsumer);
   }
 
   @NotNull
@@ -509,11 +519,15 @@ public class GitLogProvider implements VcsLogProvider {
     return currentBranchName;
   }
 
+  @SuppressWarnings("unchecked")
   @Nullable
   @Override
   public <T> T getPropertyValue(VcsLogProperties.VcsLogProperty<T> property) {
     if (property == VcsLogProperties.LIGHTWEIGHT_BRANCHES) {
       return (T)Boolean.TRUE;
+    }
+    else if (property == VcsLogProperties.SUPPORTS_INDEXING) {
+      return (T)Boolean.valueOf(Registry.is("vcs.log.index.git"));
     }
     return null;
   }

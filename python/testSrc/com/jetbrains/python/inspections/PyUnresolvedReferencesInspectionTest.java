@@ -691,7 +691,7 @@ public class PyUnresolvedReferencesInspectionTest extends PyInspectionTestCase {
   // PY-18521
   public void testFunctionTypeCommentUsesImportsFromTyping() {
     myFixture.copyDirectoryToProject("typing", "");
-    doTest();
+    runWithLanguageLevel(LanguageLevel.PYTHON30, this::doTest);
   }
   
   // PY-19084
@@ -727,6 +727,11 @@ public class PyUnresolvedReferencesInspectionTest extends PyInspectionTestCase {
   // PY-13734
   public void testDunderClass() {
     doTest();
+  }
+
+  // PY-20071
+  public void testNonexistentLoggerMethod() {
+    doMultiFileTest();
   }
 
   @NotNull

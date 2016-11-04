@@ -21,6 +21,7 @@ import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
+import com.intellij.psi.codeStyle.lineIndent.LineIndentProvider;
 import com.intellij.psi.impl.source.codeStyle.SemanticEditorPosition;
 import com.intellij.psi.impl.source.codeStyle.SemanticEditorPosition.SyntaxElement;
 import com.intellij.psi.impl.source.codeStyle.lineIndent.IndentCalculator.BaseLineOffsetCalculator;
@@ -36,7 +37,7 @@ import static com.intellij.psi.impl.source.codeStyle.lineIndent.JavaLikeLangLine
  * A base class Java-like language line indent provider. If JavaLikeLangLineIndentProvider is unable to calculate
  * the indentation, it forwards the request to FormatterBasedLineIndentProvider.
  */
-public abstract class JavaLikeLangLineIndentProvider extends FormatterBasedLineIndentProvider {
+public abstract class JavaLikeLangLineIndentProvider implements LineIndentProvider{
   
   public enum JavaLikeElement implements SyntaxElement {
     Whitespace,
@@ -63,17 +64,17 @@ public abstract class JavaLikeLangLineIndentProvider extends FormatterBasedLineI
   
   @Nullable
   @Override
-  public String getLineIndent(@NotNull Project project, @NotNull Editor editor, Language language, int offset) {
+  public String getLineIndent(@NotNull Project project, @NotNull Editor editor, @Nullable Language language, int offset) {
     if (offset > 0) {
       IndentCalculator indentCalculator = getIndent(project, editor, language, offset - 1);
       if (indentCalculator != null) {
-        return indentCalculator.getIndentString(getPosition(editor, offset - 1));
+        return indentCalculator.getIndentString(language, getPosition(editor, offset - 1));
       }
     }
     else {
       return "";
     }
-    return super.getLineIndent(project, editor, language, offset);
+    return null;
   }
   
   @Nullable
@@ -194,17 +195,19 @@ public abstract class JavaLikeLangLineIndentProvider extends FormatterBasedLineI
       else if (position.isAt(RightParenthesis)) {
         position.beforeParentheses(LeftParenthesis, RightParenthesis);
       }
+      else if (position.isAt(BlockClosingBrace)) {
+        position.beforeParentheses(BlockOpeningBrace, BlockClosingBrace);
+      }
       else if (position.isAtAnyOf(Semicolon,
                                   BlockOpeningBrace, 
-                                  BlockClosingBrace,
                                   BlockComment, 
                                   DocBlockEnd, 
-                                  LineComment, 
                                   LeftParenthesis,
                                   LanguageStartDelimiter) ||
                (position.getLanguage() != Language.ANY) && !position.isAtLanguage(currLanguage)) {
         SemanticEditorPosition statementStart = getPosition(position.getEditor(), position.getStartOffset());
-        if (!statementStart.after().afterOptional(Whitespace).isAtEnd()) {
+        statementStart.after().afterOptionalMix(Whitespace, LineComment);
+        if (!statementStart.isAtEnd()) {
           return statementStart.getStartOffset();
         }
       }

@@ -150,6 +150,10 @@
                      enabledByDefault="true"
                      level="WARNING"
                      implementationClass="org.jetbrains.idea.devkit.inspections.QuickFixGetFamilyNameViolationInspection"/>
+    <localInspection language="JAVA" shortName="PsiElementConcatenation"
+                     displayName="Using PsiElement string representation to generate new expression is incorrect"
+                     groupKey="inspections.group.name" enabledByDefault="true" level="WARNING"
+                     implementationClass="org.jetbrains.idea.devkit.inspections.PsiElementConcatenationInspection"/>
 
 
     <moduleConfigurationEditorProvider implementation="org.jetbrains.idea.devkit.module.PluginModuleEditorsProvider"/>
@@ -184,6 +188,9 @@
 
     <moduleService serviceImplementation="org.jetbrains.idea.devkit.build.PluginBuildConfiguration"/>
     <generatedSourcesFilter implementation="org.jetbrains.idea.devkit.internal.IconsGeneratedSourcesFilter"/>
+
+    <!-- must be before SubstringConsoleFolding to be able to fold the entire stacktrace -->
+    <console.folding order="first" implementation="com.intellij.testFramework.FailedTestDebugLogConsoleFolding"/>
   </extensions>
 
   <project-components>

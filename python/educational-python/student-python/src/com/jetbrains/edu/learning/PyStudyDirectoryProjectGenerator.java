@@ -20,7 +20,6 @@ import com.intellij.openapi.projectRoots.SdkAdditionalData;
 import com.intellij.openapi.projectRoots.impl.ProjectJdkImpl;
 import com.intellij.openapi.roots.ui.configuration.projectRoot.ProjectSdksModel;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.platform.DirectoryProjectGenerator;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiManager;
 import com.intellij.util.BooleanFunction;
@@ -34,6 +33,7 @@ import com.jetbrains.python.newProject.PyNewProjectSettings;
 import com.jetbrains.python.newProject.PythonProjectGenerator;
 import com.jetbrains.python.packaging.PyPackageManager;
 import com.jetbrains.python.psi.LanguageLevel;
+import com.jetbrains.python.remote.PyProjectSynchronizer;
 import com.jetbrains.python.sdk.AbstractCreateVirtualEnvDialog;
 import com.jetbrains.python.sdk.PyDetectedSdk;
 import com.jetbrains.python.sdk.PythonSdkAdditionalData;
@@ -51,7 +51,7 @@ import java.util.Collection;
 import java.util.List;
 
 
-public class PyStudyDirectoryProjectGenerator extends PythonProjectGenerator implements DirectoryProjectGenerator {
+public class PyStudyDirectoryProjectGenerator extends PythonProjectGenerator<PyNewProjectSettings>  {
   private static final Logger LOG = Logger.getInstance(PyStudyDirectoryProjectGenerator.class.getName());
   private final StudyProjectGenerator myGenerator;
   private static final String NO_PYTHON_INTERPRETER = "<html><u>Add</u> python interpreter.</html>";
@@ -117,8 +117,10 @@ public class PyStudyDirectoryProjectGenerator extends PythonProjectGenerator imp
 
 
   @Override
-  public void generateProject(@NotNull final Project project, @NotNull final VirtualFile baseDir,
-                              @Nullable Object settings, @NotNull Module module) {
+  public void configureProject(@NotNull final Project project, @NotNull final VirtualFile baseDir,
+                               @NotNull PyNewProjectSettings settings,
+                               @NotNull Module module,
+                               @Nullable PyProjectSynchronizer synchronizer) {
     myGenerator.generateProject(project, baseDir);
     final String testHelper = "test_helper.py";
     if (baseDir.findChild(testHelper) != null) return;
@@ -183,7 +185,7 @@ public class PyStudyDirectoryProjectGenerator extends PythonProjectGenerator imp
       if (course.isAdaptive() && !enrolledCoursesIds.contains(course.getId())) {
         ProgressManager.getInstance().runProcessWithProgressSynchronously(() -> {
           ProgressManager.getInstance().getProgressIndicator().setIndeterminate(true);
-          return StudyUtils.execCancelable(() -> EduStepicConnector.enrollToCourse(course.getId()));
+          return StudyUtils.execCancelable(() -> EduStepicConnector.enrollToCourse(course.getId(), myGenerator.myUser));
         }, "Creating Course", true, ProjectManager.getInstance().getDefaultProject());
 
       }

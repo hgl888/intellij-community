@@ -77,7 +77,11 @@ public abstract class RunManagerEx extends RunManager {
 
   public abstract RunnerAndConfigurationSettings findConfigurationByName(@Nullable final String name);
 
-  public abstract Icon getConfigurationIcon(@NotNull RunnerAndConfigurationSettings settings);
+  public Icon getConfigurationIcon(@NotNull RunnerAndConfigurationSettings settings) {
+    return getConfigurationIcon(settings, false);
+  }
+
+  public abstract Icon getConfigurationIcon(@NotNull RunnerAndConfigurationSettings settings, boolean withLiveIndicator);
 
   @NotNull
   public abstract Collection<RunnerAndConfigurationSettings> getSortedConfigurations();
@@ -90,7 +94,8 @@ public abstract class RunManagerEx extends RunManager {
   @NotNull
   public abstract Map<String, List<RunnerAndConfigurationSettings>> getStructure(@NotNull ConfigurationType type);
 
-  public static void disableTasks(Project project, RunConfiguration settings, Key<? extends BeforeRunTask>... keys) {
+  @SafeVarargs
+  public static void disableTasks(Project project, RunConfiguration settings, @NotNull Key<? extends BeforeRunTask>... keys) {
     for (Key<? extends BeforeRunTask> key : keys) {
       List<? extends BeforeRunTask> tasks = getInstanceEx(project).getBeforeRunTasks(settings, key);
       for (BeforeRunTask task : tasks) {
@@ -99,7 +104,8 @@ public abstract class RunManagerEx extends RunManager {
     }
   }
 
-  public static int getTasksCount(Project project, RunConfiguration settings, Key<? extends BeforeRunTask>... keys) {
+  @SafeVarargs
+  public static int getTasksCount(Project project, RunConfiguration settings, @NotNull Key<? extends BeforeRunTask>... keys) {
     return Arrays.stream(keys).mapToInt(key -> getInstanceEx(project).getBeforeRunTasks(settings, key).size()).sum();
   }
 }

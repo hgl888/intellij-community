@@ -11,7 +11,7 @@ from _pydev_bundle.pydev_override import overrides
 from _pydevd_bundle import pydevd_save_locals
 from _pydevd_bundle.pydevd_io import IOBuf
 from _pydevd_bundle.pydevd_tracing import get_exception_traceback_str
-from _pydevd_bundle.pydevd_vars import make_valid_xml_value
+from _pydevd_bundle.pydevd_xml import make_valid_xml_value
 
 CONSOLE_OUTPUT = "output"
 CONSOLE_ERROR = "error"
@@ -80,7 +80,7 @@ class DebugConsole(InteractiveConsole, BaseInterpreterInterface):
     """
 
     overrides(BaseInterpreterInterface.create_std_in)
-    def create_std_in(self):
+    def create_std_in(self, *args, **kwargs):
         try:
             if not self.__buffer_output:
                 return sys.stdin

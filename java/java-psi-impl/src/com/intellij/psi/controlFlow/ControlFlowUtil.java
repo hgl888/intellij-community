@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1282,6 +1282,102 @@ public class ControlFlowUtil {
     MyVisitor visitor = new MyVisitor();
     depthFirstSearch(flow, visitor);
     return visitor.getResult().booleanValue();
+  }
+
+  /**
+   * Returns true if the value the variable has at start is later referenced without going through stop instruction
+   *
+   * @param flow ControlFlow to analyze
+   * @param start the point at which variable value is created
+   * @param stop the stop-point
+   * @param variable the variable to examine
+   * @return true if the value the variable has at start is later referenced without going through stop instruction
+   */
+  public static boolean isValueUsedWithoutVisitingStop(final ControlFlow flow, final int start, final int stop, final PsiVariable variable) {
+    if(start == stop) return false;
+
+    class MyVisitor extends InstructionClientVisitor<Boolean> {
+      // true if value the variable has at given offset maybe referenced without going through stop instruction
+      final boolean[] maybeReferenced = new boolean[flow.getSize() + 1];
+
+      @Override
+      public void visitInstruction(Instruction instruction, int offset, int nextOffset) {
+        if (offset == stop) {
+          maybeReferenced[offset] = false;
+          return;
+        }
+        if(instruction instanceof WriteVariableInstruction && ((WriteVariableInstruction)instruction).variable == variable) {
+          maybeReferenced[offset] = false;
+          return;
+        }
+        if (maybeReferenced[offset]) return;
+        if (nextOffset > flow.getSize()) nextOffset = flow.getSize();
+
+        boolean nextState = maybeReferenced[nextOffset];
+        maybeReferenced[offset] =
+          nextState || (instruction instanceof ReadVariableInstruction && ((ReadVariableInstruction)instruction).variable == variable);
+      }
+
+      @Override
+      public Boolean getResult() {
+        return maybeReferenced[start];
+      }
+    }
+    MyVisitor visitor = new MyVisitor();
+    depthFirstSearch(flow, visitor, start, flow.getSize());
+    return visitor.getResult().booleanValue();
+  }
+
+  /**
+   * Checks if the control flow instruction at given offset accesses (reads or writes) given variable
+   *
+   * @param flow control flow
+   * @param offset offset inside given control flow
+   * @param variable a variable the access to which is to be checked
+   * @return true if the given instruction is actually a variable access
+   */
+  public static boolean isVariableAccess(ControlFlow flow, int offset, PsiVariable variable) {
+    Instruction instruction = flow.getInstructions().get(offset);
+    return instruction instanceof ReadVariableInstruction && ((ReadVariableInstruction)instruction).variable == variable ||
+           instruction instanceof WriteVariableInstruction && ((WriteVariableInstruction)instruction).variable == variable;
+  }
+
+  public static class ControlFlowEdge {
+    public final int myFrom;
+    public final int myTo;
+
+    public ControlFlowEdge(int from, int to) {
+      myFrom = from;
+      myTo = to;
+    }
+
+    @Override
+    public String toString() {
+      return myFrom+"->"+myTo;
+    }
+  }
+
+  /**
+   * Returns control flow edges which are potentially reachable from start instruction
+   *
+   * @param flow control flow to analyze
+   * @param start starting instruction offset
+   * @return a list of edges
+   */
+  public static List<ControlFlowEdge> getEdges(ControlFlow flow, int start) {
+    final List<ControlFlowEdge> list = new ArrayList<ControlFlowEdge>();
+    depthFirstSearch(flow, new InstructionClientVisitor<Void>() {
+      @Override
+      public void visitInstruction(Instruction instruction, int offset, int nextOffset) {
+        list.add(new ControlFlowEdge(offset, nextOffset));
+      }
+
+      @Override
+      public Void getResult() {
+        return null;
+      }
+    }, start, flow.getSize());
+    return list;
   }
 
   /**

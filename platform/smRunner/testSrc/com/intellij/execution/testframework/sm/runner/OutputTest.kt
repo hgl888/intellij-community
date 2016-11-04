@@ -22,7 +22,9 @@ import com.intellij.openapi.util.Disposer
 class OutputTest : BaseSMTRunnerTestCase() {
   fun testBeforeAfterOrder() {
     val suite = createTestProxy("parent")
+    suite.setTreeBuildBeforeStart()
     val child = createTestProxy("child", suite)
+    child.setTreeBuildBeforeStart()
 
     suite.addStdOutput("before test started\n", ProcessOutputTypes.STDOUT)
     child.setStarted()
@@ -40,9 +42,33 @@ class OutputTest : BaseSMTRunnerTestCase() {
     assertEquals("inside test\n", printer.stdOut)
   }
 
+  fun testBeforeAfterFailedOrder() {
+    val suite = createTestProxy("parent")
+    suite.setTreeBuildBeforeStart()
+    val child = createTestProxy("child", suite)
+    child.setTreeBuildBeforeStart()
+
+    suite.addStdOutput("before test started\n", ProcessOutputTypes.STDOUT)
+    child.setStarted()
+    child.addStdOutput("inside test\n", ProcessOutputTypes.STDOUT)
+    child.setTestFailed("fail", null, false)
+    suite.addStdOutput("after test finished\n", ProcessOutputTypes.STDOUT)
+
+    val printer = MockPrinter(true)
+    suite.printOn(printer)
+
+    assertEquals("before test started\ninside test\nafter test finished\n", printer.stdOut)
+    printer.resetIfNecessary()
+
+    child.printOn(printer)
+    assertEquals("inside test\n", printer.stdOut)
+  }
+
   fun testBeforeAfterOrderWhenFlushed() {
     val suite = createTestProxy("parent")
+    suite.setTreeBuildBeforeStart()
     val child = createTestProxy("child", suite)
+    child.setTreeBuildBeforeStart()
 
     try {
       suite.addStdOutput("before test started\n", ProcessOutputTypes.STDOUT)

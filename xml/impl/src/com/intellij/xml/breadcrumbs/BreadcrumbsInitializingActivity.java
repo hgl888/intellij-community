@@ -46,12 +46,12 @@ public class BreadcrumbsInitializingActivity implements StartupActivity, DumbAwa
       return;
     }
 
-    MessageBusConnection connection = project.getMessageBus().connect(project);
+    MessageBusConnection connection = project.getMessageBus().connect();
     connection.subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, new MyFileEditorManagerListener());
     connection.subscribe(FileTypeManager.TOPIC, new MyFileTypeListener(project));
 
     VirtualFileManager.getInstance().addVirtualFileListener(new MyVirtualFileListener(project), project);
-    UISettings.getInstance().addUISettingsListener(new MyUISettingsListener(project), project);
+    connection.subscribe(UISettingsListener.TOPIC, new MyUISettingsListener(project));
   }
 
   private static class MyFileEditorManagerListener extends FileEditorManagerAdapter {
@@ -103,7 +103,7 @@ public class BreadcrumbsInitializingActivity implements StartupActivity, DumbAwa
     }
 
     @Override
-    public void uiSettingsChanged(UISettings source) {
+    public void uiSettingsChanged(UISettings uiSettings) {
       if (!myProject.isDisposed()) {
         reinitBreadcrumbsInAllEditors(myProject);
       }
@@ -123,9 +123,12 @@ public class BreadcrumbsInitializingActivity implements StartupActivity, DumbAwa
       for (final FileEditor fileEditor : fileEditors) {
         if (fileEditor instanceof TextEditor) {
           Editor editor = ((TextEditor)fileEditor).getEditor();
-          if (BreadcrumbsXmlWrapper.getBreadcrumbsComponent(editor) != null) {
+          final BreadcrumbsXmlWrapper existingWrapper = BreadcrumbsXmlWrapper.getBreadcrumbsComponent(editor);
+          if (existingWrapper != null) {
+            existingWrapper.queueUpdate();
             continue;
           }
+
           final BreadcrumbsXmlWrapper wrapper = new BreadcrumbsXmlWrapper(editor);
           final JComponent c = wrapper.getComponent();
           fileEditorManager.addTopComponent(fileEditor, c);

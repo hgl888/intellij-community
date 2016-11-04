@@ -17,7 +17,7 @@ package com.intellij.codeInsight.daemon;
 
 import com.intellij.codeHighlighting.HighlightDisplayLevel;
 import com.intellij.codeInspection.InspectionProfile;
-import com.intellij.codeInspection.ModifiableModel;
+import com.intellij.codeInspection.ex.InspectionProfileImpl;
 import com.intellij.codeInspection.ex.InspectionToolWrapper;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.application.PathManager;
@@ -25,15 +25,13 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.profile.codeInspection.InspectionProfileManager;
-import com.intellij.profile.codeInspection.SeverityProvider;
-import org.jdom.Document;
 import org.jdom.Element;
 import org.jdom.JDOMException;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
@@ -49,21 +47,17 @@ public class InspectionProfileConvertor {
 
   private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.daemon.DaemonCodeAnalyzerSettingsConvertor");
 
-  @NonNls private static final String INSPECTIONS_TAG = "inspections";
   @NonNls private static final String NAME_ATT = "name";
-  @NonNls private static final String INSP_TOOL_TAG = "inspection_tool";
-  @NonNls private static final String CLASS_ATT = "class";
   @NonNls private static final String VERSION_ATT = "version";
-  @NonNls private static final String PROFILE_NAME_ATT = "profile_name";
   @NonNls private static final String OPTION_TAG = "option";
   @NonNls private static final String DISPLAY_LEVEL_MAP_OPTION = "DISPLAY_LEVEL_MAP";
   @NonNls protected static final String VALUE_ATT = "value";
   @NonNls private static final String DEFAULT_XML = "Default.xml";
   @NonNls private static final String XML_EXTENSION = ".xml";
   @NonNls public static final String LEVEL_ATT = "level";
-  private final SeverityProvider myManager;
+  private final InspectionProfileManager myManager;
 
-  public InspectionProfileConvertor(@NotNull SeverityProvider manager) {
+  public InspectionProfileConvertor(@NotNull InspectionProfileManager manager) {
     myManager = manager;
     renameOldDefaultsProfile();
   }
@@ -96,27 +90,10 @@ public class InspectionProfileConvertor {
 
   public void storeEditorHighlightingProfile(@NotNull Element element, @NotNull InspectionProfile editorProfile) {
     if (retrieveOldSettings(element)) {
-      ModifiableModel editorProfileModel = editorProfile.getModifiableModel();
+      InspectionProfileImpl editorProfileModel = (InspectionProfileImpl)editorProfile.getModifiableModel();
       fillErrorLevels(editorProfileModel);
       editorProfileModel.commit();
     }
-  }
-
-  public static Element convertToNewFormat(Element profileFile, InspectionProfile profile) {
-    Element rootElement = new Element(INSPECTIONS_TAG);
-    rootElement.setAttribute(NAME_ATT, profile.getName());
-    final InspectionToolWrapper[] tools = profile.getInspectionTools(null);
-    for (final Object o : profileFile.getChildren(INSP_TOOL_TAG)) {
-      Element toolElement = ((Element)o).clone();
-      String toolClassName = toolElement.getAttributeValue(CLASS_ATT);
-      final String shortName = convertToShortName(toolClassName, tools);
-      if (shortName == null) {
-        continue;
-      }
-      toolElement.setAttribute(CLASS_ATT, shortName);
-      rootElement.addContent(toolElement);
-    }
-    return rootElement;
   }
 
   private static void renameOldDefaultsProfile() {
@@ -127,15 +104,13 @@ public class InspectionProfileConvertor {
     }
 
     File[] files = profileDirectory.listFiles(pathname -> pathname.getPath().endsWith(File.separator + DEFAULT_XML));
-    if (files == null || files.length != 1 || !files[0].isFile()) {
+    if (files == null || files.length != 1 || !files[0].isFile() || files[0].length() == 0) {
       return;
     }
     try {
-      Document doc = JDOMUtil.loadDocument(files[0]);
-      Element root = doc.getRootElement();
+      Element root = JDOMUtil.load(files[0]);
       if (root.getAttributeValue(VERSION_ATT) == null){
-        root.setAttribute(PROFILE_NAME_ATT, OLD_DEFAUL_PROFILE);
-        JDOMUtil.writeDocument(doc, new File(profileDirectory, OLD_DEFAUL_PROFILE + XML_EXTENSION), "\n");
+        JDOMUtil.writeParent(root, new FileOutputStream(new File(profileDirectory, OLD_DEFAUL_PROFILE + XML_EXTENSION)), "\n");
         FileUtil.delete(files[0]);
       }
     }
@@ -147,7 +122,7 @@ public class InspectionProfileConvertor {
     }
   }
 
-  protected void fillErrorLevels(final ModifiableModel profile) {
+  protected void fillErrorLevels(final InspectionProfileImpl profile) {
     InspectionToolWrapper[] toolWrappers = profile.getInspectionTools(null);
     LOG.assertTrue(toolWrappers != null, "Profile was not correctly init");
     //fill error levels
@@ -169,16 +144,5 @@ public class InspectionProfileConvertor {
       }
       profile.setErrorLevel(key, level, null);
     }
-  }
-
-  @Nullable
-  private static String convertToShortName(String displayName, InspectionToolWrapper[] tools) {
-    if (displayName == null) return null;
-    for (InspectionToolWrapper tool : tools) {
-      if (displayName.equals(tool.getDisplayName())) {
-        return tool.getShortName();
-      }
-    }
-    return null;
   }
 }

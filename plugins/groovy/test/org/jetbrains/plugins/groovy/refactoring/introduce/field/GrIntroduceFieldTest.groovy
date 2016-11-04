@@ -642,6 +642,26 @@ println(<selection>a + b</selection>)
 ''', EnumSet.of(CUR_METHOD), ReplaceChoice.NO
   }
 
+  void 'test introduce field from this'() {
+    doTest '''\
+class A {
+    def bar 
+    def foo() {
+        th<caret>is.bar
+    }
+}
+''', '''\
+class A {
+    def bar
+    def f = this
+
+    def foo() {
+        f.bar
+    }
+}
+''', false, false, false, FIELD_DECLARATION
+  }
+
   private void doTest(final boolean isStatic,
                       final boolean removeLocal,
                       final boolean declareFinal,
@@ -668,14 +688,10 @@ println(<selection>a + b</selection>)
 
   private void performRefactoring(String selectedType, boolean isStatic, boolean removeLocal, boolean declareFinal, GrIntroduceFieldSettings.Init initIn, boolean replaceAll) {
     final PsiType type = selectedType == null ? null : JavaPsiFacade.getElementFactory(project).createTypeFromText(selectedType, myFixture.file)
-    def accessToken = WriteAction.start()
-    try {
+    WriteAction.run {
       final IntroduceFieldTestHandler handler = new IntroduceFieldTestHandler(isStatic, removeLocal, declareFinal, initIn, replaceAll, type)
       handler.invoke(project, myFixture.editor, myFixture.file, null)
       PostprocessReformattingAspect.getInstance(project).doPostponedFormatting()
-    }
-    finally {
-      accessToken.finish()
     }
   }
 

@@ -41,6 +41,7 @@ import com.intellij.util.graph.DFSTBuilder;
 import com.intellij.util.graph.Graph;
 import com.intellij.util.graph.GraphGenerator;
 import com.intellij.util.io.URLUtil;
+import com.intellij.util.lang.UrlClassLoader;
 import com.intellij.util.xmlb.JDOMXIncluder;
 import com.intellij.util.xmlb.XmlSerializationException;
 import gnu.trove.THashMap;
@@ -65,11 +66,14 @@ import java.util.zip.ZipFile;
 public class PluginManagerCore {
   private static final Logger LOG = Logger.getInstance(PluginManagerCore.class);
 
-  private static final String DISABLED_PLUGINS_FILENAME = "disabled_plugins.txt";
+  public static final String DISABLED_PLUGINS_FILENAME = "disabled_plugins.txt";
   public static final String CORE_PLUGIN_ID = "com.intellij";
   private static final String META_INF = "META-INF";
   public static final String PLUGIN_XML = "plugin.xml";
-  private static final float PLUGINS_PROGRESS_MAX_VALUE = 0.3f;
+
+  public static final float PLUGINS_PROGRESS_PART = 0.3f;
+  public static final float LOADERS_PROGRESS_PART = 0.35f;
+
   private static final TObjectIntHashMap<PluginId> ourId2Index = new TObjectIntHashMap<PluginId>();
   static final String MODULE_DEPENDENCY_PREFIX = "com.intellij.module";
   private static final Map<String, IdeaPluginDescriptorImpl> ourModulesToContainingPlugins = new THashMap<String, IdeaPluginDescriptorImpl>();
@@ -100,6 +104,8 @@ public class PluginManagerCore {
       return ourBuildNumber;
     }
   }
+
+  private static List<Runnable> myDisablePluginListeners;
 
   /**
    * do not call this method during bootstrap, should be called in a copy of PluginManager, loaded by IdeaClassLoader
@@ -140,6 +146,7 @@ public class PluginManagerCore {
           reader.close();
           if (!requiredPlugins.isEmpty()) {
             savePluginsList(disabledPlugins, false, new File(PathManager.getConfigPath(), DISABLED_PLUGINS_FILENAME));
+            fireEditDisablePlugins();
           }
         }
       }
@@ -204,6 +211,27 @@ public class PluginManagerCore {
     return app != null && app.isUnitTestMode();
   }
 
+  public static void addDisablePluginListener(@NotNull Runnable listener) {
+    if (myDisablePluginListeners == null) {
+      myDisablePluginListeners = new ArrayList<Runnable>();
+    }
+    myDisablePluginListeners.add(listener);
+  }
+
+  public static void removeDisablePluginListener(@NotNull Runnable listener) {
+    if (myDisablePluginListeners != null) {
+      myDisablePluginListeners.remove(listener);
+    }
+  }
+
+  private static void fireEditDisablePlugins() {
+    if (myDisablePluginListeners != null) {
+      for (Runnable listener : myDisablePluginListeners) {
+        listener.run();
+      }
+    }
+  }
+
   public static void savePluginsList(@NotNull Collection<String> ids, boolean append, @NotNull File plugins) throws IOException {
     if (!plugins.isFile()) {
       FileUtil.ensureCanCreateFile(plugins);
@@ -256,6 +284,7 @@ public class PluginManagerCore {
     File plugins = new File(PathManager.getConfigPath(), DISABLED_PLUGINS_FILENAME);
     savePluginsList(ids, append, plugins);
     ourDisabledPlugins = null;
+    fireEditDisablePlugins();
   }
 
   public static Logger getLogger() {
@@ -311,13 +340,29 @@ public class PluginManagerCore {
 
   @Nullable
   public static PluginId getPluginByClassName(@NotNull String className) {
+    if (className.startsWith("java.") || className.startsWith("javax.") || className.startsWith("kotlin.") || className.startsWith("groovy.")) {
+      return null;
+    }
+
     for (IdeaPluginDescriptor descriptor : getPlugins()) {
-      ClassLoader loader = descriptor.getPluginClassLoader();
-      if (loader instanceof PluginClassLoader && ((PluginClassLoader)loader).hasLoadedClass(className)) {
-        return descriptor.getPluginId();
+      if (hasLoadedClass(className, descriptor.getPluginClassLoader())) {
+        PluginId id = descriptor.getPluginId();
+        return CORE_PLUGIN_ID.equals(id.getIdString()) ? null : id;
       }
     }
     return null;
+  }
+
+  private static boolean hasLoadedClass(@NotNull String className, ClassLoader loader) {
+    if (loader instanceof UrlClassLoader) return ((UrlClassLoader)loader).hasLoadedClass(className);
+
+    // it can be an UrlClassLoader loaded by another class loader, so instanceof doesn't work
+    try {
+      return ((Boolean) loader.getClass().getMethod("hasLoadedClass", String.class).invoke(loader, className)).booleanValue();
+    }
+    catch (Exception e) {
+      return false;
+    }
   }
 
   public static void dumpPluginClassStatistics() {
@@ -763,7 +808,7 @@ public class PluginManagerCore {
         final IdeaPluginDescriptorImpl descriptor = loadDescriptor(file, PLUGIN_XML);
         if (descriptor == null) continue;
         if (progress != null) {
-          progress.showProgress(descriptor.getName(), PLUGINS_PROGRESS_MAX_VALUE * ((float)++i / pluginsCount));
+          progress.showProgress(descriptor.getName(), PLUGINS_PROGRESS_PART * ((float)++i / pluginsCount));
         }
         int oldIndex = result.indexOf(descriptor);
         if (oldIndex >= 0) {
@@ -904,7 +949,7 @@ public class PluginManagerCore {
         descriptor.setUseCoreClassLoader(true);
         result.add(descriptor);
         if (progress != null && !SPECIAL_IDEA_PLUGIN.equals(descriptor.getName())) {
-          progress.showProgress("Plugin loaded: " + descriptor.getName(), PLUGINS_PROGRESS_MAX_VALUE * (float)(++i) / urls.size());
+          progress.showProgress("Plugin loaded: " + descriptor.getName(), PLUGINS_PROGRESS_PART * (float)(++i) / urls.size());
         }
       }
     }
@@ -1204,7 +1249,7 @@ public class PluginManagerCore {
       }
 
       if (progress != null) {
-        progress.showProgress("", PLUGINS_PROGRESS_MAX_VALUE + (i++ / (float)result.size()) * 0.35f);
+        progress.showProgress("", PLUGINS_PROGRESS_PART + (i++ / (float)result.size()) * LOADERS_PROGRESS_PART);
       }
     }
 

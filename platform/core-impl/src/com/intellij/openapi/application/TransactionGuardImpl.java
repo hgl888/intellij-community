@@ -20,8 +20,6 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ex.ApplicationEx;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProcessCanceledException;
-import com.intellij.openapi.progress.ProgressIndicator;
-import com.intellij.openapi.progress.ProgressIndicatorProvider;
 import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.registry.Registry;
@@ -50,6 +48,7 @@ public class TransactionGuardImpl extends TransactionGuard {
   private final Map<ModalityState, Boolean> myWriteSafeModalities = ContainerUtil.createConcurrentWeakMap();
   private TransactionIdImpl myCurrentTransaction;
   private boolean myWritingAllowed;
+  private boolean myErrorReported;
   private static boolean ourTestingTransactions;
 
   public TransactionGuardImpl() {
@@ -159,7 +158,9 @@ public class TransactionGuardImpl extends TransactionGuard {
       return;
     }
 
-    assert !app.isReadAccessAllowed() : "submitTransactionAndWait should not be invoked from a read action";
+    if (app.isReadAccessAllowed()) {
+      throw new IllegalStateException("submitTransactionAndWait should not be invoked from a read action");
+    }
     final Semaphore semaphore = new Semaphore();
     semaphore.down();
     final Throwable[] exception = {null};
@@ -210,6 +211,7 @@ public class TransactionGuardImpl extends TransactionGuard {
    */
   @NotNull
   public AccessToken startActivity(boolean userActivity) {
+    myErrorReported = false;
     boolean allowWriting = userActivity && isWriteSafeModality(ModalityState.current());
     if (myWritingAllowed == allowWriting) {
       return AccessToken.EMPTY_ACCESS_TOKEN;
@@ -232,7 +234,7 @@ public class TransactionGuardImpl extends TransactionGuard {
 
   public void assertWriteActionAllowed() {
     ApplicationManager.getApplication().assertIsDispatchThread();
-    if (areAssertionsEnabled() && !myWritingAllowed) {
+    if (areAssertionsEnabled() && !myWritingAllowed && !myErrorReported) {
       String message = "Write access is allowed from write-safe contexts only. " +
                        "Please ensure you're using invokeLater/invokeAndWait with a correct modality state (not \"any\"). " +
                        "See TransactionGuard documentation for details." +
@@ -240,6 +242,7 @@ public class TransactionGuardImpl extends TransactionGuard {
                        "\n  known modalities=" + myWriteSafeModalities;
       // please assign exceptions here to Peter
       LOG.error(message);
+      myErrorReported = true;
     }
   }
 
@@ -257,13 +260,20 @@ public class TransactionGuardImpl extends TransactionGuard {
   @Override
   public void submitTransactionLater(@NotNull final Disposable parentDisposable, @NotNull final Runnable transaction) {
     final TransactionIdImpl id = getContextTransaction();
-    Runnable runnable = new Runnable() {
+    final ModalityState startModality = ModalityState.defaultModalityState();
+    invokeLater(new Runnable() {
       @Override
       public void run() {
-        submitTransaction(parentDisposable, id, transaction);
+        boolean allowWriting = ModalityState.current() == startModality;
+        AccessToken token = startActivity(allowWriting);
+        try {
+          submitTransaction(parentDisposable, id, transaction);
+        }
+        finally {
+          token.finish();
+        }
       }
-    };
-    invokeLater(runnable);
+    });
   }
 
   private static void invokeLater(Runnable runnable) {
@@ -273,8 +283,7 @@ public class TransactionGuardImpl extends TransactionGuard {
   @Override
   public TransactionIdImpl getContextTransaction() {
     if (!ApplicationManager.getApplication().isDispatchThread()) {
-      ProgressIndicator indicator = ProgressIndicatorProvider.getGlobalProgressIndicator();
-      return indicator != null ? myModality2Transaction.get(indicator.getModalityState()) : null;
+      return myModality2Transaction.get(ModalityState.defaultModalityState());
     }
 
     return myWritingAllowed ? myCurrentTransaction : null;

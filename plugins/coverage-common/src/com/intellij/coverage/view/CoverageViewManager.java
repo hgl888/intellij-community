@@ -58,9 +58,8 @@ public class CoverageViewManager implements PersistentStateComponent<CoverageVie
     myProject = project;
     myDataManager = dataManager;
 
-    ToolWindow toolWindow = toolWindowManager.registerToolWindow(TOOLWINDOW_ID, true, ToolWindowAnchor.RIGHT, myProject, true);
+    ToolWindow toolWindow = toolWindowManager.registerToolWindow(TOOLWINDOW_ID, true, ToolWindowAnchor.RIGHT, myProject, true, true);
     toolWindow.setIcon(AllIcons.Toolwindows.ToolWindowCoverage);
-    toolWindow.setSplitMode(true, null);
     myContentManager = toolWindow.getContentManager();
     new ContentManagerWatcher(toolWindow, myContentManager);
   }
@@ -91,8 +90,6 @@ public class CoverageViewManager implements PersistentStateComponent<CoverageVie
   }
 
   public void createToolWindow(String displayName, boolean defaultFileProvider) {
-    closeView(displayName);
-
     final CoverageView coverageView = new CoverageView(myProject, myDataManager, myStateBean);
     myViews.put(displayName, coverageView);
     Content content = myContentManager.getFactory().createContent(coverageView, displayName, true);

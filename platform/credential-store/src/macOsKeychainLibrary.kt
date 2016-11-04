@@ -16,6 +16,7 @@
 package com.intellij.credentialStore
 
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.util.ArrayUtilRt
 import com.sun.jna.*
 import com.sun.jna.ptr.IntByReference
 import com.sun.jna.ptr.PointerByReference
@@ -57,17 +58,32 @@ internal class KeyChainCredentialStore() : CredentialStore {
       return
     }
 
-    val password = credentials!!.password?.toByteArray(false)
-    val userName = (attributes.userName ?: credentials.userName)?.toByteArray()
+    val userName = (attributes.userName ?: credentials!!.userName)?.toByteArray()
+    val searchUserName = if (attributes.serviceName == SERVICE_NAME_PREFIX) userName else null
     val itemRef = PointerByReference()
     val library = LIBRARY
-    checkForError("find (for save)", library.SecKeychainFindGenericPassword(null, serviceName.size, serviceName, userName?.size ?: 0, userName, null, null, itemRef))
+    checkForError("find (for save)", library.SecKeychainFindGenericPassword(null, serviceName.size, serviceName, searchUserName?.size ?: 0, searchUserName, null, null, itemRef))
+
+    val password = if (attributes.isPasswordMemoryOnly || credentials!!.password == null) null else credentials.password!!.toByteArray(false)
     val pointer = itemRef.value
     if (pointer == null) {
       checkForError("save (new)", library.SecKeychainAddGenericPassword(null, serviceName.size, serviceName, userName?.size ?: 0, userName, password?.size ?: 0, password))
     }
     else {
-      checkForError("save (update)", library.SecKeychainItemModifyContent(pointer, null, password?.size ?: 0, password))
+      val attribute = SecKeychainAttribute()
+      attribute.tag = kSecAccountItemAttr
+      attribute.length = userName?.size ?: 0
+      if (userName != null) {
+        val userNamePointer = Memory(userName.size.toLong())
+        userNamePointer.write(0, userName, 0, userName.size)
+        attribute.data = userNamePointer
+      }
+
+      val attributeList = SecKeychainAttributeList()
+      attributeList.count = 1
+      attribute.write()
+      attributeList.attr = attribute.pointer
+      checkForError("save (update)", library.SecKeychainItemModifyContent(pointer, attributeList, password?.size ?: 0, password ?: ArrayUtilRt.EMPTY_BYTE_ARRAY))
       library.CFRelease(pointer)
     }
 
@@ -107,7 +123,7 @@ fun findGenericPassword(serviceName: ByteArray, accountName: String?): Credentia
 private interface MacOsKeychainLibrary : Library {
   fun SecKeychainAddGenericPassword(keychain: Pointer?, serviceNameLength: Int, serviceName: ByteArray, accountNameLength: Int, accountName: ByteArray?, passwordLength: Int, passwordData: ByteArray?, itemRef: Pointer? = null): Int
 
-  fun SecKeychainItemModifyContent(itemRef: Pointer, /*SecKeychainAttributeList**/ attrList: Pointer?, length: Int, data: ByteArray?): Int
+  fun SecKeychainItemModifyContent(itemRef: Pointer, /*SecKeychainAttributeList**/ attrList: Any?, length: Int, data: ByteArray?): Int
 
   fun SecKeychainFindGenericPassword(keychainOrArray: Pointer?,
                                      serviceNameLength: Int,
@@ -201,10 +217,13 @@ internal class SecKeychainAttributeList : Structure {
   constructor(p: Pointer) : super(p) {
   }
 
+  constructor() : super() {
+  }
+
   override fun getFieldOrder() = listOf("count", "attr")
 }
 
-internal class SecKeychainAttribute : Structure {
+internal class SecKeychainAttribute : Structure, Structure.ByReference {
   @JvmField
   var tag = 0
   @JvmField
@@ -213,6 +232,9 @@ internal class SecKeychainAttribute : Structure {
   var data: Pointer? = null
 
   internal constructor(p: Pointer) : super(p) {
+  }
+
+  internal constructor() : super() {
   }
 
   override fun getFieldOrder() = listOf("tag", "length", "data")

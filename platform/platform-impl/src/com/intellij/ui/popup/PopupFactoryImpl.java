@@ -741,6 +741,11 @@ public class PopupFactoryImpl extends JBPopupFactory {
     public ShortcutSet getShortcut() {
       return myAction.getShortcutSet();
     }
+
+    @Override
+    public String toString() {
+      return myText;
+    }
   }
 
   private static class ActionPopupStep implements ListPopupStepEx<ActionItem>, MnemonicNavigationFilter<ActionItem>, SpeedSearchFilter<ActionItem> {
@@ -979,7 +984,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
 
     public void buildGroup(@NotNull ActionGroup actionGroup) {
       calcMaxIconSize(actionGroup);
-      myEmptyIcon = myMaxIconHeight != -1 && myMaxIconWidth != -1 ? new EmptyIcon(myMaxIconWidth, myMaxIconHeight) : null;
+      myEmptyIcon = myMaxIconHeight != -1 && myMaxIconWidth != -1 ? EmptyIcon.create(myMaxIconWidth, myMaxIconHeight) : null;
 
       appendActionsFromGroup(actionGroup);
 

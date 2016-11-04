@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jetbrains.plugins.groovy.compiler
 
 import com.intellij.compiler.CompilerConfiguration
@@ -47,11 +46,12 @@ import groovy.transform.CompileStatic
 import org.jetbrains.annotations.NotNull
 import org.jetbrains.plugins.groovy.config.GroovyFacetUtil
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile
+
 /**
  * @author peter
  */
 @CompileStatic
- abstract class GroovyCompilerTest extends GroovyCompilerTestCase {
+abstract class GroovyCompilerTest extends GroovyCompilerTestCase {
   @Override protected void setUp() {
     super.setUp()
     Logger.getInstance("#org.jetbrains.plugins.groovy.compiler.GroovyCompilerTest").info(testStartMessage)
@@ -936,7 +936,7 @@ class AppTest {
       FileUtil.writeToFile(script, "import groovy.transform.*; withConfig(configuration) { ast(CompileStatic) }")
 
       GroovyCompilerConfiguration.getInstance(project).configScript = script.path
-      
+
       myFixture.addFileToProject("a.groovy", "class A { int s = 'foo' }")
       shouldFail { make() }
     }
@@ -964,7 +964,5 @@ class Bar {}'''
 
       GreclipseIdeaCompilerSettings.getSettings(project).greclipsePath = jarPath
     }
-
   }
-
 }

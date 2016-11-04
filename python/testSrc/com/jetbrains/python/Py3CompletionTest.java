@@ -165,6 +165,46 @@ public class Py3CompletionTest extends PyTestCase {
     runWithLanguageLevel(LanguageLevel.PYTHON30, this::doTest);
   }
 
+  // PY-20770
+  public void testAsyncGenerator() {
+    runWithLanguageLevel(
+      LanguageLevel.PYTHON36,
+      () -> {
+        final String asyncGenerator = "async def asyncgen():\n" +
+                                      "    yield 42\n";
+
+        assertContainsElements(doTestByText(asyncGenerator +
+                                            "asyncgen().__a<caret>\n"),
+                               PyNames.AITER, PyNames.ANEXT);
+
+        assertContainsElements(doTestByText(asyncGenerator +
+                                            "asyncgen().a<caret>\n"),
+                               "ag_await", "ag_frame", "ag_running", "ag_code", "aclose", "asend", "athrow");
+      }
+    );
+  }
+
+  // PY-11208
+  public void testMockPatchObject1() {
+    doMultiFileTest();
+  }
+
+  // PY-11208
+  public void testMockPatchObject2() {
+    doMultiFileTest();
+  }
+
+  // PY-11208
+  public void testMockPatchObject3() {
+    doMultiFileTest();
+  }
+
+  // PY-21060
+  public void testGenericTypeInheritor() {
+    myFixture.copyDirectoryToProject("../typing", "");
+    runWithLanguageLevel(LanguageLevel.PYTHON35, this::doTest);
+  }
+
   @Override
   protected String getTestDataPath() {
     return super.getTestDataPath() + "/completion";

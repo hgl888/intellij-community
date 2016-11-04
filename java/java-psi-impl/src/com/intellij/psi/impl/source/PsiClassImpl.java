@@ -561,7 +561,7 @@ public class PsiClassImpl extends JavaStubPsiElement<PsiClassStub<?>> implements
                                                     String baseClassName,
                                                     boolean isInitialClass,
                                                     final PsiElement defaultResolveContext) {
-    final StubElement stub = ((StubBasedPsiElementBase<?>)scope).getStub();
+    final StubElement stub = scope instanceof StubBasedPsiElementBase ? ((StubBasedPsiElementBase<?>)scope).getStub() : null;
     if (stub == null || stub instanceof PsiClassStub && ((PsiClassStub)stub).isAnonymousInQualifiedNew()) {
       return scope.getParent();
     }
@@ -587,7 +587,7 @@ public class PsiClassImpl extends JavaStubPsiElement<PsiClassStub<?>> implements
       return scope.getParent();
     }
 
-    if (psi instanceof PsiClass || psi instanceof PsiLambdaExpression) {
+    if (psi instanceof PsiClass || psi instanceof PsiFunctionalExpression) {
       return calcBasesResolveContext(psi, baseClassName, false, defaultResolveContext);
     }
     if (psi instanceof PsiMember) {

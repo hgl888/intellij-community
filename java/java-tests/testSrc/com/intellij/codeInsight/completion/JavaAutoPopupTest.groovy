@@ -316,6 +316,17 @@ class Foo {
     assert lookup
   }
 
+  void "test no autopopup at the end of line comment"() {
+    LiveTemplateCompletionContributor.setShowTemplatesInTests(true, getTestRootDisposable())
+    myFixture.configureByText "a.java", """
+class Foo {
+  // foo bar <caret>
+}
+"""
+    type 't'
+    assert !lookup
+  }
+
   void testPrefixLengthDependentSorting() {
     myFixture.addClass("package foo; public class PsiJavaCodeReferenceElement {}")
     myFixture.configureByText("a.java", """
@@ -657,11 +668,11 @@ public interface Test {
       }
     """)
     type('i')
-    def offset = myFixture.editor.caretModel.offset
+    def offset = getCaretOffset()
     assertContains "iterable", "if", "int"
 
     runInEdtAndWait { myFixture.performEditorAction(IdeActions.ACTION_EDITOR_MOVE_CARET_RIGHT) }
-    assert myFixture.editor.caretModel.offset == offset + 1
+    assert getCaretOffset() == offset + 1
     joinAutopopup()
     joinCompletion()
     assert !lookup.calculating
@@ -669,7 +680,7 @@ public interface Test {
     assertEquals 'iterable', lookup.currentItem.lookupString
 
     runInEdtAndWait { myFixture.performEditorAction(IdeActions.ACTION_EDITOR_MOVE_CARET_LEFT) }
-    assert myFixture.editor.caretModel.offset == offset
+    assert getCaretOffset() == offset
     joinAutopopup()
     joinCompletion()
     assert !lookup.calculating
@@ -686,6 +697,16 @@ public interface Test {
       runInEdtAndWait { myFixture.performEditorAction(IdeActions.ACTION_EDITOR_MOVE_CARET_RIGHT) }
     }
     assert !lookup
+  }
+
+  private int getCaretOffset() {
+    def fixture = myFixture
+    return ApplicationManager.getApplication().runReadAction (new Computable<Integer>() {
+      @Override
+      Integer compute() {
+        return fixture.editor.caretModel.offset
+      }
+    })
   }
 
   void testMulticaretLeftRightMovements() {

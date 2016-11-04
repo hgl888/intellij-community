@@ -26,6 +26,7 @@ import com.intellij.featureStatistics.FeatureUsageTracker;
 import com.intellij.ide.DataManager;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileEditor;
@@ -198,19 +199,24 @@ public class ShowImplementationsAction extends AnAction implements PopupAction {
   }
 
   @NotNull
-  static ImplementationSearcher createImplementationsSearcher() {
+  ImplementationSearcher createImplementationsSearcher() {
     if (ApplicationManager.getApplication().isUnitTestMode()) {
       return new ImplementationSearcher() {
         @Override
-        protected PsiElement[] filterElements(PsiElement element, PsiElement[] targetElements, int offset) {
+        protected PsiElement[] filterElements(PsiElement element, PsiElement[] targetElements) {
           return ShowImplementationsAction.filterElements(targetElements);
         }
       };
     }
     return new ImplementationSearcher.FirstImplementationsSearcher() {
       @Override
-      protected PsiElement[] filterElements(PsiElement element, PsiElement[] targetElements, final int offset) {
+      protected PsiElement[] filterElements(PsiElement element, PsiElement[] targetElements) {
         return ShowImplementationsAction.filterElements(targetElements);
+      }
+
+      @Override
+      protected boolean isSearchDeep() {
+        return ShowImplementationsAction.this.isSearchDeep();
       }
     };
   }
@@ -349,23 +355,25 @@ public class ShowImplementationsAction extends AnAction implements PopupAction {
                                                 @NotNull PsiElement element,
                                                 @NotNull ImplementationSearcher handler,
                                                 final boolean includeSelfAlways) {
-    int offset = editor == null ? 0 : editor.getCaretModel().getOffset();
-    final PsiElement[] handlerImplementations = handler.searchImplementations(element, editor, offset, includeSelfAlways, true);
+    final PsiElement[] handlerImplementations = handler.searchImplementations(element, editor, includeSelfAlways, true);
     if (handlerImplementations.length > 0) return handlerImplementations;
 
-    PsiFile psiFile = element.getContainingFile();
-    if (psiFile == null) {
-      // Magically, it's null for ant property declarations.
-      element = element.getNavigationElement();
-      psiFile = element.getContainingFile();
+    return ReadAction.compute(() -> {
+      PsiElement psiElement = element;
+      PsiFile psiFile = psiElement.getContainingFile();
       if (psiFile == null) {
-        return PsiElement.EMPTY_ARRAY;
+        // Magically, it's null for ant property declarations.
+        psiElement = psiElement.getNavigationElement();
+        psiFile = psiElement.getContainingFile();
+        if (psiFile == null) {
+          return PsiElement.EMPTY_ARRAY;
+        }
       }
-    }
-    if (psiFile.getVirtualFile() != null && (element.getTextRange() != null || element instanceof PsiFile)) {
-      return new PsiElement[]{element};
-    }
-    return PsiElement.EMPTY_ARRAY;
+      if (psiFile.getVirtualFile() != null && (psiElement.getTextRange() != null || psiElement instanceof PsiFile)) {
+        return new PsiElement[]{psiElement};
+      }
+      return PsiElement.EMPTY_ARRAY;
+    });
   }
 
   @NotNull
@@ -396,7 +404,11 @@ public class ShowImplementationsAction extends AnAction implements PopupAction {
     return PsiUtilCore.toPsiElementArray(unique);
   }
 
-  private static class ImplementationsUpdaterTask extends BackgroundUpdaterTask<ImplementationViewComponent> {
+  protected boolean isSearchDeep() {
+    return false;
+  }
+
+  private class ImplementationsUpdaterTask extends BackgroundUpdaterTask<ImplementationViewComponent> {
     private final String myCaption;
     private final Editor myEditor;
     @NotNull
@@ -439,6 +451,11 @@ public class ShowImplementationsAction extends AnAction implements PopupAction {
       final ImplementationSearcher.BackgroundableImplementationSearcher implementationSearcher =
         new ImplementationSearcher.BackgroundableImplementationSearcher() {
           @Override
+          protected boolean isSearchDeep() {
+            return ShowImplementationsAction.this.isSearchDeep();
+          }
+
+          @Override
           protected void processElement(PsiElement element) {
             if (!updateComponent(element, null)) {
               indicator.cancel();
@@ -447,7 +464,7 @@ public class ShowImplementationsAction extends AnAction implements PopupAction {
           }
 
           @Override
-          protected PsiElement[] filterElements(PsiElement element, PsiElement[] targetElements, int offset) {
+          protected PsiElement[] filterElements(PsiElement element, PsiElement[] targetElements) {
             return ShowImplementationsAction.filterElements(targetElements);
           }
         };

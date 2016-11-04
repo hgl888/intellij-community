@@ -27,7 +27,7 @@ import org.junit.ClassRule
 import org.junit.Rule
 import org.junit.Test
 
-internal class InspectionSchemeTest {
+class InspectionSchemeTest {
   companion object {
     @JvmField
     @ClassRule
@@ -41,20 +41,18 @@ internal class InspectionSchemeTest {
   @Test fun loadSchemes() {
     val schemeFile = fsRule.fs.getPath("inspection/Bar.xml")
     val schemeData = """
-    <inspections profile_name="Bar" version="1.0">
+    <inspections version="1.0">
       <option name="myName" value="Bar" />
       <inspection_tool class="Since15" enabled="true" level="ERROR" enabled_by_default="true" />
     "</inspections>""".trimIndent()
     schemeFile.write(schemeData)
     val schemeManagerFactory = SchemeManagerFactoryBase.TestSchemeManagerFactory(fsRule.fs.getPath(""))
-    val profileManager = ApplicationInspectionProfileManager(InspectionToolRegistrar.getInstance(),
-                                                                                            schemeManagerFactory,
-                                                                                            ApplicationManager.getApplication().messageBus)
+    val profileManager = ApplicationInspectionProfileManager(InspectionToolRegistrar.getInstance(), schemeManagerFactory, ApplicationManager.getApplication().messageBus)
     profileManager.forceInitProfiles(true)
     profileManager.initProfiles()
 
     assertThat(profileManager.profiles).hasSize(1)
-    val scheme = profileManager.profiles.first() as InspectionProfileImpl
+    val scheme = profileManager.profiles.first()
     assertThat(scheme.name).isEqualTo("Bar")
 
     runInInitMode { scheme.initInspectionTools(null) }
@@ -63,5 +61,11 @@ internal class InspectionSchemeTest {
 
     assertThat(schemeFile.readText()).isEqualTo(schemeData)
     profileManager.profiles
+
+    schemeManagerFactory.process {
+      it.reload()
+    }
+
+    assertThat(profileManager.profiles).hasSize(1)
   }
 }

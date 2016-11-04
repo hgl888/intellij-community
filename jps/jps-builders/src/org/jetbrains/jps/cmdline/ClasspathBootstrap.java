@@ -125,7 +125,7 @@ public class ClasspathBootstrap {
   private ClasspathBootstrap() {
   }
 
-  public static List<String> getBuildProcessApplicationClasspath(boolean isLauncherUsed) {
+  public static List<String> getBuildProcessApplicationClasspath() {
     final Set<String> cp = ContainerUtil.newHashSet();
 
     cp.add(getResourcePath(BuildMain.class));
@@ -144,12 +144,8 @@ public class ClasspathBootstrap {
     cp.addAll(getInstrumentationUtilRoots());
     cp.add(getResourcePath(IXMLBuilder.class));  // nano-xml
     cp.add(getJpsPluginSystemClassesPath().getAbsolutePath().replace('\\', '/'));
-    
+    cp.addAll(getJavac8RefScannerClasspath());
     //don't forget to update layoutCommunityJps() in layouts.gant accordingly
-
-    if (!isLauncherUsed) {
-      appendJavaCompilerClasspath(cp);
-    }
 
     try {
       final Class<?> cmdLineWrapper = Class.forName("com.intellij.rt.execution.CommandLineWrapper");
@@ -161,15 +157,17 @@ public class ClasspathBootstrap {
     return ContainerUtil.newArrayList(cp);
   }
 
-  public static void appendJavaCompilerClasspath(Collection<String> cp) {
+  public static void appendJavaCompilerClasspath(Collection<String> cp, boolean includeEcj) {
     final Class<StandardJavaFileManager> optimizedFileManagerClass = getOptimizedFileManagerClass();
     if (optimizedFileManagerClass != null) {
       cp.add(getResourcePath(optimizedFileManagerClass));  // optimizedFileManager
     }
 
-    File file = EclipseCompilerTool.findEcjJarFile();
-    if (file != null) {
-      cp.add(file.getAbsolutePath());
+    if (includeEcj) {
+      File file = EclipseCompilerTool.findEcjJarFile();
+      if (file != null) {
+        cp.add(file.getAbsolutePath());
+      }
     }
   }
 
@@ -310,5 +308,16 @@ public class ClasspathBootstrap {
       return new File(classesRoot.getParentFile(), "rt/jps-plugin-system.jar");
     }
   }
-  
+
+  private static List<String> getJavac8RefScannerClasspath() {
+    String instrumentationPath = getResourcePath(NotNullVerifyingInstrumenter.class);
+    File instrumentationUtil = new File(instrumentationPath);
+    if (instrumentationUtil.isDirectory()) {
+      //running from sources: load classes from .../out/production/javac-ref-scanner-8
+      return Collections.singletonList(new File(instrumentationUtil.getParentFile(), "javac-ref-scanner-8").getAbsolutePath());
+    }
+    else {
+      return Collections.singletonList(instrumentationPath);
+    }
+  }
 }

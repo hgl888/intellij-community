@@ -213,7 +213,11 @@ public abstract class DialogWrapper {
   }
 
   protected DialogWrapper(@Nullable Project project, boolean canBeParent, @NotNull IdeModalityType ideModalityType) {
-    myPeer = createPeer(project, canBeParent, ideModalityType);
+    this(project, null, canBeParent, ideModalityType);
+  }
+
+  protected DialogWrapper(@Nullable Project project, @Nullable Component parentComponent, boolean canBeParent, @NotNull IdeModalityType ideModalityType) {
+    myPeer = parentComponent == null ? createPeer(project, canBeParent, project == null ? IdeModalityType.IDE : ideModalityType) : createPeer(parentComponent, canBeParent);
     final Window window = myPeer.getWindow();
     if (window != null) {
       myResizeListener = new ComponentAdapter() {
@@ -435,7 +439,7 @@ public abstract class DialogWrapper {
   }
 
   protected static boolean isMoveHelpButtonLeft() {
-    return UIUtil.isUnderAquaBasedLookAndFeel() || (SystemInfo.isWindows && Registry.is("ide.intellij.laf.win10.ui"));
+    return UIUtil.isUnderAquaBasedLookAndFeel() || UIUtil.isUnderDarcula() || UIUtil.isUnderWin10LookAndFeel();
   }
 
   /**
@@ -543,7 +547,7 @@ public abstract class DialogWrapper {
     }
 
     if (hasHelpToMoveToLeftSide) {
-      if (!(SystemInfo.isWindows && UIUtil.isUnderIntelliJLaF() && Registry.is("ide.intellij.laf.win10.ui"))) {
+      if (!(SystemInfo.isWindows && (UIUtil.isUnderDarcula() || UIUtil.isUnderIntelliJLaF()) && Registry.is("ide.win.frame.decoration"))) {
         JButton helpButton = createHelpButton(insets);
         panel.add(helpButton, BorderLayout.WEST);
       }
@@ -581,7 +585,7 @@ public abstract class DialogWrapper {
   @NotNull
   protected JButton createHelpButton(Insets insets) {
     final JButton helpButton;
-    if ((SystemInfo.isWindows && UIUtil.isUnderIntelliJLaF() && Registry.is("ide.intellij.laf.win10.ui"))) {
+    if ((UIUtil.isUnderWin10LookAndFeel())) {
       helpButton = new JButton(getHelpAction()) {
         @Override
         public void paint(Graphics g) {
@@ -1480,7 +1484,11 @@ public abstract class DialogWrapper {
     return myPeer.isModal();
   }
 
-  protected void setOKActionEnabled(boolean isEnabled) {
+  public boolean isOKActionEnabled() {
+    return myOKAction.isEnabled();
+  }
+
+  public void setOKActionEnabled(boolean isEnabled) {
     myOKAction.setEnabled(isEnabled);
   }
 
@@ -1536,10 +1544,6 @@ public abstract class DialogWrapper {
 
   public boolean isOK() {
     return getExitCode() == OK_EXIT_CODE;
-  }
-
-  public boolean isOKActionEnabled() {
-    return myOKAction.isEnabled();
   }
 
   /**
@@ -1860,7 +1864,7 @@ public abstract class DialogWrapper {
         if (info.component != null && info.component.isVisible()) {
           IdeFocusManager.getInstance(null).requestFocus(info.component, true);
         }
-        DialogEarthquakeShaker.shake((JDialog)getPeer().getWindow());
+        DialogEarthquakeShaker.shake(getPeer().getWindow());
         startTrackingValidation();
         return;
       }

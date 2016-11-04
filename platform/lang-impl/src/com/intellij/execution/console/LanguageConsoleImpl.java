@@ -49,7 +49,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.TextRange;
-import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
@@ -150,6 +149,7 @@ public class LanguageConsoleImpl extends ConsoleViewImpl implements LanguageCons
     ApplicationManager.getApplication().invokeLater(() -> installEditorFactoryListener(), getProject().getDisposed());
   }
 
+  @NotNull
   @Override
   protected final EditorEx doCreateConsoleEditor() {
     return myHistoryViewer;
@@ -159,8 +159,9 @@ public class LanguageConsoleImpl extends ConsoleViewImpl implements LanguageCons
   protected final void disposeEditor() {
   }
 
+  @NotNull
   @Override
-  protected final JComponent createCenterComponent() {
+  protected JComponent createCenterComponent() {
     initComponents();
     return myPanel;
   }
@@ -197,18 +198,7 @@ public class LanguageConsoleImpl extends ConsoleViewImpl implements LanguageCons
 
   private void setHistoryScrollBarVisible(boolean visible) {
     JScrollBar prev = myHistoryViewer.getScrollPane().getHorizontalScrollBar();
-    if (Registry.is("ide.scroll.new.layout")) {
-      prev.setEnabled(visible);
-      return;
-    }
-    JScrollBar next;
-    if (visible) {
-      next = ((EmptyScrollBar)prev).original;
-    }
-    else {
-      next = new EmptyScrollBar(prev);
-    }
-    myHistoryViewer.getScrollPane().setHorizontalScrollBar(next);
+    prev.setEnabled(visible);
   }
 
   private void setupComponents() {

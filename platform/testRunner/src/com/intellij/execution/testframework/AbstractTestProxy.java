@@ -119,6 +119,10 @@ public abstract class AbstractTestProxy extends CompositePrintable {
     }
   }
 
+  /**
+   * to be deleted in 2017.1
+   */
+  @Deprecated
   public static void flushOutput(AbstractTestProxy testProxy) {
     testProxy.flush();
 
@@ -147,19 +151,6 @@ public abstract class AbstractTestProxy extends CompositePrintable {
   public List<DiffHyperlink> getDiffViewerProviders() {
     final DiffHyperlink provider = getDiffViewerProvider();
     return provider == null ? Collections.<DiffHyperlink>emptyList() : Collections.singletonList(provider);
-  }
-
-  protected void addAfterLastPassed(Printable printable) {
-    int idx = 0;
-    synchronized (myNestedPrintables) {
-      for (Printable proxy : myNestedPrintables) {
-        if (proxy instanceof AbstractTestProxy && !((AbstractTestProxy)proxy).isPassed()) {
-          break;
-        }
-        idx++;
-      }
-    }
-    insert(printable, idx);
   }
 
   @Nullable

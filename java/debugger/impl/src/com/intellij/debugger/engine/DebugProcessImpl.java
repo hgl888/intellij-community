@@ -56,7 +56,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.JavaSdkType;
 import com.intellij.openapi.projectRoots.ProjectJdkTable;
 import com.intellij.openapi.projectRoots.Sdk;
-import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Disposer;
@@ -86,6 +85,7 @@ import com.sun.jdi.connect.*;
 import com.sun.jdi.request.EventRequest;
 import com.sun.jdi.request.EventRequestManager;
 import com.sun.jdi.request.StepRequest;
+import one.util.streamex.StreamEx;
 import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -129,7 +129,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
   private final Map<Type, NodeRenderer> myNodeRenderersMap = new HashMap<>();
 
   private final SuspendManagerImpl mySuspendManager = new SuspendManagerImpl(this);
-  protected CompoundPositionManager myPositionManager = null;
+  protected CompoundPositionManager myPositionManager = CompoundPositionManager.EMPTY;
   private final DebuggerManagerThreadImpl myDebuggerManagerThread;
 
   private final Semaphore myWaitFor = new Semaphore();
@@ -168,12 +168,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
         myNodeRenderersMap.clear();
         myRenderers.clear();
         try {
-          final NodeRendererSettings rendererSettings = NodeRendererSettings.getInstance();
-          for (final NodeRenderer renderer : rendererSettings.getAllRenderers()) {
-            if (renderer.isEnabled()) {
-              myRenderers.add(renderer);
-            }
-          }
+          NodeRendererSettings.getInstance().getAllRenderers().stream().filter(NodeRenderer::isEnabled).forEachOrdered(myRenderers::add);
         }
         finally {
           DebuggerInvocationUtil.swingInvokeLater(myProject, () -> {
@@ -225,10 +220,17 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
       return getDefaultRenderer(type);
     }
 
-    return myNodeRenderersMap.computeIfAbsent(type, t ->
-      myRenderers.stream().
-        filter(r -> DebuggerUtilsImpl.suppressExceptions(() -> r.isApplicable(type), false)).
-        findFirst().orElseGet(() -> getDefaultRenderer(type)));
+    try {
+      return myNodeRenderersMap.computeIfAbsent(type, t ->
+        myRenderers.stream().
+          filter(r -> DebuggerUtilsImpl.suppressExceptions(() -> r.isApplicable(type), false, true, ClassNotPreparedException.class)).
+          findFirst().orElseGet(() -> getDefaultRenderer(type)));
+    }
+    catch (ClassNotPreparedException e) {
+      LOG.info(e);
+      // use default, but do not cache
+      return getDefaultRenderer(type);
+    }
   }
 
   @NotNull
@@ -393,23 +395,13 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
 
   @NotNull
   private static List<ClassFilter> getActiveFilters() {
-    List<ClassFilter> activeFilters = new ArrayList<>();
     DebuggerSettings settings = DebuggerSettings.getInstance();
+    StreamEx<ClassFilter> stream = StreamEx.of(Extensions.getExtensions(DebuggerClassFilterProvider.EP_NAME))
+      .flatCollection(DebuggerClassFilterProvider::getFilters);
     if (settings.TRACING_FILTERS_ENABLED) {
-      for (ClassFilter filter : settings.getSteppingFilters()) {
-        if (filter.isEnabled()) {
-          activeFilters.add(filter);
-        }
-      }
+      stream = stream.prepend(settings.getSteppingFilters());
     }
-    for (DebuggerClassFilterProvider provider : Extensions.getExtensions(DebuggerClassFilterProvider.EP_NAME)) {
-      for (ClassFilter filter : provider.getFilters()) {
-        if (filter.isEnabled()) {
-          activeFilters.add(filter);
-        }
-      }
-    }
-    return activeFilters;
+    return stream.filter(ClassFilter::isEnabled).toList();
   }
 
   void deleteStepRequests(@Nullable final ThreadReference stepThread) {
@@ -615,15 +607,15 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
       ));
     }
     if (getSession().getAlternativeJre() == null) {
-      Sdk projectSdk = ProjectRootManager.getInstance(myProject).getProjectSdk();
-      if ((projectSdk == null || projectSdk.getSdkType() instanceof JavaSdkType) && !versionMatch(projectSdk, version)) {
+      Sdk runjre = getSession().getRunJre();
+      if ((runjre == null || runjre.getSdkType() instanceof JavaSdkType) && !versionMatch(runjre, version)) {
         Arrays.stream(ProjectJdkTable.getInstance().getAllJdks())
           .filter(sdk -> versionMatch(sdk, version))
           .findFirst().ifPresent(sdk -> {
           XDebugSessionImpl.NOTIFICATION_GROUP.createNotification(
             DebuggerBundle.message("message.remote.jre.version.mismatch",
                                    version,
-                                   projectSdk != null ? projectSdk.getVersionString() : "unknown",
+                                   runjre != null ? runjre.getVersionString() : "unknown",
                                    sdk.getName())
             , MessageType.INFO).notify(myProject);
           getSession().setAlternativeJre(sdk);
@@ -777,7 +769,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
       finally {
         final VirtualMachineProxyImpl vm = myVirtualMachineProxy;
         myVirtualMachineProxy = null;
-        myPositionManager = null;
+        myPositionManager = CompoundPositionManager.EMPTY;
         myReturnValueWatcher = null;
         myNodeRenderersMap.clear();
         myRenderers.clear();
@@ -1087,19 +1079,12 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
 
             if (!Patches.IBM_JDK_DISABLE_COLLECTION_BUG) {
               // ensure args are not collected
-              for (Object arg : myArgs) {
-                if (arg instanceof ObjectReference) {
-                  DebuggerUtilsEx.disableCollection((ObjectReference)arg);
-                }
-              }
+              StreamEx.of(myArgs).select(ObjectReference.class).forEach(DebuggerUtilsEx::disableCollection);
             }
 
             // workaround for jdi hang in trace mode
             if (!StringUtil.isEmpty(ourTrace)) {
-              for (Object arg : myArgs) {
-                //noinspection ResultOfMethodCallIgnored
-                arg.toString();
-              }
+              myArgs.forEach(Object::toString);
             }
 
             result[0] = invokeMethod(invokePolicy, myMethod, myArgs);
@@ -1108,11 +1093,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
             //  assertThreadSuspended(thread, context);
             if (!Patches.IBM_JDK_DISABLE_COLLECTION_BUG) {
               // ensure args are not collected
-              for (Object arg : myArgs) {
-                if (arg instanceof ObjectReference) {
-                  DebuggerUtilsEx.enableCollection((ObjectReference)arg);
-                }
-              }
+              StreamEx.of(myArgs).select(ObjectReference.class).forEach(DebuggerUtilsEx::enableCollection);
             }
           }
         }
@@ -1218,11 +1199,6 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
     }.start((EvaluationContextImpl)evaluationContext, internalEvaluate);
   }
 
-  static {
-    //noinspection ConstantConditions
-    assert Patches.USE_REFLECTION_TO_ACCESS_JDK8;
-  }
-
   public Value invokeMethod(EvaluationContext evaluationContext,
                             InterfaceType interfaceType,
                             Method method,
@@ -1237,20 +1213,25 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
         if (LOG.isDebugEnabled()) {
           LOG.debug("Invoking " + interfaceType.name() + "." + method.name());
         }
-        //TODO: remove reflection after move to java 8 or 9, this API was introduced in 1.8.0_45
-        java.lang.reflect.Method invokeMethod =
-          ReflectionUtil.getMethod(InterfaceType.class, "invokeMethod", ThreadReference.class, Method.class, List.class, int.class);
-        if (invokeMethod == null) {
-          throw new IllegalStateException("Interface method invocation is not supported in JVM " +
-                                          SystemInfo.JAVA_VERSION +
-                                          ". Use JVM 1.8.0_45 or higher to run " +
-                                          ApplicationNamesInfo.getInstance().getFullProductName());
+        if (Patches.JDK_BUG_ID_8042123) {
+          //TODO: remove reflection after move to java 8 or 9, this API was introduced in 1.8.0_45
+          java.lang.reflect.Method invokeMethod =
+            ReflectionUtil.getMethod(InterfaceType.class, "invokeMethod", ThreadReference.class, Method.class, List.class, int.class);
+          if (invokeMethod == null) {
+            throw new IllegalStateException("Interface method invocation is not supported in JVM " +
+                                            SystemInfo.JAVA_VERSION +
+                                            ". Use JVM 1.8.0_45 or higher to run " +
+                                            ApplicationNamesInfo.getInstance().getFullProductName());
+          }
+          try {
+            return (Value)invokeMethod.invoke(interfaceType, thread, method, args, invokePolicy);
+          }
+          catch (Exception e) {
+            throw new RuntimeException(e);
+          }
         }
-        try {
-          return (Value)invokeMethod.invoke(interfaceType, thread, method, args, invokePolicy);
-        }
-        catch (Exception e) {
-          throw new RuntimeException(e);
+        else {
+          return interfaceType.invokeMethod(thread, method, args, invokePolicy);
         }
       }
     }.start((EvaluationContextImpl)evaluationContext, false);
@@ -1384,9 +1365,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
 
     StringBuilder buffer = StringBuilderSpinAllocator.alloc();
     try {
-      for (int i = 0; i < dims; i++) {
-        buffer.append('[');
-      }
+      StringUtil.repeatSymbol(buffer, '[', dims);
       String primitiveSignature = JVMNameUtil.getPrimitiveSignature(className);
       if(primitiveSignature != null) {
         buffer.append(primitiveSignature);
@@ -1453,6 +1432,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
     return mySuspendManager;
   }
 
+  @NotNull
   @Override
   public CompoundPositionManager getPositionManager() {
     return myPositionManager;

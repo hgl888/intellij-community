@@ -13,13 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.intellij.openapi.editor.colors.impl;
 
 import com.intellij.openapi.editor.colors.ColorKey;
 import com.intellij.openapi.editor.colors.EditorFontType;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.editor.markup.TextAttributes;
+import com.intellij.openapi.options.SchemeManager;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -36,14 +36,23 @@ public class DefaultColorsScheme extends AbstractColorsScheme implements ReadOnl
   @Override
   @Nullable
   public TextAttributes getAttributes(TextAttributesKey key) {
-    if (key == null) return null;
+    return key == null ? null : getAttributes(key, true);
+  }
+
+  @Nullable
+  public TextAttributes getAttributes(@NotNull TextAttributesKey key, boolean isUseDefault) {
     TextAttributes attrs = myAttributesMap.get(key);
     if (attrs == null) {
       if (key.getFallbackAttributeKey() != null) {
         attrs = getFallbackAttributes(key.getFallbackAttributeKey());
-        if (attrs != null && !attrs.isFallbackEnabled()) return attrs;
+        if (attrs != null && attrs != TextAttributes.USE_INHERITED_MARKER) {
+          return attrs;
+        }
       }
-      attrs = getKeyDefaults(key);
+
+      if (isUseDefault) {
+        attrs = getKeyDefaults(key);
+      }
     }
     return attrs;
   }
@@ -74,7 +83,7 @@ public class DefaultColorsScheme extends AbstractColorsScheme implements ReadOnl
   }
 
   @Override
-  public void setAttributes(TextAttributesKey key, TextAttributes attributes) {
+  public void setAttributes(@NotNull TextAttributesKey key, TextAttributes attributes) {
   }
 
   @Override
@@ -92,5 +101,23 @@ public class DefaultColorsScheme extends AbstractColorsScheme implements ReadOnl
     newScheme.setName(DEFAULT_SCHEME_NAME);
     newScheme.setDefaultMetaInfo(this);
     return newScheme;
+  }
+
+  /**
+   * Tells if there is an editable user copy of the scheme to be edited.
+   * 
+   * @return True if the editable copy shall exist, false if the scheme is non-editable.
+   */
+  public boolean hasEditableCopy() {
+    return true;
+  }
+  
+  public String getEditableCopyName() {
+    return SchemeManager.EDITABLE_COPY_PREFIX + myName;
+  }
+
+  @Override
+  public boolean isVisible() {
+    return false;
   }
 }

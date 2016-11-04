@@ -189,7 +189,7 @@ class UpdateInfoDialog extends AbstractUpdateDialog {
 
   private void downloadPatchAndRestart() {
     boolean updatePlugins =
-      !ContainerUtil.isEmpty(myUpdatedPlugins) && new PluginUpdateInfoDialog(getContentPanel(), myUpdatedPlugins).showAndGet();
+      !ContainerUtil.isEmpty(myUpdatedPlugins) && new PluginUpdateInfoDialog(myUpdatedPlugins).showAndGet();
 
     new Task.Modal(null, IdeBundle.message("update.notifications.title"), true) {
       @Override
@@ -221,7 +221,7 @@ class UpdateInfoDialog extends AbstractUpdateDialog {
 
         ApplicationEx app = ApplicationManagerEx.getApplicationEx();
         if (ApplicationManager.getApplication().isRestartCapable()) {
-          app.invokeLater(() -> ((ApplicationImpl)app).exit(false, true, true, command));
+          app.invokeLater(() -> ((ApplicationImpl)app).exit(true, true, true, command));
         }
         else {
           showPatchInstructions(command);

@@ -729,7 +729,7 @@ public class JavaDocInfoGenerator {
   private void generateModuleJavaDoc(StringBuilder buffer, PsiJavaModule module, boolean generatePrologueAndEpilogue) {
     if (generatePrologueAndEpilogue) generatePrologue(buffer);
 
-    buffer.append("<pre>module <b>").append(module.getName()).append("</b></pre>");
+    buffer.append("<pre>module <b>").append(module.getModuleName()).append("</b></pre>");
 
     PsiDocComment comment = module.getDocComment();
     if (comment != null) {
@@ -2175,7 +2175,20 @@ public class JavaDocInfoGenerator {
       if (type != null) {
         generateType(myBuffer, type, expression);
       }
-      expression.acceptChildren(this);
+      PsiExpression[] dimensions = expression.getArrayDimensions();
+      if (dimensions.length > 0) {
+        LOG.assertTrue(myBuffer.charAt(myBuffer.length() - 1) == ']');
+        myBuffer.setLength(myBuffer.length() - 1);
+        for (PsiExpression dimension : dimensions) {
+          dimension.accept(this);
+          myBuffer.append(", ");
+        }
+        myBuffer.setLength(myBuffer.length() - 2);
+        myBuffer.append(']');
+      }
+      else {
+        expression.acceptChildren(this);
+      }
     }
 
     @Override

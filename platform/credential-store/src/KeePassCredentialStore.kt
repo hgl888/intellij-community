@@ -21,15 +21,12 @@ import com.intellij.credentialStore.kdbx.loadKdbx
 import com.intellij.credentialStore.windows.WindowsCryptUtils
 import com.intellij.ide.passwordSafe.PasswordStorage
 import com.intellij.openapi.application.PathManager
+import com.intellij.openapi.diagnostic.catchAndLog
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.io.setOwnerPermissions
 import com.intellij.util.EncryptionSupport
-import com.intellij.util.io.delete
-import com.intellij.util.io.readBytes
-import com.intellij.util.io.writeSafe
-import java.nio.file.NoSuchFileException
-import java.nio.file.Path
-import java.nio.file.Paths
+import com.intellij.util.io.*
+import java.nio.file.*
 import java.security.Key
 import java.security.SecureRandom
 import java.util.*
@@ -38,10 +35,26 @@ import javax.crypto.spec.SecretKeySpec
 
 private const val GROUP_NAME = "IntelliJ Platform"
 
-internal class KeePassCredentialStore(keyToValue: Map<CredentialAttributes, Credentials>? = null, baseDirectory: Path = Paths.get(PathManager.getConfigPath()), var memoryOnly: Boolean = false) : PasswordStorage, CredentialStore {
+internal val DB_FILE_NAME = "c.kdbx"
+
+internal class KeePassCredentialStore(keyToValue: Map<CredentialAttributes, Credentials>? = null,
+                                      baseDirectory: Path = Paths.get(PathManager.getConfigPath()),
+                                      var memoryOnly: Boolean = false,
+                                      dbFile: Path? = null,
+                                      existingMasterPassword: ByteArray? = null) : PasswordStorage, CredentialStore {
+  internal var dbFile: Path = dbFile ?: baseDirectory.resolve(DB_FILE_NAME)
+    set(path) {
+      if (field == path) {
+        return
+      }
+
+      field = path
+      needToSave.set(true)
+      save()
+    }
+
   private val db: KeePassDatabase
 
-  private val dbFile = baseDirectory.resolve("c.kdbx")
   private val masterKeyStorage = MasterKeyFileStorage(baseDirectory)
 
   private val needToSave: AtomicBoolean
@@ -49,7 +62,24 @@ internal class KeePassCredentialStore(keyToValue: Map<CredentialAttributes, Cred
   init {
     if (keyToValue == null) {
       needToSave = AtomicBoolean(false)
-      db = masterKeyStorage.get()?.let { loadKdbx(dbFile, KdbxPassword(it)) } ?: KeePassDatabase()
+
+      val masterPassword = existingMasterPassword ?: masterKeyStorage.get()
+      if (masterPassword == null) {
+        LOG.catchAndLog {
+          if (this.dbFile.exists()) {
+            val renameTo = baseDirectory.resolve("old.c.kdbx")
+            LOG.warn("Credentials database file exists (${this.dbFile}), but no master password file. Moved to $renameTo")
+            this.dbFile.move(renameTo)
+          }
+        }
+        db = KeePassDatabase()
+      }
+      else {
+        db = loadKdbx(this.dbFile, KdbxPassword(masterPassword)) ?: KeePassDatabase()
+        if (existingMasterPassword != null) {
+          masterKeyStorage.set(existingMasterPassword)
+        }
+      }
     }
     else {
       needToSave = AtomicBoolean(!memoryOnly)
@@ -67,7 +97,7 @@ internal class KeePassCredentialStore(keyToValue: Map<CredentialAttributes, Cred
 
   @Synchronized
   fun save() {
-    if (memoryOnly || !needToSave.compareAndSet(true, false) || !db.isDirty) {
+    if (memoryOnly || (!needToSave.compareAndSet(true, false) && !db.isDirty)) {
       return
     }
 
@@ -133,7 +163,15 @@ internal class KeePassCredentialStore(keyToValue: Map<CredentialAttributes, Cred
       db.rootGroup.getGroup(GROUP_NAME)?.removeEntry(attributes.serviceName, attributes.userName)
     }
     else {
-      db.rootGroup.getOrCreateGroup(GROUP_NAME).getOrCreateEntry(attributes.serviceName, attributes.userName ?: credentials.userName).password = credentials.password?.let(::SecureString)
+      val group = db.rootGroup.getOrCreateGroup(GROUP_NAME)
+      // should be the only credentials per service name — find without user name
+      val userName = attributes.userName ?: credentials.userName
+      var entry = group.getEntry(attributes.serviceName, if (attributes.serviceName == SERVICE_NAME_PREFIX) userName else null)
+      if (entry == null) {
+        entry = group.getOrCreateEntry(attributes.serviceName, userName)
+      }
+      entry.userName = userName
+      entry.password = if (attributes.isPasswordMemoryOnly || credentials.password == null) null else SecureString(credentials.password!!)
     }
 
     if (db.isDirty) {
@@ -150,6 +188,21 @@ internal class KeePassCredentialStore(keyToValue: Map<CredentialAttributes, Cred
       }
     }
   }
+
+  fun setMasterPassword(masterPassword: ByteArray) {
+    LOG.assertTrue(!memoryOnly)
+
+    masterKeyStorage.set(masterPassword)
+    dbFile.writeSafe { db.save(KdbxPassword(masterPassword), it) }
+    dbFile.setOwnerPermissions()
+  }
+}
+
+internal fun copyFileDatabase(path: Path, masterPassword: String, baseDirectory: Path = Paths.get(PathManager.getConfigPath())): KeePassCredentialStore {
+  val dbFile = baseDirectory.resolve(DB_FILE_NAME)
+  Files.copy(path, dbFile, StandardCopyOption.REPLACE_EXISTING)
+  dbFile.setOwnerPermissions()
+  return KeePassCredentialStore(baseDirectory = baseDirectory, dbFile = dbFile, existingMasterPassword = masterPassword.toByteArray())
 }
 
 internal fun copyTo(from: Map<CredentialAttributes, Credentials>, store: PasswordStorage) {

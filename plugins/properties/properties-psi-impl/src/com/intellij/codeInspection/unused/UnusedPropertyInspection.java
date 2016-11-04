@@ -49,7 +49,7 @@ import java.util.function.Function;
 /**
  * @author cdr
  */
-public class UnusedPropertyInspection extends PropertySuppressableInspectionBase implements ResourceBundleEditorInspection {
+public class UnusedPropertyInspection extends PropertiesInspectionBase implements ResourceBundleEditorInspection {
   private static final Logger LOG = Logger.getInstance(UnusedPropertyInspection.class);
 
   @Override
@@ -204,13 +204,6 @@ public class UnusedPropertyInspection extends PropertySuppressableInspectionBase
 
     private RemovePropertiesFromAllLocalesFix(Property property) {
       myRepresentativePointer = SmartPointerManager.getInstance(property.getProject()).createSmartPsiElementPointer(property);
-    }
-
-    @Nls
-    @NotNull
-    @Override
-    public String getName() {
-      return getFamilyName();
     }
 
     @Nls

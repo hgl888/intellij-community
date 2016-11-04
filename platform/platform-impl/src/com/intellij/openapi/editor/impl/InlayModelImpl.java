@@ -30,6 +30,7 @@ import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.awt.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -116,7 +117,6 @@ public class InlayModelImpl implements InlayModel, Disposable {
   @NotNull
   @Override
   public List<Inlay> getInlineElementsInRange(int startOffset, int endOffset) {
-    ApplicationManager.getApplication().assertIsDispatchThread();
     List<Inlay> result = new ArrayList<>();
     myInlayTree.processOverlappingWith(startOffset, endOffset, inlay -> {
       result.add(inlay);
@@ -137,6 +137,25 @@ public class InlayModelImpl implements InlayModel, Disposable {
     if (!hasInlineElementAt(offset)) return false;
     VisualPosition inlayStartPosition = myEditor.offsetToVisualPosition(offset, false, false);
     return visualPosition.equals(inlayStartPosition);
+  }
+
+  @Nullable
+  @Override
+  public Inlay getElementAt(@NotNull Point point) {
+    if (myInlayTree.size() == 0) return null;
+
+    int offset = myEditor.logicalPositionToOffset(myEditor.xyToLogicalPosition(point));
+    List<Inlay> inlays = getInlineElementsInRange(offset, offset);
+    if (inlays.isEmpty()) return null;
+
+    VisualPosition startVisualPosition = myEditor.offsetToVisualPosition(offset);
+    int x = myEditor.visualPositionToXY(startVisualPosition).x;
+    for (Inlay inlay : inlays) {
+      int endX = x + inlay.getWidthInPixels();
+      if (point.x >= x && point.x < endX) return inlay;
+      x = endX;
+    }
+    return null;
   }
 
   @Override

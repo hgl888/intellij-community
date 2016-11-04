@@ -16,6 +16,7 @@ import os
 import sys
 
 from _pydev_imps._pydev_saved_modules import threading
+from _pydevd_bundle.pydevd_constants import dict_iter_items
 
 import traceback
 from _pydev_bundle import fix_getpass
@@ -246,6 +247,7 @@ except:
     IPYTHON = False
     pass
 
+
 #=======================================================================================================================
 # _DoExit
 #=======================================================================================================================
@@ -337,7 +339,7 @@ def start_console_server(host, port, interpreter):
                 pass
             if not retry:
                 raise
-            # Otherwise, keep on going
+                # Otherwise, keep on going
     return server
 
 
@@ -351,6 +353,28 @@ def start_server(host, port, client_port):
     start_new_thread(start_console_server,(host, port, interpreter))
 
     process_exec_queue(interpreter)
+
+
+def get_ipython_hidden_vars_dict():
+    useful_ipython_vars = ['_', '__']
+
+    try:
+        if IPYTHON and hasattr(__builtin__, 'interpreter'):
+            pydev_interpreter = get_interpreter().interpreter
+            if hasattr(pydev_interpreter, 'ipython') and hasattr(pydev_interpreter.ipython, 'user_ns_hidden'):
+                user_ns_hidden = pydev_interpreter.ipython.user_ns_hidden
+                if isinstance(user_ns_hidden, dict):
+                    # Since IPython 2 dict `user_ns_hidden` contains hidden variables and values
+                    user_hidden_dict = user_ns_hidden
+                else:
+                    # In IPython 1.x `user_ns_hidden` used to be a set with names of hidden variables
+                    user_hidden_dict = dict([(key, val) for key, val in dict_iter_items(pydev_interpreter.ipython.user_ns)
+                                             if key in user_ns_hidden])
+                return dict([(key, val) for key, val in dict_iter_items(user_hidden_dict) if key not in useful_ipython_vars])
+        return None
+    except Exception:
+        traceback.print_exc()
+        return None
 
 
 def get_interpreter():

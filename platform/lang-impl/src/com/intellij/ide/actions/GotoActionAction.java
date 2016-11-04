@@ -152,7 +152,7 @@ public class GotoActionAction extends GotoActionBase implements DumbAware {
       @NotNull
       @Override
       protected Set<Object> filter(@NotNull Set<Object> elements) {
-        return super.filter(model.sort(elements));
+        return super.filter(model.sortItems(elements));
       }
 
       @Override
@@ -291,7 +291,7 @@ public class GotoActionAction extends GotoActionBase implements DumbAware {
         if (ActionUtil.lastUpdateAndCheckDumb(action, event, false)) {
           if (action instanceof ActionGroup && ((ActionGroup)action).getChildren(event).length > 0) {
             ListPopup popup = JBPopupFactory.getInstance().createActionGroupPopup(
-              event.getPresentation().getText(), (ActionGroup)action, context, JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false, callback, -1);
+              event.getPresentation().getText(), (ActionGroup)action, context, false, callback, -1);
             Window window = SwingUtilities.getWindowAncestor(component);
             if (window != null) {
               popup.showInCenterOf(window);

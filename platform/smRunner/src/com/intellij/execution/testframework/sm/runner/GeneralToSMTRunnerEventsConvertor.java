@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -119,6 +119,7 @@ public class GeneralToSMTRunnerEventsConvertor extends GeneralTestEventsProcesso
     myTreeBuildBeforeStart = true;
     myBuildTreeRunnables.add(() -> {
       final SMTestProxy testProxy = new SMTestProxy(testName, false, locationHint);
+      testProxy.setTreeBuildBeforeStart();
       if (myLocator != null) {
         testProxy.setLocator(myLocator);
       }
@@ -136,6 +137,7 @@ public class GeneralToSMTRunnerEventsConvertor extends GeneralTestEventsProcesso
     myBuildTreeRunnables.add(() -> {
       final SMTestProxy parentSuite = getCurrentSuite();
       final SMTestProxy newSuite = new SMTestProxy(suiteName, true, locationHint);
+      newSuite.setTreeBuildBeforeStart();
       if (myLocator != null) {
         newSuite.setLocator(myLocator);
       }
@@ -203,6 +205,7 @@ public class GeneralToSMTRunnerEventsConvertor extends GeneralTestEventsProcesso
         // creates test
         testProxy = new SMTestProxy(testName, false, locationUrl);
         testProxy.setConfig(isConfig);
+        if (myTreeBuildBeforeStart) testProxy.setTreeBuildBeforeStart();
 
         if (myLocator != null) {
           testProxy.setLocator(myLocator);
@@ -242,6 +245,7 @@ public class GeneralToSMTRunnerEventsConvertor extends GeneralTestEventsProcesso
       if (newSuite == null) {
         //new suite
         newSuite = new SMTestProxy(suiteName, true, locationUrl, parentSuite.isPreservePresentableName());
+        if (myTreeBuildBeforeStart)newSuite.setTreeBuildBeforeStart();
 
         if (myLocator != null) {
           newSuite.setLocator(myLocator);
@@ -390,6 +394,7 @@ public class GeneralToSMTRunnerEventsConvertor extends GeneralTestEventsProcesso
         testProxy.setTestFailed(localizedMessage, stackTrace, isTestError);
       }
       else {
+        testProxy.setTestFailed(localizedMessage, stackTrace, isTestError);
         logProblem("Comparison failure actual and expected texts should be both null or not null.\n"
                    + "Expected:\n"
                    + comparisionFailureExpectedText + "\n"

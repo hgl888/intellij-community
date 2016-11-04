@@ -1,10 +1,13 @@
+import os
+import sys
+import traceback
 from _pydev_bundle.pydev_imports import xmlrpclib, _queue, Exec
 from  _pydev_bundle._pydev_calltip_util import get_description
 from _pydev_imps._pydev_saved_modules import thread
 from _pydevd_bundle import pydevd_vars
 from _pydevd_bundle import pydevd_xml
-from _pydevd_bundle.pydevd_constants import IS_JYTHON
-from _pydevd_bundle.pydevd_utils import *  # @UnusedWildImport
+from _pydevd_bundle.pydevd_constants import IS_JYTHON, dict_iter_items
+from _pydevd_bundle.pydevd_utils import to_string
 
 
 # =======================================================================================================================
@@ -130,16 +133,21 @@ class DebugConsoleStdIn(BaseStdIn):
         BaseStdIn.__init__(self, original_stdin)
         self.debugger = dbg
 
-    def readline(self, *args, **kwargs):
-        # Notify Java side about input and call original function
+    def __pydev_run_command(self, is_started):
         try:
-            cmd = self.debugger.cmd_factory.make_input_requested_message()
+            cmd = self.debugger.cmd_factory.make_input_requested_message(is_started)
             self.debugger.writer.add_command(cmd)
         except Exception:
             import traceback
             traceback.print_exc()
             return '\n'
-        return self.original_stdin.readline(*args, **kwargs)
+
+    def readline(self, *args, **kwargs):
+        # Notify Java side about input and call original function
+        self.__pydev_run_command(True)
+        result = self.original_stdin.readline(*args, **kwargs)
+        self.__pydev_run_command(False)
+        return result
 
 
 class CodeFragment:
@@ -491,7 +499,7 @@ class BaseInterpreterInterface:
             debugger_options = {}
         env_key = "PYDEVD_EXTRA_ENVS"
         if env_key in debugger_options:
-            for (env_name, value) in debugger_options[env_key].items():
+            for (env_name, value) in dict_iter_items(debugger_options[env_key]):
                 os.environ[env_name] = value
             del debugger_options[env_key]
         def do_connect_to_debugger():

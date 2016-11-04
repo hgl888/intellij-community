@@ -55,9 +55,9 @@ import com.intellij.openapi.fileTypes.impl.FileTypeManagerImpl;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectCoreUtil;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.project.ProjectManagerAdapter;
+import com.intellij.openapi.project.ProjectUtil;
 import com.intellij.openapi.projectRoots.JavaSdk;
 import com.intellij.openapi.projectRoots.JavaSdkType;
 import com.intellij.openapi.projectRoots.JavaSdkVersion;
@@ -284,7 +284,7 @@ public class BuildManager implements Disposable {
           }
 
           if (fileIndex.isInContent(eventFile)) {
-            if (ProjectCoreUtil.isProjectOrWorkspaceFile(eventFile) || GeneratedSourcesFilter.isGeneratedSourceByAnyFilter(eventFile, project)) {
+            if (ProjectUtil.isProjectOrWorkspaceFile(eventFile) || GeneratedSourcesFilter.isGeneratedSourceByAnyFilter(eventFile, project)) {
               // changes in project files or generated stuff should not trigger auto-make
               continue;
             }
@@ -418,6 +418,20 @@ public class BuildManager implements Disposable {
       }
     }
     scheduleAutoMake();
+  }
+
+  public void clearState() {
+    final boolean cleared;
+    synchronized (myProjectDataMap) {
+      cleared = !myProjectDataMap.isEmpty();
+      for (Map.Entry<String, ProjectData> entry : myProjectDataMap.entrySet()) {
+        cancelPreloadedBuilds(entry.getKey());
+        entry.getValue().dropChanges();
+      }
+    }
+    if (cleared) {
+      scheduleAutoMake();
+    }
   }
 
   public boolean isProjectWatched(Project project) {
@@ -879,7 +893,16 @@ public class BuildManager implements Disposable {
   }
 
   @NotNull
-  public static Pair<Sdk, JavaSdkVersion> getBuildProcessRuntimeSdk(Project project) {
+  public static Pair<Sdk, JavaSdkVersion> getBuildProcessRuntimeSdk(@NotNull Project project) {
+    return getRuntimeSdk(project, JavaSdkVersion.JDK_1_8);
+  }
+
+  @NotNull
+  public static Pair<Sdk, JavaSdkVersion> getJavacRuntimeSdk(@NotNull Project project) {
+    return getRuntimeSdk(project, JavaSdkVersion.JDK_1_6);
+  }
+
+  private static Pair<Sdk, JavaSdkVersion> getRuntimeSdk(@NotNull Project project, final JavaSdkVersion oldestPossibleVersion) {
     final Set<Sdk> candidates = new LinkedHashSet<>();
     final Sdk defaultSdk = ProjectRootManager.getInstance(project).getProjectSdk();
     if (defaultSdk != null && defaultSdk.getSdkType() instanceof JavaSdkType) {
@@ -921,9 +944,7 @@ public class BuildManager implements Disposable {
       }
     }
 
-    final JavaSdkVersion oldestPossible = getOldestPossiblePlatformForBuildProcess(project);
-
-    if (projectJdk == null || sdkVersion == null || !sdkVersion.isAtLeast(oldestPossible)) {
+    if (projectJdk == null || sdkVersion == null || !sdkVersion.isAtLeast(oldestPossibleVersion)) {
       final Sdk internalJdk = JavaAwareProjectJdkTableImpl.getInstanceEx().getInternalJdk();
       projectJdk = internalJdk;
       sdkVersion = javaSdkType.getVersion(internalJdk);
@@ -943,16 +964,6 @@ public class BuildManager implements Disposable {
       }
     }
     return version;
-  }
-
-  @NotNull
-  private static JavaSdkVersion getOldestPossiblePlatformForBuildProcess(Project project) {
-    final BackendCompiler javaCompiler = ((CompilerConfigurationImpl)CompilerConfiguration.getInstance(project)).getDefaultCompiler();
-    final String id = javaCompiler != null? javaCompiler.getId() : JavaCompilers.JAVAC_ID;
-    if (id == JavaCompilers.ECLIPSE_ID || id == JavaCompilers.ECLIPSE_EMBEDDED_ID) {
-      return JavaSdkVersion.JDK_1_7; // because bundled ecj is compiled against 1.7
-    }
-    return JavaSdkVersion.JDK_1_6;
   }
 
   private Future<Pair<RequestFuture<PreloadedProcessMessageHandler>, OSProcessHandler>> launchPreloadedBuildProcess(final Project project, ExecutorService projectTaskQueue) throws Exception {
@@ -1153,6 +1164,17 @@ public class BuildManager implements Disposable {
       cmdLine.addParameters(args);
     }
 
+    //TODO[Dmitry Batkovich] should be replaced with the proper solution
+    if (sdkVersion != null && sdkVersion.isAtLeast(JavaSdkVersion.JDK_1_9)) {
+      cmdLine.addParameters("--add-exports", "jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED");
+      cmdLine.addParameters("--add-exports", "jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED");
+      cmdLine.addParameters("--add-exports", "jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED");
+      cmdLine.addParameters("--add-exports", "jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED");
+      cmdLine.addParameters("--add-exports", "jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED");
+      cmdLine.addParameters("--add-exports", "jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED");
+      cmdLine.addParameters("--add-exports", "jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED");
+    }
+
     @SuppressWarnings("UnnecessaryFullyQualifiedName")
     final Class<?> launcherClass = org.jetbrains.jps.cmdline.Launcher.class;
 
@@ -1160,13 +1182,13 @@ public class BuildManager implements Disposable {
     launcherCp.add(ClasspathBootstrap.getResourcePath(launcherClass));
     launcherCp.addAll(BuildProcessClasspathManager.getLauncherClasspath(project));
     launcherCp.add(compilerPath);
-    ClasspathBootstrap.appendJavaCompilerClasspath(launcherCp);
+    ClasspathBootstrap.appendJavaCompilerClasspath(launcherCp, shouldIncludeEclipseCompiler(projectConfig));
     cmdLine.addParameter("-classpath");
     cmdLine.addParameter(classpathToString(launcherCp));
-
+                                   
     cmdLine.addParameter(launcherClass.getName());
 
-    final List<String> cp = ClasspathBootstrap.getBuildProcessApplicationClasspath(true);
+    final List<String> cp = ClasspathBootstrap.getBuildProcessApplicationClasspath();
     cp.addAll(myClasspathManager.getBuildProcessPluginsClasspath(project));
     if (isProfilingMode) {
       cp.add(new File(workDirectory, "yjp-controller-api-redist.jar").getPath());
@@ -1216,6 +1238,15 @@ public class BuildManager implements Disposable {
     }
 
     return processHandler;
+  }
+
+  private boolean shouldIncludeEclipseCompiler(CompilerConfiguration config) {
+    if (config instanceof CompilerConfigurationImpl) {
+      final BackendCompiler javaCompiler = ((CompilerConfigurationImpl)config).getDefaultCompiler();
+      final String compilerId = javaCompiler != null? javaCompiler.getId() : null;
+      return JavaCompilers.ECLIPSE_ID.equals(compilerId)  || JavaCompilers.ECLIPSE_EMBEDDED_ID.equals(compilerId);
+    }
+    return true;
   }
 
   public File getBuildSystemDirectory() {

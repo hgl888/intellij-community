@@ -32,6 +32,7 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.codeStyle.CodeStyleSettingsManager
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings
+import com.intellij.testFramework.LightPlatformCodeInsightTestCase
 import com.intellij.testFramework.fixtures.CodeInsightTestUtil
 import com.intellij.testFramework.fixtures.LightCodeInsightFixtureTestCase
 import com.intellij.util.containers.ContainerUtil
@@ -1128,7 +1129,7 @@ class Foo {
     ((TemplateImpl)template).templateContext.setEnabled(contextType(JavaCodeContextType.class), true)
     CodeInsightTestUtil.addTemplate(template, testRootDisposable)
 
-    writeCommand { startTemplate(template); }
+    writeCommand { startTemplate(template) }
     myFixture.checkResult """\
 class Foo {
   {
@@ -1234,6 +1235,25 @@ class Foo {{
 }}
 """
   }
+
+  void "test delete at the last template position"() {
+    myFixture.configureByText 'a.java', """
+class Foo {{
+  <caret>
+}}
+"""
+    myFixture.type 'iter\t'
+    LightPlatformCodeInsightTestCase.delete(myFixture.editor, myFixture.project)
+    myFixture.checkResult """
+class Foo {{
+    for (Object o : <caret> {
+        
+    }
+}}
+"""
+  }
+
+
 
   void "test multicaret expanding with space"() {
     myFixture.configureByText "a.java", """\
@@ -1477,5 +1497,29 @@ java.util.List<? extends Integer> list;
         
     }
 }}'''
+  }
+
+  void "test home end go outside template fragments if already on their bounds"() {
+    myFixture.configureByText 'a.txt', ' <caret> g'
+
+    TemplateManager manager = TemplateManager.getInstance(getProject())
+    Template template = manager.createTemplate("empty", "user", '$VAR$')
+    template.addVariable("VAR", "", '"foo"', true)
+    manager.startTemplate(myFixture.editor, template)
+
+    myFixture.checkResult ' <selection>foo<caret></selection> g'
+
+    myFixture.performEditorAction(IdeActions.ACTION_EDITOR_MOVE_LINE_START)
+    myFixture.checkResult ' <caret>foo g'
+
+    myFixture.performEditorAction(IdeActions.ACTION_EDITOR_MOVE_LINE_START)
+    myFixture.checkResult '<caret> foo g'
+
+    myFixture.performEditorAction(IdeActions.ACTION_EDITOR_MOVE_CARET_RIGHT)
+    myFixture.performEditorAction(IdeActions.ACTION_EDITOR_MOVE_LINE_END)
+    myFixture.checkResult ' foo<caret> g'
+
+    myFixture.performEditorAction(IdeActions.ACTION_EDITOR_MOVE_LINE_END)
+    myFixture.checkResult ' foo g<caret>'
   }
 }

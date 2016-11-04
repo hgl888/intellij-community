@@ -98,7 +98,7 @@ public class FileTypeManagerImpl extends FileTypeManagerEx implements Persistent
   private static final int DETECT_BUFFER_SIZE = 8192; // the number of bytes to read from the file to feed to the file type detector
 
   // must be sorted
-  private static final String DEFAULT_IGNORED = "*.hprof;*.pyc;*.pyo;*.rbc;*.yarb;*~;.DS_Store;.git;.hg;.svn;CVS;RCS;SCCS;__pycache__;_svn;rcs;vssver.scc;vssver2.scc;";
+  private static final String DEFAULT_IGNORED = "*.hprof;*.pyc;*.pyo;*.rbc;*.yarb;*~;.DS_Store;.git;.hg;.svn;CVS;__pycache__;_svn;vssver.scc;vssver2.scc;";
   static {
     List<String> strings = StringUtil.split(DEFAULT_IGNORED, ";");
     for (int i = 0; i < strings.size(); i++) {
@@ -1238,7 +1238,7 @@ public class FileTypeManagerImpl extends FileTypeManagerEx implements Persistent
       }
     }
     if (!notExternalizableFileTypes.isEmpty()) {
-      Collections.sort(notExternalizableFileTypes, (o1, o2) -> o1.getName().compareTo(o2.getName()));
+      Collections.sort(notExternalizableFileTypes, Comparator.comparing(FileType::getName));
       for (FileType type : notExternalizableFileTypes) {
         writeExtensionsMap(map, type, true);
       }
@@ -1246,7 +1246,7 @@ public class FileTypeManagerImpl extends FileTypeManagerEx implements Persistent
 
     if (!myUnresolvedMappings.isEmpty()) {
       FileNameMatcher[] unresolvedMappingKeys = myUnresolvedMappings.keySet().toArray(new FileNameMatcher[myUnresolvedMappings.size()]);
-      Arrays.sort(unresolvedMappingKeys, (o1, o2) -> o1.getPresentableString().compareTo(o2.getPresentableString()));
+      Arrays.sort(unresolvedMappingKeys, Comparator.comparing(FileNameMatcher::getPresentableString));
 
       for (FileNameMatcher fileNameMatcher : unresolvedMappingKeys) {
         Element content = AbstractFileType.writeMapping(myUnresolvedMappings.get(fileNameMatcher), fileNameMatcher, true);

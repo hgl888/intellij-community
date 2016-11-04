@@ -98,8 +98,9 @@ public class WideSelectionTreeUI extends BasicTreeUI {
         }
       }
 
+      @NotNull
       @Override
-      protected MouseEvent convert(MouseEvent event) {
+      protected MouseEvent convert(@NotNull MouseEvent event) {
         if (!event.isConsumed() && SwingUtilities.isLeftMouseButton(event)) {
           int x = event.getX();
           int y = event.getY();
@@ -168,14 +169,13 @@ public class WideSelectionTreeUI extends BasicTreeUI {
                 boolean leaf = tree.getModel().isLeaf(selectionPath.getLastPathComponent());
                 int toSelect = -1;
                 int toScroll = -1;
-                if (!leaf && tree.isExpanded(selectionRow)) {
+                if ((!leaf && tree.isExpanded(selectionRow)) || leaf) {
                   if (selectionRow + 1 < tree.getRowCount()) {
                     toSelect = selectionRow + 1;
                     toScroll = toSelect;
                   }
-                } else if (leaf) {
-                  toScroll = selectionRow;
                 }
+                //todo[kb]: make cycle scrolling
 
                 if (toSelect != -1) {
                   tree.setSelectionInterval(toSelect, toSelect);

@@ -288,7 +288,7 @@ public class LocalVariablesUtil {
       if (bytecodes != null && bytecodes.length > 0) {
         final int firstLocalVariableSlot = getFirstLocalsSlot(method);
         final HashMap<Integer, DecompiledLocalVariable> usedVars = new HashMap<>();
-        MethodBytecodeUtil.visit(location.declaringType(), method, location.codeIndex(),
+        MethodBytecodeUtil.visit(method, location.codeIndex(),
           new MethodVisitor(Opcodes.API_VERSION) {
            @Override
            public void visitVarInsn(int opcode, int slot) {
@@ -360,15 +360,13 @@ public class LocalVariablesUtil {
     private final MultiMap<Integer, String> myNames;
     private int myCurrentSlotIndex;
     private final PsiElement myElement;
-    private final Stack<Integer> myIndexStack;
+    private final Deque<Integer> myIndexStack = new LinkedList<>();
     private boolean myReached = false;
 
     public LocalVariableNameFinder(int startSlot, MultiMap<Integer, String> names, PsiElement element) {
       myNames = names;
       myCurrentSlotIndex = startSlot;
       myElement = element;
-      myIndexStack = new Stack<>();
-
     }
 
     private boolean shouldVisit(PsiElement scope) {

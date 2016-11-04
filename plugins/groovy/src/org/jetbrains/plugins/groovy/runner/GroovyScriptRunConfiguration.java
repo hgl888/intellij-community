@@ -38,12 +38,15 @@ import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.JDOMExternalizer;
 import com.intellij.openapi.util.WriteExternalException;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
+import com.intellij.psi.search.DelegatingGlobalSearchScope;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.refactoring.listeners.RefactoringElementAdapter;
 import com.intellij.refactoring.listeners.RefactoringElementListener;
 import com.intellij.util.ObjectUtils;
@@ -74,6 +77,7 @@ public class GroovyScriptRunConfiguration extends ModuleBasedConfiguration<RunCo
   private String vmParams;
   private String workDir;
   private boolean isDebugEnabled;
+  private boolean isAddClasspathToTheRunner;
   @Nullable private String scriptParams;
   @Nullable private String scriptPath;
   private final Map<String, String> envs = new LinkedHashMap<>();
@@ -146,6 +150,7 @@ public class GroovyScriptRunConfiguration extends ModuleBasedConfiguration<RunCo
       workDir = ExternalizablePath.localPathValue(wrk);
     }
     isDebugEnabled = Boolean.parseBoolean(JDOMExternalizer.readString(element, "debug"));
+    isAddClasspathToTheRunner = Boolean.parseBoolean(JDOMExternalizer.readString(element, "addClasspath"));
     envs.clear();
     JDOMExternalizer.readMap(element, envs, null, "env");
   }
@@ -159,6 +164,7 @@ public class GroovyScriptRunConfiguration extends ModuleBasedConfiguration<RunCo
     JDOMExternalizer.write(element, "params", scriptParams);
     JDOMExternalizer.write(element, "workDir", ExternalizablePath.urlValue(workDir));
     JDOMExternalizer.write(element, "debug", isDebugEnabled);
+    if (isAddClasspathToTheRunner) JDOMExternalizer.write(element, "addClasspath", true);
     JDOMExternalizer.writeMap(element, envs, null, "env");
   }
 
@@ -414,6 +420,14 @@ public class GroovyScriptRunConfiguration extends ModuleBasedConfiguration<RunCo
     isDebugEnabled = debugEnabled;
   }
 
+  public boolean isAddClasspathToTheRunner() {
+    return isAddClasspathToTheRunner;
+  }
+
+  public void setAddClasspathToTheRunner(boolean addClasspathToTheRunner) {
+    isAddClasspathToTheRunner = addClasspathToTheRunner;
+  }
+
   @Nullable
   public String getScriptPath() {
     return scriptPath;
@@ -421,5 +435,28 @@ public class GroovyScriptRunConfiguration extends ModuleBasedConfiguration<RunCo
 
   public void setScriptPath(@Nullable String scriptPath) {
     this.scriptPath = scriptPath;
+  }
+
+  @Override
+  public GlobalSearchScope getSearchScope() {
+    GlobalSearchScope superScope = super.getSearchScope();
+
+    String path = getScriptPath();
+    if (path == null) return superScope;
+
+    VirtualFile scriptFile = LocalFileSystem.getInstance().findFileByPath(path);
+    if (scriptFile == null) return superScope;
+
+    GlobalSearchScope fileScope = GlobalSearchScope.fileScope(getProject(), scriptFile);
+    if (superScope == null) return fileScope;
+
+    return new DelegatingGlobalSearchScope(fileScope.union(superScope)) {
+      @Override
+      public int compare(@NotNull VirtualFile file1, @NotNull VirtualFile file2) {
+        if (file1.equals(scriptFile)) return 1;
+        if (file2.equals(scriptFile)) return -1;
+        return super.compare(file1, file2);
+      }
+    };
   }
 }

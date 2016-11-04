@@ -864,29 +864,105 @@ public class PythonCompletionTest extends PyTestCase {
     doTest();
   }
 
-  //PY-3077
+  // PY-3077
   public void testFormatString() {
     doTest();
   }
 
-  //PY-3077
+  // PY-3077
   public void testFormatFuncArgument() {
     doTest();
   }
 
-  //PY-3077
+  // PY-3077
   public void testFormatStringFromStarArg() {
     doTest();
   }
 
-  //PY-3077
+  // PY-3077
   public void testFormatStringOutsideBraces() {
     doTest();
   }
 
-  //PY-3077
+  // PY-3077
   public void testFormatStringFromRef() {
     doTest();
+  }
+
+  // PY-3077
+  public void testFormatStringWithFormatModifier() {
+    doTest();
+  }
+  
+  // PY-3077
+  public void testPercentStringWithDictLiteralArg() {
+    doTest();
+  }
+
+  // PY-3077
+  public void testPercentStringWithDictCallArg() {
+    doTest();
+  }
+  
+  // PY-3077
+  public void testPercentStringWithParenDictCallArg() {
+    doTest();
+  }
+
+  // PY-3077
+  public void testPercentStringWithModifiers() {
+    doTest();
+  }
+
+  // PY-3077
+  public void testPercentStringDictLiteralStringKey() {
+    doTest();
+  }
+  
+  // PY-3077
+  public void testPercentStringDictCallStringKey() {
+    doTest();
+  }
+  
+  // PY-3077
+  public void testPercentStringDictLiteralArgument() {
+    doTest();
+  }
+  
+  // PY-19839
+  public void testPercentStringDictRefKeys() {
+    final List<String> variants = doTestByFile();
+    assertNullOrEmpty(variants);
+  }
+
+  // PY-19839
+  public void testPercentStringDictFuncKeys() {
+    final List<String> variants = doTestByFile();
+    assertNullOrEmpty(variants);
+  }
+
+  // PY-19839
+  public void testPercentStringDictWithZipCall() {
+    final List<String> variants = doTestByFile();
+    assertNullOrEmpty(variants);
+  }
+
+  // PY-19839
+  public void testPercentStringDictWithListArg() {
+    final List<String> variants = doTestByFile();
+    assertNullOrEmpty(variants);
+  }
+
+  // PY-19839
+  public void testPercentStringDictWithDictLiteralArg() {
+    final List<String> variants = doTestByFile();
+    assertNullOrEmpty(variants);
+  }
+
+  // PY-19839
+  public void testPercentStringDictWithPackedDictLiteralArg() {
+    final List<String> variants = doTestByFile();
+    assertNullOrEmpty(variants);
   }
 
   // PY-17437
@@ -937,6 +1013,28 @@ public class PythonCompletionTest extends PyTestCase {
   // PY-20017
   public void testAncestorHasDunderNewMethod() {
     doTest();
+  }
+
+  // PY-20768
+  public void testInitSubclassBuiltinMethod() {
+    runWithLanguageLevel(LanguageLevel.PYTHON36,
+                         () -> {
+                           doTestByText("class Cl(object):\n" +
+                                        "  def __init_su<caret>");
+                           myFixture.checkResult("class Cl(object):\n" +
+                                                 "  def __init_subclass__(cls, **kwargs):");
+                         });
+  }
+
+  // PY-20768
+  public void testSetNameBuiltinMethod() {
+    runWithLanguageLevel(LanguageLevel.PYTHON36,
+                         () -> {
+                           doTestByText("class Cl(object):\n" +
+                                        "  def __set_n<caret>");
+                           myFixture.checkResult("class Cl(object):\n" +
+                                                 "  def __set_name__(self, owner, name):");
+                         });
   }
 
   @Override

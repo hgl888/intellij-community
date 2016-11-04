@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2012 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,13 +33,13 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.impl.libraries.LibraryImpl;
 import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
 import com.intellij.openapi.util.Condition;
-import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileFilters;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.util.ArrayUtil;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.PathUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.xmlb.XmlSerializer;
@@ -151,7 +151,7 @@ public class ConversionContextImpl implements ConversionContext {
     final ExpandMacroToPathMap macros = createExpandMacroMap();
 
     List<File> files = new ArrayList<>();
-    for (Element module : JDOMUtil.getChildren(modules, ModuleManagerImpl.ELEMENT_MODULE)) {
+    for (Element module : modules.getChildren(ModuleManagerImpl.ELEMENT_MODULE)) {
       String filePath = module.getAttributeValue(ModuleManagerImpl.ATTRIBUTE_FILEPATH);
       filePath = macros.substitute(filePath, true);
       files.add(new File(FileUtil.toSystemDependentName(filePath)));
@@ -227,9 +227,8 @@ public class ConversionContextImpl implements ConversionContext {
     //todo[nik] support jar directories
     final Element classesChild = libraryElement.getChild("CLASSES");
     if (classesChild != null) {
-      final List<Element> roots = JDOMUtil.getChildren(classesChild, "root");
       final ExpandMacroToPathMap pathMap = createExpandMacroMap(moduleSettings);
-      for (Element root : roots) {
+      for (Element root : classesChild.getChildren("root")) {
         final String url = root.getAttributeValue("url");
         final String path = VfsUtilCore.urlToPath(url);
         files.add(new File(PathUtil.getLocalPath(pathMap.substitute(path, true))));
@@ -484,6 +483,6 @@ public class ConversionContextImpl implements ConversionContext {
   @NotNull
   private File[] getSettingsXmlFiles(@NotNull String dirName) {
     final File librariesDir = new File(mySettingsBaseDir, dirName);
-    return librariesDir.exists() ? librariesDir.listFiles(FileFilters.filesWithExtension("xml")) : ArrayUtil.EMPTY_FILE_ARRAY;
+    return ObjectUtils.notNull(librariesDir.listFiles(FileFilters.filesWithExtension("xml")), ArrayUtil.EMPTY_FILE_ARRAY);
   }
 }

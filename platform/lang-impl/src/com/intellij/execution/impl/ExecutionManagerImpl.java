@@ -567,7 +567,7 @@ public class ExecutionManagerImpl extends ExecutionManager implements Disposable
   public List<RunContentDescriptor> getRunningDescriptors(@NotNull Condition<RunnerAndConfigurationSettings> condition) {
     List<RunContentDescriptor> result = new SmartList<>();
     for (Trinity<RunContentDescriptor, RunnerAndConfigurationSettings, Executor> trinity : myRunningConfigurations) {
-      if (condition.value(trinity.getSecond())) {
+      if (trinity.getSecond() != null && condition.value(trinity.getSecond())) {
         ProcessHandler processHandler = trinity.getFirst().getProcessHandler();
         if (processHandler != null /*&& !processHandler.isProcessTerminating()*/ && !processHandler.isProcessTerminated()) {
           result.add(trinity.getFirst());
@@ -619,13 +619,10 @@ public class ExecutionManagerImpl extends ExecutionManager implements Disposable
         }
       }, ModalityState.any());
 
-      //noinspection ConstantConditions
-      int exitCode = myProcessHandler.getExitCode();
-      
       myProject.getMessageBus().syncPublisher(EXECUTION_TOPIC).processTerminated(myExecutorId,
                                                                                  myEnvironment,
                                                                                  myProcessHandler,
-                                                                                 exitCode);
+                                                                                 event.getExitCode());
 
       SaveAndSyncHandler saveAndSyncHandler = SaveAndSyncHandler.getInstance();
       if (saveAndSyncHandler != null) {

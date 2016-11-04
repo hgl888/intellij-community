@@ -33,7 +33,7 @@ class PyCharmCommunityProperties extends PyCharmPropertiesBase {
       "python-ide-community", "python-community-configure", "python-openapi", "python-psi-api", "platform-main"
     ]
     productLayout.bundledPluginModules = new File("$communityHome/python/build/plugin-list.txt").readLines()
-    productLayout.mainModule = "main_pycharm_ce"
+    productLayout.mainModules = ["main_pycharm_ce"]
   }
 
   @Override
@@ -46,12 +46,12 @@ class PyCharmCommunityProperties extends PyCharmPropertiesBase {
   }
 
   @Override
-  String systemSelector(ApplicationInfoProperties applicationInfo) {
+  String getSystemSelector(ApplicationInfoProperties applicationInfo) {
     "PyCharmCE${applicationInfo.majorVersion}.${applicationInfo.minorVersionMainPart}"
   }
 
   @Override
-  String baseArtifactName(ApplicationInfoProperties applicationInfo, String buildNumber) {
+  String getBaseArtifactName(ApplicationInfoProperties applicationInfo, String buildNumber) {
     "pycharmPC-$buildNumber"
   }
 
@@ -59,13 +59,12 @@ class PyCharmCommunityProperties extends PyCharmPropertiesBase {
   WindowsDistributionCustomizer createWindowsCustomizer(String projectHome) {
     return new PyCharmWindowsDistributionCustomizer() {
       {
-        buildZipWithBundledOracleJre = true
         installerImagesPath = "$projectHome/python/build/resources"
         fileAssociations = [".py"]
       }
 
       @Override
-      String fullNameIncludingEdition(ApplicationInfoProperties applicationInfo) {
+      String getFullNameIncludingEdition(ApplicationInfoProperties applicationInfo) {
         "PyCharm Community Edition"
       }
 
@@ -84,7 +83,7 @@ class PyCharmCommunityProperties extends PyCharmPropertiesBase {
         iconPngPath = "$projectHome/python/resources/PyCharmCore128.png"
       }
       @Override
-      String rootDirectoryName(ApplicationInfoProperties applicationInfo, String buildNumber) {
+      String getRootDirectoryName(ApplicationInfoProperties applicationInfo, String buildNumber) {
         "pycharm-community-${applicationInfo.isEAP ? buildNumber : applicationInfo.fullVersion}"
       }
 
@@ -106,7 +105,7 @@ class PyCharmCommunityProperties extends PyCharmPropertiesBase {
       }
 
       @Override
-      String rootDirectoryName(ApplicationInfoProperties applicationInfo, String buildNumber) {
+      String getRootDirectoryName(ApplicationInfoProperties applicationInfo, String buildNumber) {
         String suffix = applicationInfo.isEAP ? " ${applicationInfo.majorVersion}.${applicationInfo.minorVersion} EAP" : ""
         "PyCharm CE${suffix}.app"
       }
@@ -114,7 +113,7 @@ class PyCharmCommunityProperties extends PyCharmPropertiesBase {
   }
 
   @Override
-  String outputDirectoryName(ApplicationInfoProperties applicationInfo) {
+  String getOutputDirectoryName(ApplicationInfoProperties applicationInfo) {
     "pycharm-ce"
   }
 }

@@ -258,5 +258,11 @@ class Test88 {
 
   void testNoCollectorsInComment() { doAntiTest() }
 
-  void testNoContinueInsideLambdaInLoop() { doAntiTest(); }
+  void testNoContinueInsideLambdaInLoop() { doAntiTest() }
+
+  void testNoSemicolonAfterVoidMethodInLambda() {
+    configureByTestName()
+    myFixture.type('l\t')
+    checkResultByFile(getTestName(false) + "_after.java")
+  }
 }

@@ -32,7 +32,10 @@ import com.intellij.openapi.editor.colors.impl.*;
 import com.intellij.openapi.editor.markup.EffectType;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.extensions.Extensions;
-import com.intellij.openapi.options.*;
+import com.intellij.openapi.options.Configurable;
+import com.intellij.openapi.options.ConfigurationException;
+import com.intellij.openapi.options.SchemeManager;
+import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.options.colors.*;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
@@ -69,7 +72,7 @@ import java.util.List;
 
 public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract implements EditorOptionsProvider {
   public static final String ID = "reference.settingsdialog.IDE.editor.colors";
-
+  
   private Map<String, MyColorScheme> mySchemes;
   private MyColorScheme mySelectedScheme;
 
@@ -136,7 +139,7 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
     return mySelectedScheme;
   }
 
-  private MyColorScheme getScheme(String name) {
+  MyColorScheme getScheme(String name) {
     return mySchemes.get(name);
   }
 
@@ -168,16 +171,15 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
   public static boolean isReadOnly(@NotNull final EditorColorsScheme scheme) {
     return ((MyColorScheme)scheme).isReadOnly();
   }
+  
+  public static boolean canBeDeleted(@NotNull final EditorColorsScheme scheme) {
+    return scheme instanceof  MyColorScheme && ((MyColorScheme)scheme).canBeDeleted();
+  }
 
   @NotNull
   public String[] getSchemeNames() {
     List<MyColorScheme> schemes = new ArrayList<>(mySchemes.values());
-    Collections.sort(schemes, (o1, o2) -> {
-      if (isReadOnly(o1) && !isReadOnly(o2)) return -1;
-      if (!isReadOnly(o1) && isReadOnly(o2)) return 1;
-
-      return o1.getName().compareToIgnoreCase(o2.getName());
-    });
+    Collections.sort(schemes, EditorColorSchemesComparator.INSTANCE);
 
     List<String> names = new ArrayList<>(schemes.size());
     for (MyColorScheme scheme : schemes) {
@@ -197,8 +199,10 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
     if (scheme == null) return;
 
     EditorColorsScheme clone = (EditorColorsScheme)scheme.getOriginalScheme().clone();
-
     scheme.apply(clone);
+    if (clone instanceof AbstractColorsScheme) {
+      ((AbstractColorsScheme)clone).setSaveNeeded(true);
+    }
 
     clone.setName(name);
     MyColorScheme newScheme = new MyColorScheme(clone);
@@ -222,8 +226,7 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
 
   public void removeScheme(String name) {
     if (mySelectedScheme.getName().equals(name)) {
-      //noinspection HardCodedStringLiteral
-      selectScheme("Default");
+      selectDefaultScheme();
     }
 
     boolean deletedNewlyCreated = false;
@@ -237,6 +240,23 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
     mySchemes.remove(name);
     resetSchemesCombo(null);
     mySomeSchemesDeleted = mySomeSchemesDeleted || !deletedNewlyCreated;
+  }
+
+
+  private void selectDefaultScheme() {
+    DefaultColorsScheme defaultScheme =
+      (DefaultColorsScheme)EditorColorsManager.getInstance().getScheme(EditorColorsManager.DEFAULT_SCHEME_NAME);
+    selectScheme(defaultScheme.getEditableCopyName());
+  }
+  
+  
+  void resetSchemeToOriginal(@NotNull String name) {
+    MyColorScheme schemeToReset = mySchemes.get(name);
+    schemeToReset.resetToOriginal();
+    resetImpl();
+    selectScheme(name);
+    resetSchemesCombo(null);
+    ((EditorColorsManagerImpl)EditorColorsManager.getInstance()).schemeChangedOrSwitched(null);
   }
 
   @Override
@@ -253,21 +273,18 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
       boolean activeSchemeModified = false;
       EditorColorsScheme activeOriginalScheme = mySelectedScheme.getOriginalScheme();
       for (MyColorScheme scheme : mySchemes.values()) {
-        if (!activeSchemeModified && activeOriginalScheme == scheme.getOriginalScheme()) {
-          activeSchemeModified = scheme.isModified();
-        }
-
-        if (!scheme.isDefault()) {
-          scheme.apply();
+        boolean isModified = scheme.apply();
+        if (isModified && !activeSchemeModified && activeOriginalScheme == scheme.getOriginalScheme()) {
+          activeSchemeModified = true;
         }
         result.add(scheme.getOriginalScheme());
       }
 
       // refresh only if scheme is not switched
       boolean refreshEditors = activeSchemeModified && schemeManager.getCurrentScheme() == activeOriginalScheme;
-      schemeManager.setSchemes(result, activeOriginalScheme);
+      schemeManager.setSchemes(includingInvisible(result, schemeManager), activeOriginalScheme);
       if (refreshEditors) {
-        EditorColorsManagerImpl.schemeChangedOrSwitched();
+        ((EditorColorsManagerImpl)EditorColorsManager.getInstance()).schemeChangedOrSwitched(null);
       }
 
       final boolean isEditorThemeDark = ColorUtil.isDark(activeOriginalScheme.getDefaultBackground());
@@ -278,6 +295,16 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
     finally {
       myApplyCompleted = true;
     }
+  }
+
+  private static List<EditorColorsScheme> includingInvisible(@NotNull List<EditorColorsScheme> schemeList,
+                                                             @NotNull SchemeManager<EditorColorsScheme> schemeManager) {
+    for (EditorColorsScheme scheme : schemeManager.getAllSchemes()) {
+      if (!AbstractColorsScheme.isVisible(scheme)) {
+        schemeList.add(scheme);
+      }
+    }
+    return schemeList;
   }
 
   private static void changeLafIfNecessary(boolean isDarkEditorTheme) {
@@ -806,8 +833,23 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
 
     @Override
     public void apply(EditorColorsScheme scheme) {
-      if (scheme == null) scheme = getScheme();
-      scheme.setAttributes(key, isInherited() ? new TextAttributes() : getTextAttributes());
+      if (scheme == null) {
+        scheme = getScheme();
+      }
+
+      if (scheme instanceof EditorColorsSchemeImpl) {
+        if (!isInherited()) {
+          scheme.setAttributes(key, getTextAttributes());
+        }
+        else if (!myIsInheritedInitial) {
+          // set only if previously was not inherited (and, so, we must mark it as inherited)
+          // https://youtrack.jetbrains.com/issue/IDEA-162844
+          scheme.setAttributes(key, USE_INHERITED_MARKER);
+        }
+      }
+      else {
+        scheme.setAttributes(key, isInherited() ? USE_INHERITED_MARKER : getTextAttributes());
+      }
     }
 
     @Override
@@ -833,11 +875,6 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
     @Override
     public Pair<ColorSettingsPage,AttributesDescriptor> getBaseAttributeDescriptor() {
       return myBaseAttributeDescriptor;
-    }
-
-    @Override
-    public void setInherited(boolean isInherited) {
-      super.setInherited(isInherited);
     }
   }
 
@@ -1050,10 +1087,6 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
       return myDescriptors;
     }
 
-    public boolean isDefault() {
-      return myParentScheme instanceof DefaultColorsScheme;
-    }
-
     @Override
     public boolean isReadOnly() {
       return myParentScheme instanceof ReadOnlyColorsScheme;
@@ -1071,6 +1104,11 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
       return false;
     }
 
+    @Override
+    public boolean canBeDeleted() {
+      return (myParentScheme instanceof AbstractColorsScheme) && ((AbstractColorsScheme)myParentScheme).canBeDeleted();
+    }
+
     private boolean isFontModified() {
       if (!getFontPreferences().equals(myParentScheme.getFontPreferences())) return true;
       if (getLineSpacing() != myParentScheme.getLineSpacing()) return true;
@@ -1082,13 +1120,16 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
       return getConsoleLineSpacing() != myParentScheme.getConsoleLineSpacing();
     }
 
-    public void apply() {
+    private boolean apply() {
       if (!(myParentScheme instanceof ReadOnlyColorsScheme)) {
-        apply(myParentScheme);
+        return apply(myParentScheme);
       }
+      return false;
     }
 
-    public void apply(@NotNull EditorColorsScheme scheme) {
+    private boolean apply(@NotNull EditorColorsScheme scheme) {
+      boolean isModified = isFontModified() || isConsoleFontModified();
+
       scheme.setFontPreferences(getFontPreferences());
       scheme.setLineSpacing(myLineSpacing);
       scheme.setQuickDocFontSize(getQuickDocFontSize());
@@ -1096,12 +1137,16 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
       scheme.setConsoleLineSpacing(getConsoleLineSpacing());
 
       for (EditorSchemeAttributeDescriptor descriptor : myDescriptors) {
-        descriptor.apply(scheme);
+        if (descriptor.isModified()) {
+          isModified = true;
+          descriptor.apply(scheme);
+        }
       }
 
-      if (scheme instanceof AbstractColorsScheme) {
+      if (isModified && scheme instanceof AbstractColorsScheme) {
         ((AbstractColorsScheme)scheme).setSaveNeeded(true);
       }
+      return isModified;
     }
 
     @Override
@@ -1134,7 +1179,7 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
         if (myParentScheme instanceof AbstractColorsScheme) {
           TextAttributes ownAttrs = ((AbstractColorsScheme)myParentScheme).getDirectlyDefinedAttributes(key);
           if (ownAttrs != null) {
-            return ownAttrs.isFallbackEnabled();
+            return ownAttrs == TextAttributes.USE_INHERITED_MARKER;
           }
         }
         TextAttributes attributes = getAttributes(key);
@@ -1144,6 +1189,16 @@ public class ColorAndFontOptions extends SearchableConfigurable.Parent.Abstract 
         }
       }
       return false;
+    }
+    
+    public void resetToOriginal() {
+      if (myParentScheme instanceof AbstractColorsScheme) {
+        AbstractColorsScheme originalScheme = ((AbstractColorsScheme)myParentScheme).getOriginal();
+        if (originalScheme != null) {
+          originalScheme.copyTo((AbstractColorsScheme)myParentScheme);
+          ((AbstractColorsScheme)myParentScheme).setSaveNeeded(true);
+        }
+      }
     }
   }
 

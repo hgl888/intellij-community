@@ -132,11 +132,12 @@ public class InlineMethodProcessor extends BaseRefactoringProcessor {
     if (myReference != null) {
       usages.add(new UsageInfo(myReference));
     }
-    for (PsiReference reference : ReferencesSearch.search(myMethod)) {
+    GlobalSearchScope searchScope = GlobalSearchScope.projectScope(myProject);
+    for (PsiReference reference : ReferencesSearch.search(myMethod, searchScope)) {
       usages.add(new UsageInfo(reference.getElement()));
     }
 
-    OverridingMethodsSearch.search(myMethod, false).forEach(method -> {
+    OverridingMethodsSearch.search(myMethod, searchScope, false).forEach(method -> {
       if (AnnotationUtil.isAnnotated(method, Override.class.getName(), false)) {
         usages.add(new UsageInfo(method));
       }
@@ -159,7 +160,7 @@ public class InlineMethodProcessor extends BaseRefactoringProcessor {
       if (mySearchForTextOccurrences) {
         String stringToSearch = ElementDescriptionUtil.getElementDescription(myMethod, NonCodeSearchDescriptionLocation.NON_JAVA);
         TextOccurrencesUtil
-          .addTextOccurences(myMethod, stringToSearch, GlobalSearchScope.projectScope(myProject), usages, infoFactory);
+          .addTextOccurences(myMethod, stringToSearch, searchScope, usages, infoFactory);
       }
     }
 
@@ -465,11 +466,10 @@ public class InlineMethodProcessor extends BaseRefactoringProcessor {
             else if (element instanceof PsiEnumConstant) {
               inlineConstructorCall((PsiEnumConstant) element);
             }
-            else {
+            else if (!(element instanceof PsiDocMethodOrFieldRef)){
               GenericInlineHandler.inlineReference(usage, myMethod, myInliners);
             }
           }
-          myMethod.delete();
         }
         else {
           List<PsiReferenceExpression> refExprList = new ArrayList<>();
@@ -512,8 +512,8 @@ public class InlineMethodProcessor extends BaseRefactoringProcessor {
               psiElement.delete();
             }
           }
-          if (myMethod.isWritable()) myMethod.delete();
         }
+        if (myMethod.isWritable()) myMethod.delete();
       }
       removeAddedBracesWhenPossible();
     }
@@ -543,8 +543,9 @@ public class InlineMethodProcessor extends BaseRefactoringProcessor {
   }
 
   public static void inlineConstructorCall(PsiCall constructorCall) {
-    final PsiMethod oldConstructor = constructorCall.resolveMethod();
+    PsiMethod oldConstructor = constructorCall.resolveMethod();
     LOG.assertTrue(oldConstructor != null);
+    oldConstructor = (PsiMethod)oldConstructor.getNavigationElement();
     PsiExpression[] instanceCreationArguments = constructorCall.getArgumentList().getExpressions();
     if (oldConstructor.isVarArgs()) { //wrap with explicit array
       final PsiParameter[] parameters = oldConstructor.getParameterList().getParameters();

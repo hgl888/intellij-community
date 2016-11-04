@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2013 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import com.jetbrains.python.psi.LanguageLevel;
  * @author yole
  */
 public class PythonInspectionsTest extends PyTestCase {
+
   public void testReturnValueFromInit() {
     LocalInspectionTool inspection = new PyReturnFromInitInspection();
     doTest(getTestName(true), inspection);
@@ -69,6 +70,10 @@ public class PythonInspectionsTest extends PyTestCase {
     myFixture.checkHighlighting(true, false, true);
   }
 
+  public void testPyMethodParametersInspectionInitSubclass() {
+    doHighlightingTest(PyMethodParametersInspection.class, LanguageLevel.PYTHON36);
+  }
+
   public void testPyNestedDecoratorsInspection() {
     LocalInspectionTool inspection = new PyNestedDecoratorsInspection();
     doTest(getTestName(false), inspection);
@@ -107,6 +112,20 @@ public class PythonInspectionsTest extends PyTestCase {
   public void testPyUnusedLocalCoroutine() {
     myFixture.copyDirectoryToProject("inspections/" + getTestName(false), "");
     doHighlightingTest(PyUnusedLocalInspection.class, LanguageLevel.PYTHON34);
+  }
+
+  public void testPyUnusedParameterInspection() {
+    doHighlightingTest(PyUnusedLocalInspection.class);
+  }
+
+  // PY-20805
+  public void testUnusedLocalFStringReferences() {
+    doHighlightingTest(PyUnusedLocalInspection.class, LanguageLevel.PYTHON36);
+  }
+
+  // PY-8219
+  public void testUnusedLocalDoctestReference() {
+    doHighlightingTest(PyUnusedLocalInspection.class);
   }
 
   public void testPyDictCreationInspection() {

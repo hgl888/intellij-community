@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.intellij.codeInsight.navigation;
 import com.intellij.codeInsight.CodeInsightBundle;
 import com.intellij.codeInsight.TargetElementUtil;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbService;
@@ -32,6 +33,7 @@ import com.intellij.psi.search.PsiElementProcessorAdapter;
 import com.intellij.psi.search.SearchScope;
 import com.intellij.psi.search.searches.DefinitionsScopedSearch;
 import com.intellij.util.CommonProcessors;
+import com.intellij.util.Query;
 import gnu.trove.THashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -49,7 +51,7 @@ public class ImplementationSearcher {
         return targetElementUtil.findTargetElement(editor, getFlags() & ~(TargetElementUtil.REFERENCED_ELEMENT_ACCEPTED | TargetElementUtil.LOOKUP_ITEM_ACCEPTED), offset) == null;
       }
     });
-    return searchImplementations(element, editor, offset, onRef && ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {
+    return searchImplementations(element, editor, onRef && ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {
         @Override
         public Boolean compute() {
           return element == null || targetElementUtil.includeSelfInGotoImplementation(element);
@@ -59,16 +61,16 @@ public class ImplementationSearcher {
 
   @Nullable
   public PsiElement[] searchImplementations(final PsiElement element,
-                                            final Editor editor, final int offset,
+                                            final Editor editor,
                                             final boolean includeSelfAlways,
                                             final boolean includeSelfIfNoOthers) {
     if (element == null) return PsiElement.EMPTY_ARRAY;
     final PsiElement[] elements = searchDefinitions(element, editor);
     if (elements == null) return null; //the search has been cancelled
     if (elements.length > 0) {
-      if (!includeSelfAlways) return filterElements(element, elements, offset);
+      if (!includeSelfAlways) return filterElements(element, elements);
       final PsiElement[] all;
-      if (element.getTextRange() != null) {
+      if (ReadAction.compute(() -> element.getTextRange()) != null) {
         all = new PsiElement[elements.length + 1];
         all[0] = element;
         System.arraycopy(elements, 0, all, 1, elements.length);
@@ -76,7 +78,7 @@ public class ImplementationSearcher {
       else {
         all = elements;
       }
-      return filterElements(element, all, offset);
+      return filterElements(element, all);
     }
     return (includeSelfAlways || includeSelfIfNoOthers) &&
            ApplicationManager.getApplication().runReadAction(new Computable<TextRange>() {
@@ -103,7 +105,7 @@ public class ImplementationSearcher {
     final PsiElement[][] result = new PsiElement[1][];
     if (!ProgressManager.getInstance().runProcessWithProgressSynchronously(() -> {
       try {
-        result[0] = DefinitionsScopedSearch.search(element, getSearchScope(element, editor)).toArray(PsiElement.EMPTY_ARRAY);
+        result[0] = search(element, editor).toArray(PsiElement.EMPTY_ARRAY);
       }
       catch (IndexNotReadyException e) {
         dumbModeNotification(element);
@@ -113,6 +115,14 @@ public class ImplementationSearcher {
       return null;
     }
     return result[0];
+  }
+
+  protected Query<PsiElement> search(PsiElement element, Editor editor) {
+    return DefinitionsScopedSearch.search(element, getSearchScope(element, editor), isSearchDeep());
+  }
+
+  protected boolean isSearchDeep() {
+    return true;
   }
 
   private static void dumbModeNotification(@NotNull PsiElement element) {
@@ -125,7 +135,7 @@ public class ImplementationSearcher {
     DumbService.getInstance(project).showDumbModeNotification("Implementation information isn't available while indices are built");
   }
 
-  protected PsiElement[] filterElements(PsiElement element, PsiElement[] targetElements, final int offset) {
+  protected PsiElement[] filterElements(PsiElement element, PsiElement[] targetElements) {
     return targetElements;
   }
 
@@ -147,7 +157,7 @@ public class ImplementationSearcher {
         @Override
         public void run() {
           try {
-            DefinitionsScopedSearch.search(element, getSearchScope(element, editor)).forEach(new PsiElementProcessorAdapter<PsiElement>(collectProcessor){
+            search(element, editor).forEach(new PsiElementProcessorAdapter<PsiElement>(collectProcessor){
               @Override
               public boolean processInReadAction(PsiElement element) {
                 return !accept(element) || super.processInReadAction(element);
@@ -186,7 +196,7 @@ public class ImplementationSearcher {
         }
       };
       try {
-        DefinitionsScopedSearch.search(element, getSearchScope(element, editor)).forEach(processor);
+        search(element, editor).forEach(processor);
       }
       catch (IndexNotReadyException e) {
         ImplementationSearcher.dumbModeNotification(element);

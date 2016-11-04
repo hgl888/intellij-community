@@ -21,6 +21,7 @@ import com.intellij.codeHighlighting.Pass;
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzerSettings;
 import com.intellij.codeInsight.hint.TooltipController;
+import com.intellij.codeInspection.InspectionProfile;
 import com.intellij.ide.AppLifecycleListener;
 import com.intellij.ide.IdeTooltipManager;
 import com.intellij.ide.PowerSaveMode;
@@ -57,6 +58,7 @@ import com.intellij.openapi.roots.ModuleRootEvent;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.UserDataHolderEx;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vcs.*;
 import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -67,7 +69,6 @@ import com.intellij.openapi.wm.StatusBar;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.openapi.wm.impl.status.TogglePopupHintsPanel;
 import com.intellij.packageDependencies.DependencyValidationManager;
-import com.intellij.profile.Profile;
 import com.intellij.profile.ProfileChangeAdapter;
 import com.intellij.profile.codeInspection.InspectionProfileManager;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
@@ -172,7 +173,6 @@ public class DaemonListeners implements Disposable {
       // clearing highlighters before changing document because change can damage editor highlighters drastically, so we'll clear more than necessary
       @Override
       public void beforeDocumentChange(final DocumentEvent e) {
-        if (isUnderIgnoredAction(null)) return;
         Document document = e.getDocument();
         VirtualFile virtualFile = fileDocumentManager.getFile(document);
         Project project = virtualFile == null ? null : ProjectUtil.guessProjectForFile(virtualFile);
@@ -278,12 +278,15 @@ public class DaemonListeners implements Disposable {
     });
 
     connection.subscribe(PowerSaveMode.TOPIC, () -> stopDaemon(true, "Power save mode change"));
-
-    editorColorsManager.addEditorColorsListener(scheme -> stopDaemonAndRestartAllFiles("Global color scheme changed"), this);
+    connection.subscribe(EditorColorsManager.TOPIC, new EditorColorsListener() {
+      @Override
+      public void globalSchemeChange(EditorColorsScheme scheme) {
+        stopDaemonAndRestartAllFiles("Editor color scheme changed");
+      }
+    });
 
     commandProcessor.addCommandListener(new MyCommandListener(), this);
     application.addApplicationListener(new MyApplicationListener(), this);
-    editorColorsManager.addEditorColorsListener(new MyEditorColorsListener(), this);
     inspectionProfileManager.addProfileChangeListener(new MyProfileChangeListener(), this);
     inspectionProjectProfileManager.addProfileChangeListener(new MyProfileChangeListener(), this);
     todoConfiguration.addPropertyChangeListener(new MyTodoListener(), this);
@@ -325,8 +328,8 @@ public class DaemonListeners implements Disposable {
 
     ModalityStateListener modalityStateListener = entering -> {
       // before showing dialog we are in non-modal context yet, and before closing dialog we are still in modal context
-      boolean inModalContext = LaterInvocator.isInModalContext();
-      stopDaemon(inModalContext, "Modality change. Was modal: "+inModalContext);
+      boolean inModalContext = Registry.is("ide.perProjectModality") || LaterInvocator.isInModalContext();
+      stopDaemon(inModalContext, "Modality change. Was modal: " + inModalContext);
       myDaemonCodeAnalyzer.setUpdateByTimerEnabled(inModalContext);
     };
     LaterInvocator.addModalityStateListener(modalityStateListener,this);
@@ -342,12 +345,6 @@ public class DaemonListeners implements Disposable {
         }
       });
     }
-  }
-
-  static boolean isUnderIgnoredAction(@Nullable Object action) {
-    return action instanceof DocumentRunnable.IgnoreDocumentRunnable ||
-           action == DocumentRunnable.IgnoreDocumentRunnable.class ||
-           ApplicationManager.getApplication().hasWriteAction(DocumentRunnable.IgnoreDocumentRunnable.class);
   }
 
   private boolean worthBothering(final Document document, Project project) {
@@ -428,7 +425,6 @@ public class DaemonListeners implements Disposable {
     @Override
     public void commandStarted(CommandEvent event) {
       Document affectedDocument = extractDocumentFromCommand(event);
-      if (isUnderIgnoredAction(null)) return;
       if (!worthBothering(affectedDocument, event.getProject())) return;
 
       cutOperationJustHappened = myCutActionName.equals(event.getCommandName());
@@ -457,7 +453,6 @@ public class DaemonListeners implements Disposable {
     @Override
     public void commandFinished(CommandEvent event) {
       Document affectedDocument = extractDocumentFromCommand(event);
-      if (isUnderIgnoredAction(null)) return;
       if (!worthBothering(affectedDocument, event.getProject())) return;
 
       if (myEscPressed) {
@@ -475,14 +470,6 @@ public class DaemonListeners implements Disposable {
     }
   }
 
-  private class MyEditorColorsListener implements EditorColorsListener {
-    @Override
-    public void globalSchemeChange(EditorColorsScheme scheme) {
-      TodoConfiguration.getInstance().colorSettingsChanged();
-      stopDaemonAndRestartAllFiles("Editor color scheme changed");
-    }
-  }
-
   private class MyTodoListener implements PropertyChangeListener {
     @Override
     public void propertyChange(@NotNull PropertyChangeEvent evt) {
@@ -494,12 +481,12 @@ public class DaemonListeners implements Disposable {
 
   private class MyProfileChangeListener implements ProfileChangeAdapter {
     @Override
-    public void profileChanged(Profile profile) {
+    public void profileChanged(InspectionProfile profile) {
       stopDaemonAndRestartAllFiles("Profile changed");
     }
 
     @Override
-    public void profileActivated(Profile oldProfile, @Nullable Profile profile) {
+    public void profileActivated(InspectionProfile oldProfile, @Nullable InspectionProfile profile) {
       stopDaemonAndRestartAllFiles("Profile activated");
     }
 

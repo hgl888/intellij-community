@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.intellij.ide.ui.UISettingsListener;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.KeyboardShortcut;
 import com.intellij.openapi.actionSystem.Shortcut;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.colors.*;
 import com.intellij.openapi.editor.ex.EditorSettingsExternalizable;
 import com.intellij.openapi.editor.markup.TextAttributes;
@@ -29,6 +30,7 @@ import com.intellij.openapi.keymap.KeymapManager;
 import com.intellij.openapi.options.FontSize;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.util.containers.HashMap;
+import com.intellij.util.messages.MessageBusConnection;
 import com.jediterm.pty.PtyProcessTtyConnector;
 import com.jediterm.terminal.TerminalColor;
 import com.jediterm.terminal.TextStyle;
@@ -55,9 +57,10 @@ public class JBTerminalSystemSettingsProvider extends DefaultTabbedSettingsProvi
   public JBTerminalSystemSettingsProvider() {
     myColorScheme = createBoundColorSchemeDelegate(null);
 
-    UISettings.getInstance().addUISettingsListener(new UISettingsListener() {
+    MessageBusConnection connection = ApplicationManager.getApplication().getMessageBus().connect(this);
+    connection.subscribe(UISettingsListener.TOPIC, new UISettingsListener() {
       @Override
-      public void uiSettingsChanged(UISettings source) {
+      public void uiSettingsChanged(UISettings uiSettings) {
         int size = consoleFontSize(JBTerminalSystemSettingsProvider.this.myColorScheme);
 
         if (myColorScheme.getConsoleFontSize() != size) {
@@ -65,15 +68,14 @@ public class JBTerminalSystemSettingsProvider extends DefaultTabbedSettingsProvi
           fireFontChanged();
         }
       }
-    }, this);
-
-    EditorColorsManager.getInstance().addEditorColorsListener(new EditorColorsAdapter() {
+    });
+    connection.subscribe(EditorColorsManager.TOPIC, new EditorColorsListener() {
       @Override
       public void globalSchemeChange(EditorColorsScheme scheme) {
         myColorScheme.updateGlobalScheme(scheme);
         fireFontChanged();
       }
-    }, this);
+    });
   }
 
   private static int consoleFontSize(MyColorSchemeDelegate colorScheme) {
@@ -324,7 +326,7 @@ public class JBTerminalSystemSettingsProvider extends DefaultTabbedSettingsProvi
     }
 
     @Override
-    public void setAttributes(TextAttributesKey key, TextAttributes attributes) {
+    public void setAttributes(@NotNull TextAttributesKey key, TextAttributes attributes) {
       myOwnAttributes.put(key, attributes);
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package com.intellij.refactoring.introduceVariable;
 
 import com.intellij.codeInsight.CodeInsightUtil;
+import com.intellij.codeInsight.NullableNotNullManager;
 import com.intellij.codeInsight.completion.JavaCompletionUtil;
 import com.intellij.codeInsight.highlighting.HighlightManager;
 import com.intellij.codeInsight.lookup.LookupManager;
@@ -53,8 +54,6 @@ import com.intellij.psi.impl.source.jsp.jspJava.JspCodeBlock;
 import com.intellij.psi.impl.source.jsp.jspJava.JspHolderMethod;
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil;
 import com.intellij.psi.impl.source.tree.java.ReplaceExpressionUtil;
-import com.intellij.psi.scope.processor.VariablesProcessor;
-import com.intellij.psi.scope.util.PsiScopesUtil;
 import com.intellij.psi.util.*;
 import com.intellij.refactoring.*;
 import com.intellij.refactoring.introduce.inplace.AbstractInplaceIntroducer;
@@ -698,8 +697,7 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
               final PsiElement chosenAnchor =
                 chooseAnchor(settings.isReplaceAllOccurrences(), hasWriteAccess, nonWrite, anchorStatementIfAll, anchorStatement);
 
-              variable = ApplicationManager.getApplication().runWriteAction(
-                introduce(project, expr, topLevelEditor, chosenAnchor, occurrences, settings));
+              variable = introduce(project, expr, topLevelEditor, chosenAnchor, occurrences, settings);
             }
             finally {
               final RefactoringEventData afterData = new RefactoringEventData();
@@ -755,14 +753,16 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
     boolean skipForStatement = true;
     final PsiForStatement forStatement = PsiTreeUtil.getParentOfType(expr, PsiForStatement.class);
     if (forStatement != null) {
-      final VariablesProcessor variablesProcessor = new VariablesProcessor(false) {
-        @Override
-        protected boolean check(PsiVariable var, ResolveState state) {
-          return PsiTreeUtil.isAncestor(forStatement.getInitialization(), var, true);
-        }
-      };
-      PsiScopesUtil.treeWalkUp(variablesProcessor, expr, null);
-      skipForStatement = variablesProcessor.size() == 0;
+      Set<PsiVariable> vars = new HashSet<>();
+      SyntaxTraverser.psiTraverser().withRoot(expr)
+        .filter(element -> element instanceof PsiReferenceExpression)
+        .forEach(element -> {
+          final PsiElement resolve = ((PsiReferenceExpression)element).resolve();
+          if (resolve instanceof PsiVariable) {
+            vars.add((PsiVariable)resolve);
+          }
+        });
+      skipForStatement = vars.stream().noneMatch(variable -> PsiTreeUtil.isAncestor(forStatement.getInitialization(), variable, true));
     }
 
     PsiElement containerParent = tempContainer;
@@ -793,12 +793,12 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
     return parent3 instanceof JspHolderMethod;
   }
 
-  public static Computable<PsiVariable> introduce(final Project project,
-                                                  final PsiExpression expr,
-                                                  final Editor editor,
-                                                  final PsiElement anchorStatement,
-                                                  final PsiExpression[] occurrences,
-                                                  final IntroduceVariableSettings settings) {
+  public static PsiVariable introduce(final Project project,
+                                      final PsiExpression expr,
+                                      final Editor editor,
+                                      final PsiElement anchorStatement,
+                                      final PsiExpression[] occurrences,
+                                      final IntroduceVariableSettings settings) {
     final PsiElement container = anchorStatement.getParent();
     PsiElement child = anchorStatement;
     final boolean isInsideLoop = RefactoringUtil.isLoopOrIf(container);
@@ -840,9 +840,9 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
 
     final PsiCodeBlock newDeclarationScope = PsiTreeUtil.getParentOfType(container, PsiCodeBlock.class, false);
     final FieldConflictsResolver fieldConflictsResolver = new FieldConflictsResolver(settings.getEnteredName(), newDeclarationScope);
-    return new Computable<PsiVariable>() {
+    SmartPsiElementPointer<PsiVariable> pointer = ApplicationManager.getApplication().runWriteAction(new Computable<SmartPsiElementPointer<PsiVariable>> () {
       @Override
-      public PsiVariable compute() {
+      public SmartPsiElementPointer<PsiVariable> compute() {
         try {
           PsiStatement statement = null;
           if (!isInsideLoop && deleteSelf) {
@@ -855,8 +855,9 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
             settings.getSelectedType());
           initializer = simplifyVariableInitializer(initializer, selectedType.getType());
 
+          PsiType type = stripNullabilityAnnotationsFromTargetType(selectedType, project);
           PsiDeclarationStatement declaration = JavaPsiFacade.getInstance(project).getElementFactory()
-            .createVariableDeclarationStatement(settings.getEnteredName(), selectedType.getType(), initializer, container);
+            .createVariableDeclarationStatement(settings.getEnteredName(), type, initializer, container);
           if (!isInsideLoop) {
             declaration = addDeclaration(declaration, initializer);
             LOG.assertTrue(expr1.isValid());
@@ -911,7 +912,7 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
           PsiVariable var = (PsiVariable) declaration.getDeclaredElements()[0];
           PsiUtil.setModifierProperty(var, PsiModifier.FINAL, settings.isDeclareFinal());
           fieldConflictsResolver.fix();
-          return var;
+          return SmartPointerManager.getInstance(project).createSmartPsiElementPointer(var);
         } catch (IncorrectOperationException e) {
           LOG.error(e);
         }
@@ -943,7 +944,28 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
         }
         return  (PsiDeclarationStatement) container.addBefore(declaration, anchor);
       }
-    };
+    });
+    return pointer != null ? pointer.getElement() : null;
+  }
+
+  private static PsiType stripNullabilityAnnotationsFromTargetType(SmartTypePointer selectedType, final Project project) {
+    PsiType type = selectedType.getType();
+    if (type == null) return null;
+    final PsiAnnotation[] annotations = type.getAnnotations();
+    type = type.annotate(new TypeAnnotationProvider() {
+      @NotNull
+      @Override
+      public PsiAnnotation[] getAnnotations() {
+        final NullableNotNullManager manager = NullableNotNullManager.getInstance(project);
+        final Set<String> nullables = new HashSet<>();
+        nullables.addAll(manager.getNotNulls());
+        nullables.addAll(manager.getNullables());
+        return Arrays.stream(annotations)
+          .filter(annotation -> !nullables.contains(annotation.getQualifiedName()))
+          .toArray(PsiAnnotation[]::new);
+      }
+    });
+    return type;
   }
 
   private static boolean isFinalVariableOnLHS(PsiExpression expr) {

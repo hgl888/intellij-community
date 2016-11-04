@@ -17,9 +17,9 @@ package com.intellij.codeInspection
 
 import com.intellij.codeInspection.dataFlow.ContractInference
 import com.intellij.psi.PsiAnonymousClass
+import com.intellij.psi.impl.source.PsiFileImpl
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.testFramework.fixtures.LightCodeInsightFixtureTestCase
-
 /**
  * @author peter
  */
@@ -378,6 +378,20 @@ class ContractInferenceFromSourceTest extends LightCodeInsightFixtureTestCase {
     assert c == ['null -> null']
   }
 
+  void "test while instanceof"() {
+    def c = inferContracts("""
+    final Object foo(Object bar) {
+        while (bar instanceof Smth) bar = ((Smth) bar).getWrapped(); 
+        return bar;
+    }
+    
+    interface Smth {
+      Object getWrapped();
+    }
+    """)
+    assert c == ['null -> null']
+  }
+
   void "test use invoked method notnull"() {
     def c = inferContracts("""
     final Object foo(Object bar) {
@@ -422,6 +436,24 @@ class ContractInferenceFromSourceTest extends LightCodeInsightFixtureTestCase {
   }
     """)
     assert c == ['null -> null']
+  }
+
+  void "test string concatenation"() {
+    def c = inferContracts("""
+  public static String test(String s1, String s2) {
+    return s1 != null ? s1.trim()+s2.trim() : unknown();
+  }
+    """)
+    assert c == ['!null, _ -> !null']
+  }
+
+  void "test int addition"() {
+    def c = inferContracts("""
+  public static int test(int a, int b) {
+    return a + b;
+  }
+    """)
+    assert c == []
   }
 
   void "test compare with string literal"() {
@@ -537,6 +569,9 @@ class Foo {{
 
   private List<String> inferContracts(String method) {
     def clazz = myFixture.addClass("final class Foo { $method }")
-    return ContractInference.inferContracts(clazz.methods[0]).collect { it as String }
+    assert !((PsiFileImpl) clazz.containingFile).contentsLoaded
+    def contracts = ContractInference.inferContracts(clazz.methods[0])
+    assert !((PsiFileImpl) clazz.containingFile).contentsLoaded
+    return contracts.collect { it as String }
   }
 }

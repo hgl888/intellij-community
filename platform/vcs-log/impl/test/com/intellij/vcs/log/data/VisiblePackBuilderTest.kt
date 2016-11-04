@@ -22,6 +22,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.Consumer
 import com.intellij.util.Function
 import com.intellij.vcs.log.*
+import com.intellij.vcs.log.data.index.VcsLogIndex
 import com.intellij.vcs.log.graph.GraphCommit
 import com.intellij.vcs.log.graph.GraphCommitImpl
 import com.intellij.vcs.log.graph.PermanentGraph
@@ -29,7 +30,7 @@ import com.intellij.vcs.log.graph.VisibleGraph
 import com.intellij.vcs.log.impl.*
 import com.intellij.vcs.log.impl.TestVcsLogProvider.BRANCH_TYPE
 import com.intellij.vcs.log.impl.TestVcsLogProvider.DEFAULT_USER
-import com.intellij.vcs.log.ui.filter.VcsLogUserFilterImpl
+import com.intellij.vcs.log.impl.VcsLogUserFilterImpl
 import org.junit.Test
 import java.util.*
 import kotlin.test.assertEquals
@@ -156,7 +157,7 @@ class VisiblePackBuilderTest {
           return null
         }
       }
-      val builder = VisiblePackBuilder(providers, hashMap, detailsCache, commitDetailsGetter)
+      val builder = VisiblePackBuilder(providers, hashMap, detailsCache, commitDetailsGetter, EmptyIndex())
 
       return builder.build(dataPack, PermanentGraph.SortType.Normal, filters, CommitCountStage.INITIAL).first
     }
@@ -245,5 +246,6 @@ class VisiblePackBuilderTest {
     override fun flush() {
     }
   }
+
 }
 

@@ -119,7 +119,6 @@ open class FileBasedStorage(file: Path,
       attributes = Files.readAttributes(file, BasicFileAttributes::class.java)
     }
     catch (e: NoSuchFileException) {
-      LOG.debug(e) { "Document was not loaded for $fileSpec, doesn't exists" }
       return null
     }
     catch (e: IOException) {
@@ -203,12 +202,7 @@ private fun isEqualContent(result: VirtualFile, lineSeparator: LineSeparator, co
     return false
   }
 
-  for (i in headerLength..oldContent.size - 1) {
-    if (oldContent[i] != content.internalBuffer[i - headerLength]) {
-      return false
-    }
-  }
-  return true
+  return (headerLength..oldContent.size - 1).all { oldContent[it] == content.internalBuffer[it - headerLength] }
 }
 
 private fun doWrite(requestor: Any, file: VirtualFile, content: Any, lineSeparator: LineSeparator, prependXmlProlog: Boolean) {
@@ -275,7 +269,7 @@ private fun deleteFile(file: Path, requestor: Any, virtualFile: VirtualFile?) {
   }
 }
 
-fun deleteFile(requestor: Any, virtualFile: VirtualFile) {
+internal fun deleteFile(requestor: Any, virtualFile: VirtualFile) {
   runWriteAction { virtualFile.delete(requestor) }
 }
 

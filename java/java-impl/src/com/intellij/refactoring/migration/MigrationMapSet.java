@@ -18,6 +18,7 @@ package com.intellij.refactoring.migration;
 
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.util.io.FileFilters;
@@ -28,6 +29,8 @@ import org.jdom.Document;
 import org.jdom.Element;
 import org.jdom.JDOMException;
 import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -68,6 +71,19 @@ public class MigrationMapSet {
 //    saveMaps();
   }
 
+  @Nullable
+  public MigrationMap findMigrationMap(@NotNull String name) {
+    if (myMaps == null) {
+      loadMaps();
+    }
+    for (MigrationMap map : myMaps) {
+      if (name.equals(map.getName())) {
+        return map;
+      }
+    }
+    return null;
+  }
+
   public void replaceMap(MigrationMap oldMap, MigrationMap newMap) {
     for(int i = 0; i < myMaps.size(); i++){
       if (myMaps.get(i) == oldMap){
@@ -103,32 +119,40 @@ public class MigrationMapSet {
         return null;
       }
 
-      for (int i = 0; i < DEFAULT_MAPS.length; i++) {
-        String defaultTemplate = DEFAULT_MAPS[i];
+      for (PredefinedMigrationProvider provider : Extensions.getExtensions(PredefinedMigrationProvider.EP_NAME)) {
+        URL migrationMap = provider.getMigrationMap();
+        copyMap(dir, migrationMap, new File(migrationMap.getFile()).getName());
+      }
+
+      for (String defaultTemplate : DEFAULT_MAPS) {
         URL url = MigrationMapSet.class.getResource(defaultTemplate);
         LOG.assertTrue(url != null);
         String fileName = defaultTemplate.substring(defaultTemplate.lastIndexOf("/") + 1);
-        File targetFile = new File(dir, fileName);
-
-        try {
-          FileOutputStream outputStream = new FileOutputStream(targetFile);
-          InputStream inputStream = url.openStream();
-
-          try {
-            FileUtil.copy(inputStream, outputStream);
-          }
-          finally {
-            outputStream.close();
-            inputStream.close();
-          }
-        }
-        catch (Exception e) {
-          LOG.error(e);
-        }
+        copyMap(dir, url, fileName);
       }
     }
 
     return dir;
+  }
+
+  private static void copyMap(File dir, URL url, String fileName) {
+    File targetFile = new File(dir, fileName);
+
+    try {
+      FileOutputStream outputStream = new FileOutputStream(targetFile);
+      InputStream inputStream = url.openStream();
+
+      try {
+        FileUtil.copy(inputStream, outputStream);
+      }
+      finally {
+        outputStream.close();
+        inputStream.close();
+      }
+    }
+    catch (Exception e) {
+      LOG.error(e);
+    }
   }
 
   private static File[] getMapFiles() {

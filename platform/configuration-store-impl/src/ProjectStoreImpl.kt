@@ -34,19 +34,23 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.impl.ProjectImpl
 import com.intellij.openapi.project.impl.ProjectManagerImpl.UnableToSaveProjectNotification
 import com.intellij.openapi.project.impl.ProjectStoreClassProvider
+import com.intellij.openapi.util.JDOMUtil
 import com.intellij.openapi.util.Pair
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.io.FileUtilRt
+import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.ReadonlyStatusHandler
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.PathUtilRt
 import com.intellij.util.SmartList
+import com.intellij.util.attribute
 import com.intellij.util.containers.forEachGuaranteed
 import com.intellij.util.containers.isNullOrEmpty
 import com.intellij.util.io.*
 import com.intellij.util.lang.CompoundRuntimeException
+import com.intellij.util.text.nullize
 import org.jdom.Element
 import java.io.File
 import java.io.IOException
@@ -100,12 +104,45 @@ abstract class ProjectStoreBase(override final val project: ProjectImpl) : Compo
     LOG.catchAndLog {
       removeWorkspaceComponentConfiguration(defaultProject, element)
     }
+
+    if (isDirectoryBased) {
+      LOG.catchAndLog {
+        for (component in element.getChildren("component")) {
+          when (component.getAttributeValue("name")) {
+            "InspectionProjectProfileManager" -> convertProfiles(component.getChildren("profile").iterator(), true)
+            "CopyrightManager" -> convertProfiles(component.getChildren("copyright").iterator(), false)
+          }
+        }
+      }
+    }
     (storageManager.getOrCreateStorage(PROJECT_FILE) as XmlElementStorage).setDefaultState(element)
   }
 
+  fun convertProfiles(profileIterator: MutableIterator<Element>, isInspection: Boolean) {
+    for (profile in profileIterator) {
+      val schemeName = profile.getChildren("option").find { it.getAttributeValue("name") == "myName" }?.getAttributeValue(
+          "value") ?: continue
+
+      profileIterator.remove()
+      val wrapper = Element("component").attribute("name", if (isInspection) "InspectionProjectProfileManager" else "CopyrightManager")
+      wrapper.addContent(profile)
+      val path = Paths.get(storageManager.expandMacro(PROJECT_CONFIG_DIR), if (isInspection) "inspectionProfiles" else "copyright",
+          "${FileUtil.sanitizeFileName(schemeName, true)}.xml")
+      JDOMUtil.writeParent(wrapper, path.outputStream(), "\n")
+    }
+  }
+
   override final fun getProjectBasePath(): String {
-    val path = PathUtilRt.getParentPath(projectFilePath)
-    return if (scheme == StorageScheme.DEFAULT) path else PathUtilRt.getParentPath(path)
+    if (isDirectoryBased) {
+      val path = PathUtilRt.getParentPath(storageManager.expandMacro(PROJECT_CONFIG_DIR))
+      if (Registry.`is`("store.basedir.parent.detection", true) && path.startsWith("${Project.DIRECTORY_STORE_FOLDER}.")) {
+        return PathUtilRt.getParentPath(path)
+      }
+      return path
+    }
+    else {
+      return PathUtilRt.getParentPath(projectFilePath)
+    }
   }
 
   // used in upsource
@@ -134,9 +171,8 @@ abstract class ProjectStoreBase(override final val project: ProjectImpl) : Compo
     else {
       scheme = StorageScheme.DIRECTORY_BASED
 
-      val file = File(filePath)
       // if useOldWorkspaceContentIfExists false, so, file path is expected to be correct (we must avoid file io operations)
-      val isDir = !useOldWorkspaceContentIfExists || file.isDirectory
+      val isDir = !useOldWorkspaceContentIfExists || Paths.get(filePath).isDirectory()
       val configDir = "${(if (isDir) filePath else PathUtilRt.getParentPath(filePath))}/${Project.DIRECTORY_STORE_FOLDER}"
       storageManager.addMacro(PROJECT_CONFIG_DIR, configDir)
       storageManager.addMacro(PROJECT_FILE, "$configDir/misc.xml")
@@ -151,7 +187,7 @@ abstract class ProjectStoreBase(override final val project: ProjectImpl) : Compo
 
       if (ApplicationManager.getApplication().isUnitTestMode) {
         // load state only if there are existing files
-        isOptimiseTestLoadSpeed = !file.exists()
+        isOptimiseTestLoadSpeed = !Paths.get(filePath).exists()
       }
 
       if (refreshVfs) {
@@ -217,6 +253,24 @@ abstract class ProjectStoreBase(override final val project: ProjectImpl) : Compo
       }
     }
   }
+
+  override fun isProjectFile(file: VirtualFile): Boolean {
+    if (!file.isInLocalFileSystem) {
+      return false
+    }
+
+    val filePath = file.path
+    if (!isDirectoryBased) {
+      return filePath == projectFilePath || filePath == workspaceFilePath
+    }
+    return FileUtil.isAncestor(PathUtilRt.getParentPath(projectFilePath), filePath, false)
+  }
+
+  override fun getDirectoryStorePath(ignoreProjectStorageScheme: Boolean) = if (!ignoreProjectStorageScheme && !isDirectoryBased) null else PathUtilRt.getParentPath(projectFilePath).nullize()
+
+  override fun getDirectoryStoreFile() = directoryStorePath?.let { LocalFileSystem.getInstance().findFileByPath(it) }
+
+  override fun getDirectoryStorePathOrBase() = PathUtilRt.getParentPath(projectFilePath)
 }
 
 private open class ProjectStoreImpl(project: ProjectImpl, private val pathMacroManager: PathMacroManager) : ProjectStoreBase(project) {

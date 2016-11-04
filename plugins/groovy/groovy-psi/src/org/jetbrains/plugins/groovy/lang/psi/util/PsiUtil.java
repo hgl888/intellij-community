@@ -785,13 +785,13 @@ public class PsiUtil {
   }
 
   @Nullable
-  public static PsiElement skipLeafSet(@NotNull PsiElement element, boolean forward, @NotNull TokenSet set) {
+  public static PsiElement skipSet(@NotNull PsiElement element, boolean forward, @NotNull TokenSet set) {
     do {
       if (forward) {
-        element = PsiTreeUtil.nextLeaf(element);
+        element = element.getNextSibling();
       }
       else {
-        element = PsiTreeUtil.prevLeaf(element);
+        element = element.getPrevSibling();
       }
     }
     while (element != null && element.getNode() != null && set.contains(element.getNode().getElementType()));
@@ -1346,7 +1346,7 @@ public class PsiUtil {
       GrReferenceExpression ref = (GrReferenceExpression)qualifier;
 
       PsiElement resolved = ref.resolve();
-      if (resolved == null) return false;
+      if (!(resolved instanceof PsiClass)) return false;
 
       return hasEnclosingInstanceInScope((PsiClass)resolved, qualifier, false);
     }

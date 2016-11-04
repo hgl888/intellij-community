@@ -1071,6 +1071,15 @@ class float(object):
         """
         return 0.0
 
+    @staticmethod
+    def fromhex(cls, string):
+        """Create a floating-point number from a hexadecimal string.
+
+        :type string: str
+        :rtype: float
+        """
+        pass
+
 
 class complex(object):
     """Complex numeric type."""
@@ -1269,9 +1278,9 @@ class str(basestring):
         return b''
 
     def __getitem__(self, y):
-        """y-th item of x, origin 0.
+        """y-th item of x or substring, origin 0.
 
-        :type y: numbers.Integral
+        :type y: numbers.Integral | slice
         :rtype: str
         """
         return b''
@@ -1659,9 +1668,9 @@ class unicode(basestring):
         return ''
 
     def __getitem__(self, y):
-        """y-th item of x, origin 0.
+        """y-th item of x or substring, origin 0.
 
-        :type y: numbers.Integral
+        :type y: numbers.Integral | slice
         :rtype: unicode
         """
         return ''
@@ -2715,7 +2724,7 @@ class dict(object):
         """
         pass
 
-    def values():
+    def values(self):
         """Return a copy of the dictionary's list of values.
 
         :rtype: list[V]

@@ -85,7 +85,7 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
           final String name = containingClass.getQualifiedName();
           if (name != null && name.startsWith("java.")) continue;
           if (containingClass.getLanguage() != GroovyLanguage.INSTANCE &&
-              !InheritanceUtil.isInheritor(containingClass, GroovyCommonClassNames.DEFAULT_BASE_CLASS_NAME)) {
+              !InheritanceUtil.isInheritor(containingClass, GroovyCommonClassNames.GROOVY_OBJECT)) {
             continue;
           }
         }
@@ -149,6 +149,17 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
 
   @Override
   public PsiElement handleElementRename(String newElementName) throws IncorrectOperationException {
+    if (!PsiUtil.isValidReferenceName(newElementName)) {
+      final PsiElement old = getReferenceNameElement();
+      if (old == null) throw new IncorrectOperationException("ref has no name element");
+
+      PsiElement element = GroovyPsiElementFactory.getInstance(getProject()).createStringLiteralForReference(newElementName);
+      old.replace(element);
+      return this;
+    }
+
+    if (PsiUtil.isThisOrSuperRef(this)) return this;
+
     final GroovyResolveResult result = advancedResolve();
     if (result.isInvokedOnProperty()) {
       final String name = GroovyPropertyUtils.getPropertyNameByAccessorName(newElementName);
@@ -156,9 +167,8 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
         newElementName = name;
       }
     }
-    if (PsiUtil.isThisOrSuperRef(this)) return this;
 
-    return handleElementRenameSimple(newElementName);
+    return super.handleElementRename(newElementName);
   }
 
   @Override
@@ -179,20 +189,6 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
     final GrExpression qualifier = getQualifier();
     if (!(qualifier instanceof GrReferenceExpressionImpl)) return false;
     return ((GrReferenceExpressionImpl)qualifier).isFullyQualified();
-  }
-
-  @Override
-  public PsiElement handleElementRenameSimple(String newElementName) throws IncorrectOperationException {
-    if (!PsiUtil.isValidReferenceName(newElementName)) {
-      final PsiElement old = getReferenceNameElement();
-      if (old == null) throw new IncorrectOperationException("ref has no name element");
-
-      PsiElement element = GroovyPsiElementFactory.getInstance(getProject()).createStringLiteralForReference(newElementName);
-      old.replace(element);
-      return this;
-    }
-
-    return super.handleElementRenameSimple(newElementName);
   }
 
   public String toString() {
@@ -515,7 +511,7 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
       .setAllVariants(allVariants)
       .setUpToArgument(upToArgument)
       .build(this);
-    GrReferenceResolveRunnerKt.resolveReferenceExpression(this, processor);
+    new GrReferenceResolveRunner(this, processor).resolveReferenceExpression();
     return processor.getCandidatesArray();
   }
 

@@ -17,10 +17,7 @@
 package com.intellij.find.impl;
 
 import com.intellij.CommonBundle;
-import com.intellij.find.FindBundle;
-import com.intellij.find.FindManager;
-import com.intellij.find.FindModel;
-import com.intellij.find.FindSettings;
+import com.intellij.find.*;
 import com.intellij.find.actions.ShowUsagesAction;
 import com.intellij.ide.util.scopeChooser.ScopeChooserCombo;
 import com.intellij.ide.util.scopeChooser.ScopeDescriptor;
@@ -138,7 +135,7 @@ public class FindDialog extends DialogWrapper {
   private ScopeChooserCombo myScopeCombo;
   protected JLabel myReplacePrompt;
   private HideableTitledPanel myScopePanel;
-  private static boolean myPreviousResultsExpandedState;
+  private static boolean myPreviousResultsExpandedState = true;
   private static boolean myPreviewResultsTabWasSelected;
   private static final int RESULTS_PREVIEW_TAB_INDEX = 1;
 
@@ -191,6 +188,7 @@ public class FindDialog extends DialogWrapper {
 
   @Override
   public void doCancelAction() { // doCancel disposes fields and then calls dispose
+    applyTo(FindManager.getInstance(myProject).getFindInProjectModel(), false);
     rememberResultsPreviewWasOpen();
     super.doCancelAction();
   }
@@ -366,6 +364,24 @@ public class FindDialog extends DialogWrapper {
             myResultsPreviewTable.setRowSelectionInterval(row + 1, row + 1);
             TableUtil.scrollSelectionToVisible(myResultsPreviewTable);
           }
+        }
+      );
+
+      makeResultsPreviewActionOverride(
+        comboBox,
+        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0),
+        "scrollUp",
+        () -> {
+          ScrollingUtil.movePageUp(myResultsPreviewTable);
+        }
+      );
+
+      makeResultsPreviewActionOverride(
+        comboBox,
+        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0),
+        "scrollDown",
+        () -> {
+          ScrollingUtil.movePageDown(myResultsPreviewTable);
         }
       );
 
@@ -1448,13 +1464,13 @@ public class FindDialog extends DialogWrapper {
     if (myDirectoryComboBox.getItemCount() > 0){
       myReplaceComboBox.removeAllItems();
     }
+    int ignoredIdx = -1;
     if (directoryName != null && !directoryName.isEmpty()){
-      if (strings.contains(directoryName)){
-        strings.remove(directoryName);
-      }
+      ignoredIdx = strings.indexOf(directoryName);
       myDirectoryComboBox.addItem(directoryName);
     }
     for(int i = strings.size() - 1; i >= 0; i--){
+      if (i == ignoredIdx) continue;
       myDirectoryComboBox.addItem(strings.get(i));
     }
     if (myDirectoryComboBox.getItemCount() == 0){
@@ -1547,7 +1563,7 @@ public class FindDialog extends DialogWrapper {
 
     if (myModel.isMultipleFiles()) {
       final String dirName = myModel.getDirectoryName();
-      setDirectories(FindSettings.getInstance().getRecentDirectories(), dirName);
+      setDirectories(FindInProjectSettings.getInstance(myProject).getRecentDirectories(), dirName);
 
       if (!StringUtil.isEmptyOrSpaces(dirName)) {
         VirtualFile dir = LocalFileSystem.getInstance().findFileByPath(dirName);
@@ -1634,10 +1650,11 @@ public class FindDialog extends DialogWrapper {
       }
     }
 
-    setStringsToComboBox(FindSettings.getInstance().getRecentFindStrings(), myInputComboBox, myModel.getStringToFind());
+    FindInProjectSettings findInProjectSettings = FindInProjectSettings.getInstance(myProject);
+    setStringsToComboBox(findInProjectSettings.getRecentFindStrings(), myInputComboBox, myModel.getStringToFind());
     if (myModel.isReplaceState()){
       myCbPreserveCase.setSelected(myModel.isPreserveCase());
-      setStringsToComboBox(FindSettings.getInstance().getRecentReplaceStrings(), myReplaceComboBox, myModel.getStringToReplace());
+      setStringsToComboBox(findInProjectSettings.getRecentReplaceStrings(), myReplaceComboBox, myModel.getStringToReplace());
     }
     updateControls();
   }
@@ -1655,7 +1672,6 @@ public class FindDialog extends DialogWrapper {
     }
 
     if (navigations != null) {
-      applyTo(FindManager.getInstance(myProject).getFindInProjectModel(), false);
       doCancelAction();
       navigations.get(0).navigate(true);
       for(int i = 1; i < navigations.size(); ++i) navigations.get(i).highlightInEditor();

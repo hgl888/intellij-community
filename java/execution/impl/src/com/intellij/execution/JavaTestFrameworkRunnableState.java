@@ -161,6 +161,7 @@ public abstract class JavaTestFrameworkRunnableState<T extends
       @Override
       public void processTerminated(ProcessEvent event) {
         Runnable runnable = () -> {
+          root.flushOutputFile();
           deleteTempFiles();
           clear();
         };
@@ -175,6 +176,11 @@ public abstract class JavaTestFrameworkRunnableState<T extends
 
     final DefaultExecutionResult result = new DefaultExecutionResult(consoleView, handler);
     result.setRestartActions(rerunFailedTestsAction, new ToggleAutoTestAction() {
+      @Override
+      public boolean isDelayApplicable() {
+        return false;
+      }
+
       @Override
       public AbstractAutoTestManager getAutoTestManager(Project project) {
         return JavaAutoRunManager.getInstance(project);

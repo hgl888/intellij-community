@@ -19,6 +19,7 @@ import com.intellij.internal.statistic.UsageTrigger;
 import com.intellij.internal.statistic.beans.ConvertUsagesUtil;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -32,24 +33,20 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 public class VcsLogUtil {
   public static final int MAX_SELECTED_COMMITS = 1000;
 
   @NotNull
   public static Map<VirtualFile, Set<VcsRef>> groupRefsByRoot(@NotNull Collection<VcsRef> refs) {
-    return groupByRoot(refs, ref -> ref.getRoot());
-  }
-
-  @NotNull
-  public static <T extends VcsShortCommitDetails> Map<VirtualFile, Set<T>> groupByRoot(@NotNull Collection<T> commits) {
-    return groupByRoot(commits, commit -> commit.getRoot());
+    return groupByRoot(refs, VcsRef::getRoot);
   }
 
   @NotNull
   private static <T> Map<VirtualFile, Set<T>> groupByRoot(@NotNull Collection<T> items, @NotNull Function<T, VirtualFile> rootGetter) {
-    Map<VirtualFile, Set<T>> map =
-      new TreeMap<>((o1, o2) -> o1.getPresentableUrl().compareTo(o2.getPresentableUrl()));
+    Map<VirtualFile, Set<T>> map = new TreeMap<>(Comparator.comparing(VirtualFile::getPresentableUrl));
     for (T item : items) {
       VirtualFile root = rootGetter.fun(item);
       Set<T> set = map.get(root);
@@ -85,7 +82,7 @@ public class VcsLogUtil {
   private static Set<VirtualFile> collectRoots(@NotNull Collection<FilePath> files, @NotNull Set<VirtualFile> roots) {
     Set<VirtualFile> selectedRoots = new HashSet<>();
 
-    List<VirtualFile> sortedRoots = ContainerUtil.sorted(roots, (root1, root2) -> root1.getPath().compareTo(root2.getPath()));
+    List<VirtualFile> sortedRoots = ContainerUtil.sorted(roots, Comparator.comparing(VirtualFile::getPath));
 
     for (FilePath filePath : files) {
       VirtualFile virtualFile = filePath.getVirtualFile();
@@ -222,5 +219,19 @@ public class VcsLogUtil {
 
   public static void triggerUsage(@NotNull String text) {
     UsageTrigger.trigger("vcs.log." + ConvertUsagesUtil.ensureProperKey(text).replace(" ", ""));
+  }
+
+  public static boolean isRegexp(@NotNull String text) {
+    if (!StringUtil.containsAnyChar(text, "()[]{}.*?+^$\\|")) {
+      return false;
+    }
+    try {
+      //noinspection ResultOfMethodCallIgnored
+      Pattern.compile(text);
+      return true;
+    }
+    catch (PatternSyntaxException ignored) {
+    }
+    return false;
   }
 }

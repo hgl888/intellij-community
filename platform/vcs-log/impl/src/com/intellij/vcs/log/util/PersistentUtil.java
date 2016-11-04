@@ -27,11 +27,13 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
 public class PersistentUtil {
   @NotNull public static final File LOG_CACHE = new File(PathManager.getSystemPath(), "vcs-log");
+  @NotNull private static final String CORRUPTION_MARKER = "corruption.marker";
 
   @NotNull
   public static String calcLogId(@NotNull Project project, @NotNull Map<VirtualFile, VcsLogProvider> logProviders) {
@@ -40,12 +42,12 @@ public class PersistentUtil {
   }
 
   private static int calcLogProvidersHash(@NotNull final Map<VirtualFile, VcsLogProvider> logProviders) {
-    List<VirtualFile> sortedRoots = ContainerUtil.sorted(logProviders.keySet(), (o1, o2) -> o1.getPath().compareTo(o2.getPath()));
+    List<VirtualFile> sortedRoots = ContainerUtil.sorted(logProviders.keySet(), Comparator.comparing(VirtualFile::getPath));
     return StringUtil.join(sortedRoots, root -> root.getPath() + "." + logProviders.get(root).getSupportedVcs().getName(), ".").hashCode();
   }
 
   @NotNull
-  private static File getStorageFile(@NotNull String storageKind, @NotNull String logId, int version) {
+  public static File getStorageFile(@NotNull String storageKind, @NotNull String logId, int version) {
     File subdir = new File(LOG_CACHE, storageKind);
     String safeLogId = PathUtilRt.suggestFileName(logId, true, true);
     final File mapFile = new File(subdir, safeLogId + "." + version);
@@ -66,7 +68,25 @@ public class PersistentUtil {
                                                                            int version) throws IOException {
     File storageFile = getStorageFile(storageKind, logId, version);
 
-    return IOUtil.openCleanOrResetBroken(() -> new PersistentBTreeEnumerator<>(storageFile, keyDescriptor, Page.PAGE_SIZE, null, version),
+    return IOUtil.openCleanOrResetBroken(() ->
+                                           new PersistentBTreeEnumerator<>(storageFile, keyDescriptor, Page.PAGE_SIZE, null, version),
                                          storageFile);
+  }
+
+  @NotNull
+  public static <V> PersistentHashMap<Integer, V> createPersistentHashMap(@NotNull DataExternalizer<V> externalizer,
+                                                                          @NotNull String storageKind,
+                                                                          @NotNull String logId,
+                                                                          int version) throws IOException {
+    File storageFile = getStorageFile(storageKind, logId, version);
+
+    return IOUtil.openCleanOrResetBroken(() ->
+                                           new PersistentHashMap<>(storageFile, new IntInlineKeyDescriptor(), externalizer, Page.PAGE_SIZE),
+                                         storageFile);
+  }
+
+  @NotNull
+  public static File getCorruptionMarkerFile() {
+    return new File(LOG_CACHE, CORRUPTION_MARKER);
   }
 }

@@ -23,6 +23,7 @@ import com.intellij.history.integration.ui.models.DirectoryHistoryDialogModel;
 import com.intellij.history.integration.ui.models.EntireFileHistoryDialogModel;
 import com.intellij.history.integration.ui.models.HistoryDialogModel;
 import com.intellij.history.utils.LocalHistoryLog;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.command.CommandProcessor;
@@ -34,7 +35,10 @@ import com.intellij.openapi.util.ShutDownTracker;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.VirtualFileListener;
 import com.intellij.openapi.vfs.VirtualFileManager;
+import com.intellij.util.messages.MessageBus;
+import com.intellij.util.messages.MessageBusConnection;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -47,6 +51,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static com.intellij.history.integration.LocalHistoryUtil.findRevisionIndexToRevert;
 
 public class LocalHistoryImpl extends LocalHistory implements ApplicationComponent {
+  private final MessageBus myBus;
+  private MessageBusConnection myConnection;
   private ChangeList myChangeList;
   private LocalHistoryFacade myVcs;
   private IdeaGateway myGateway;
@@ -58,6 +64,10 @@ public class LocalHistoryImpl extends LocalHistory implements ApplicationCompone
 
   public static LocalHistoryImpl getInstanceImpl() {
     return (LocalHistoryImpl)getInstance();
+  }
+
+  public LocalHistoryImpl(@NotNull MessageBus bus) {
+    myBus = bus;
   }
 
   @Override
@@ -89,8 +99,10 @@ public class LocalHistoryImpl extends LocalHistory implements ApplicationCompone
 
     CommandProcessor.getInstance().addCommandListener(myEventDispatcher);
 
+    myConnection = myBus.connect();
+    myConnection.subscribe(VirtualFileManager.VFS_CHANGES, myEventDispatcher);
+
     VirtualFileManager fm = VirtualFileManager.getInstance();
-    fm.addVirtualFileListener(myEventDispatcher);
     fm.addVirtualFileManagerListener(myEventDispatcher);
 
     if (ApplicationManager.getApplication().isInternal() && !ApplicationManager.getApplication().isUnitTestMode()) {
@@ -126,8 +138,9 @@ public class LocalHistoryImpl extends LocalHistory implements ApplicationCompone
 
     long period = Registry.intValue("localHistory.daysToKeep") * 1000L * 60L * 60L * 24L;
 
+    myConnection.disconnect();
+    myConnection = null;
     VirtualFileManager fm = VirtualFileManager.getInstance();
-    fm.removeVirtualFileListener(myEventDispatcher);
     fm.removeVirtualFileManagerListener(myEventDispatcher);
     CommandProcessor.getInstance().removeCommandListener(myEventDispatcher);
 
@@ -175,6 +188,10 @@ public class LocalHistoryImpl extends LocalHistory implements ApplicationCompone
     if (!isInitialized()) return Label.NULL_INSTANCE;
     myGateway.registerUnsavedDocuments(myVcs);
     return label(myVcs.putSystemLabel(name, getProjectId(p), color));
+  }
+
+  public void addVFSListenerAfterLocalHistoryOne(VirtualFileListener virtualFileListener, Disposable disposable) {
+    myEventDispatcher.addVirtualFileListener(virtualFileListener, disposable);
   }
 
   private Label label(final LabelImpl impl) {
