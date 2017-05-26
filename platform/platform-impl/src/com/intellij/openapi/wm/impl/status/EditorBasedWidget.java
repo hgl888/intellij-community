@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2010 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import com.intellij.util.messages.MessageBusConnection;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public abstract class EditorBasedWidget extends FileEditorManagerAdapter implements StatusBarWidget {
+public abstract class EditorBasedWidget implements StatusBarWidget, FileEditorManagerListener {
   protected StatusBar myStatusBar;
   protected Project myProject;
 
@@ -65,7 +65,7 @@ public abstract class EditorBasedWidget extends FileEditorManagerAdapter impleme
     return result;
   }
 
-  protected boolean isOurEditor(Editor editor) {
+  boolean isOurEditor(Editor editor) {
     return editor != null &&
            editor.getComponent().isShowing() &&
            !Boolean.TRUE.equals(editor.getUserData(EditorTextField.SUPPLEMENTARY_KEY)) &&

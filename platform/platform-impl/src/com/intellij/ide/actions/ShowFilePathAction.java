@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,7 +66,7 @@ import java.util.stream.Stream;
 import static com.intellij.openapi.util.text.StringUtil.defaultIfEmpty;
 
 public class ShowFilePathAction extends AnAction {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.ide.actions.ShowFilePathAction");
+  private static final Logger LOG = Logger.getInstance(ShowFilePathAction.class);
 
   public static final NotificationListener FILE_SELECTING_LISTENER = new NotificationListener.Adapter() {
     @Override
@@ -105,7 +105,7 @@ public class ShowFilePathAction extends AnAction {
           .map(dir -> new File(dir, "applications/" + appName))
           .filter(File::exists)
           .findFirst()
-          .map(file -> readDesktopEntryKey(file, key + '='));
+          .map(file -> readDesktopEntryKey(file, key));
       }
     }
 
@@ -119,8 +119,10 @@ public class ShowFilePathAction extends AnAction {
   }
 
   private static String readDesktopEntryKey(File file, String key) {
+    LOG.debug("looking for '" + key + "' in " + file);
+    String prefix = key + '=';
     try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-      return reader.lines().filter(l -> l.startsWith(key)).map(l -> l.substring(key.length())).findFirst().orElse(null);
+      return reader.lines().filter(l -> l.startsWith(prefix)).map(l -> l.substring(prefix.length())).findFirst().orElse(null);
     }
     catch (IOException | UncheckedIOException e) {
       LOG.info("Cannot read: " + file, e);
@@ -128,7 +130,7 @@ public class ShowFilePathAction extends AnAction {
     }
   }
 
-@Override
+  @Override
   public void update(@NotNull AnActionEvent e) {
     boolean visible = !SystemInfo.isMac && isSupported();
     e.getPresentation().setVisible(visible);
@@ -152,6 +154,12 @@ public class ShowFilePathAction extends AnAction {
     }
   }
 
+  @Nullable
+  private static VirtualFile getFile(AnActionEvent e) {
+    VirtualFile[] files = CommonDataKeys.VIRTUAL_FILE_ARRAY.getData(e.getDataContext());
+    return files == null || files.length == 1 ? CommonDataKeys.VIRTUAL_FILE.getData(e.getDataContext()) : null;
+  }
+
   public static void show(@NotNull VirtualFile file, @NotNull MouseEvent e) {
     show(file, popup -> {
       if (e.getComponent().isShowing()) {
@@ -167,7 +175,7 @@ public class ShowFilePathAction extends AnAction {
     List<String> fileUrls = new ArrayList<>();
     VirtualFile eachParent = file;
     while (eachParent != null) {
-      int index = files.size() == 0 ? 0 : files.size();
+      int index = files.size();
       files.add(index, eachParent);
       fileUrls.add(index, getPresentableUrl(eachParent));
       if (eachParent.getParent() == null && eachParent.getFileSystem() instanceof JarFileSystem) {
@@ -276,29 +284,23 @@ public class ShowFilePathAction extends AnAction {
 
     if (SystemInfo.isWindows) {
       String cmd = toSelect != null ? "explorer /select," + toSelect : "explorer /root," + dir;
+      LOG.debug(cmd);
       Process process = Runtime.getRuntime().exec(cmd);  // no quoting/escaping is needed
       new CapturingProcessHandler(process, null, cmd).runProcess().checkSuccess(LOG);
     }
     else if (SystemInfo.isMac) {
       GeneralCommandLine cmd = toSelect != null ? new GeneralCommandLine("open", "-R", toSelect) : new GeneralCommandLine("open", dir);
+      LOG.debug(cmd.toString());
       ExecUtil.execAndGetOutput(cmd).checkSuccess(LOG);
     }
     else if (fileManagerApp.getValue() != null) {
-      PooledThreadExecutor.INSTANCE.submit(() -> {
-        try {
-          GeneralCommandLine cmd = new GeneralCommandLine(fileManagerApp.getValue(), toSelect != null ? toSelect : dir);
-          ExecUtil.execAndGetOutput(cmd).checkSuccess(LOG);
-        }
-        catch (Exception e) {
-          LOG.warn(e);
-        }
-      });
+      schedule(new GeneralCommandLine(fileManagerApp.getValue(), toSelect != null ? toSelect : dir));
     }
     else if (SystemInfo.hasXdgOpen()) {
-      GeneralCommandLine cmd = new GeneralCommandLine("/usr/bin/xdg-open", dir);
-      ExecUtil.execAndGetOutput(cmd).checkSuccess(LOG);
+      schedule(new GeneralCommandLine("xdg-open", dir));
     }
     else if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+      LOG.debug("opening " + dir + " via desktop API");
       Desktop.getDesktop().open(new File(dir));
     }
     else {
@@ -306,10 +308,16 @@ public class ShowFilePathAction extends AnAction {
     }
   }
 
-  @Nullable
-  private static VirtualFile getFile(AnActionEvent e) {
-    VirtualFile[] files = CommonDataKeys.VIRTUAL_FILE_ARRAY.getData(e.getDataContext());
-    return files == null || files.length == 1 ? CommonDataKeys.VIRTUAL_FILE.getData(e.getDataContext()) : null;
+  private static void schedule(GeneralCommandLine cmd) {
+    PooledThreadExecutor.INSTANCE.submit(() -> {
+      try {
+        LOG.debug(cmd.toString());
+        ExecUtil.execAndGetOutput(cmd).checkSuccess(LOG);
+      }
+      catch (Exception e) {
+        LOG.warn(e);
+      }
+    });
   }
 
   public static void showDialog(Project project, String message, String title, @NotNull File file, @Nullable DialogWrapper.DoNotAskOption option) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -97,8 +97,7 @@ public class GrClosureSignatureUtil {
 
   public static GrClosureSignature createSignature(MethodSignature signature) {
     final PsiType[] types = signature.getParameterTypes();
-    GrClosureParameter[] parameters = new GrClosureParameter[types.length];
-    ContainerUtil.map(types, type -> new GrImmediateClosureParameterImpl(type, null, false, null), parameters);
+    GrClosureParameter[] parameters = ContainerUtil.map(types, type -> new GrImmediateClosureParameterImpl(type, null, false, null), new GrClosureParameter[types.length]);
     return new GrImmediateClosureSignatureImpl(parameters, null, false, false);
   }
 
@@ -348,7 +347,7 @@ public class GrClosureSignatureUtil {
                                                            @NotNull PsiType[] args,
                                                            @NotNull PsiElement context,
                                                            boolean partial) {
-    return mapParametersToArguments(signature, args, FunctionUtil.<PsiType>id(), context, partial);
+    return mapParametersToArguments(signature, args, FunctionUtil.id(), context, partial);
   }
 
   private static class ArgWrapper<Arg> {
@@ -586,13 +585,13 @@ public class GrClosureSignatureUtil {
   }
 
   public static class ArgInfo<ArgType> {
-    public static final ArgInfo[] EMPTY_ARRAY = new ArgInfo[0];
+    private static final ArgInfo[] EMPTY_ARRAY = new ArgInfo[0];
 
-    public List<ArgType> args;
+    public final @NotNull List<ArgType> args;
     public final boolean isMultiArg;
-    public final PsiType type;
+    public final @Nullable PsiType type;
 
-    public ArgInfo(List<ArgType> args, boolean multiArg, PsiType type) {
+    public ArgInfo(@NotNull List<ArgType> args, boolean multiArg, @Nullable PsiType type) {
       this.args = args;
       isMultiArg = multiArg;
       this.type = type;
@@ -603,10 +602,11 @@ public class GrClosureSignatureUtil {
     }
 
     public ArgInfo(boolean isMultiArg, PsiType type) {
-      this(Collections.<ArgType>emptyList(), isMultiArg, type);
+      this(Collections.emptyList(), isMultiArg, type);
     }
 
     public static <ArgType> ArgInfo<ArgType>[] empty_array() {
+      //noinspection unchecked
       return EMPTY_ARRAY;
     }
   }

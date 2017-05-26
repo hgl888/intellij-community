@@ -54,8 +54,9 @@ import java.awt.event.*;
 import java.util.EventListener;
 import java.util.List;
 
+import static java.awt.event.InputEvent.*;
+
 public class SearchReplaceComponent extends EditorHeaderComponent implements DataProvider {
-  static final KeyStroke NEW_LINE_KEYSTROKE = KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK);
   private final EventDispatcher<Listener> myEventDispatcher = EventDispatcher.create(Listener.class);
 
   private final MyTextComponentWrapper mySearchFieldWrapper;
@@ -140,8 +141,9 @@ public class SearchReplaceComponent extends EditorHeaderComponent implements Dat
     };
 
     myLeftPanel = new NonOpaquePanel(new BorderLayout());
+    myLeftPanel.setBorder(JBUI.Borders.emptyLeft(6));
     myLeftPanel.add(mySearchFieldWrapper, BorderLayout.NORTH);
-    myLeftPanel.add(myReplaceFieldWrapper, BorderLayout.CENTER);
+    myLeftPanel.add(myReplaceFieldWrapper, BorderLayout.SOUTH);
 
     mySearchActionsToolbar1 = createSearchToolbar1(searchToolbar1Actions);
     Wrapper searchToolbarWrapper1 = new NonOpaquePanel(new BorderLayout());
@@ -216,9 +218,11 @@ public class SearchReplaceComponent extends EditorHeaderComponent implements Dat
   }
 
   public void requestFocusInTheSearchFieldAndSelectContent(Project project) {
-    mySearchTextComponent.setSelectionStart(0);
-    mySearchTextComponent.setSelectionEnd(mySearchTextComponent.getText().length());
+    mySearchTextComponent.selectAll();
     IdeFocusManager.getInstance(project).requestFocus(mySearchTextComponent, true);
+    if (myReplaceTextComponent != null) {
+      myReplaceTextComponent.selectAll();
+    }
   }
 
   public void setStatusText(@NotNull String status) {
@@ -301,21 +305,16 @@ public class SearchReplaceComponent extends EditorHeaderComponent implements Dat
 
 
   private void updateSearchComponent(@NotNull String textToSet) {
-    final int oldCaretPosition = mySearchTextComponent != null ? mySearchTextComponent.getCaretPosition() : 0;
-    boolean wasNull = mySearchTextComponent == null;
     if (!updateTextComponent(true)) {
-      if (!mySearchTextComponent.getText().equals(textToSet)) {
+      String existingText = mySearchTextComponent.getText();
+      if (!existingText.equals(textToSet)) {
         mySearchTextComponent.setText(textToSet);
+        // textToSet should be selected even if we have no selection before (if we have the selection then setText will remain it)
+        if (existingText.length() == 0) mySearchTextComponent.selectAll();
       }
       return;
     }
 
-    if (!mySearchTextComponent.getText().equals(textToSet)) {
-      mySearchTextComponent.setText(textToSet);
-      if (wasNull) {
-        mySearchTextComponent.selectAll();
-      }
-    }
     mySearchTextComponent.getDocument().addDocumentListener(new DocumentAdapter() {
       @Override
       protected void textChanged(DocumentEvent e) {
@@ -334,21 +333,18 @@ public class SearchReplaceComponent extends EditorHeaderComponent implements Dat
                                                        addTextToRecent(mySearchTextComponent);
                                                      }
                                                    }
-                                                 }, KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, SystemInfo.isMac ? InputEvent.META_DOWN_MASK : InputEvent.CTRL_DOWN_MASK),
+                                                 }, KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, SystemInfo.isMac ? META_DOWN_MASK : CTRL_DOWN_MASK),
                                                  JComponent.WHEN_FOCUSED);
-    if (!wasNull) {
-      ApplicationManager.getApplication().invokeLater(
-        () -> mySearchTextComponent.setCaretPosition(Math.min(oldCaretPosition, mySearchTextComponent.getText().length())));
-    }
 
     new VariantsCompletionAction(mySearchTextComponent); // It registers a shortcut set automatically on construction
   }
 
   private void updateReplaceComponent(@NotNull String textToSet) {
-    final int oldCaretPosition = myReplaceTextComponent != null ? myReplaceTextComponent.getCaretPosition() : 0;
     if (!updateTextComponent(false)) {
-      if (!myReplaceTextComponent.getText().equals(textToSet)) {
+      String existingText = myReplaceTextComponent.getText();
+      if (!existingText.equals(textToSet)) {
         myReplaceTextComponent.setText(textToSet);
+        if (existingText.length() == 0) myReplaceTextComponent.selectAll();
       }
       return;
     }
@@ -364,9 +360,6 @@ public class SearchReplaceComponent extends EditorHeaderComponent implements Dat
     if (!isMultiline()) {
       installReplaceOnEnterAction(myReplaceTextComponent);
     }
-
-    //myReplaceTextComponent.setText(myFindModel.getStringToReplace());
-    ApplicationManager.getApplication().invokeLater(() -> myReplaceTextComponent.setCaretPosition(oldCaretPosition));
 
     new VariantsCompletionAction(myReplaceTextComponent);
     myReplaceFieldWrapper.revalidate();
@@ -433,46 +426,26 @@ public class SearchReplaceComponent extends EditorHeaderComponent implements Dat
 
   private boolean updateTextComponent(boolean search) {
     JTextComponent oldComponent = search ? mySearchTextComponent : myReplaceTextComponent;
-    Color oldBackground = oldComponent != null ? oldComponent.getBackground() : null;
-    final MyTextComponentWrapper wrapper = search ? mySearchFieldWrapper : myReplaceFieldWrapper;
     if (oldComponent != null) return false;
+    final MyTextComponentWrapper wrapper = search ? mySearchFieldWrapper : myReplaceFieldWrapper;
 
     final JTextComponent textComponent;
       SearchTextArea textArea = new SearchTextArea(search);
       textComponent = textArea.getTextArea();
       ((JTextArea)textComponent).setRows(isMultiline() ? 2 : 1);
-      KeymapUtil.reassignAction(textComponent,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0),
-                                NEW_LINE_KEYSTROKE,
-                                WHEN_FOCUSED);
-
-    textComponent.registerKeyboardAction(e -> {
-      if (isMultiline(textComponent)) {
-        if (textComponent.isEditable() && textComponent.isEnabled()) {
-          textComponent.replaceSelection("\t");
-        }
-        else {
-          UIManager.getLookAndFeel().provideErrorFeedback(textComponent);
-        }
-      }
-      else {
-        textComponent.transferFocus();
-      }
-    }, KeyStroke.getKeyStroke(KeyEvent.VK_TAB, 0), WHEN_FOCUSED);
-
-    textComponent.registerKeyboardAction(e -> {
-      textComponent.transferFocusBackward();
-    }, KeyStroke.getKeyStroke(KeyEvent.VK_TAB, InputEvent.SHIFT_DOWN_MASK), WHEN_FOCUSED);
 
     wrapper.setContent(textArea);
 
     UIUtil.addUndoRedoActions(textComponent);
-    Utils.setSmallerFont(textComponent);
+
+    if (UIUtil.isUnderWindowsLookAndFeel()) {
+      textComponent.setFont(UIManager.getFont("TextField.font"));
+    } else {
+      Utils.setSmallerFont(textComponent);
+    }
 
     textComponent.putClientProperty("AuxEditorComponent", Boolean.TRUE);
-    if (oldBackground != null) {
-      textComponent.setBackground(oldBackground);
-    }
+    textComponent.setBackground(UIUtil.getTextFieldBackground());
     textComponent.addFocusListener(new FocusListener() {
       @Override
       public void focusGained(final FocusEvent e) {
@@ -499,6 +472,8 @@ public class SearchReplaceComponent extends EditorHeaderComponent implements Dat
     if (myReplaceTextComponent instanceof JTextArea) {
       adjustRows((JTextArea)myReplaceTextComponent);
     }
+    myReplaceActionsToolbar2.invalidate();
+    doLayout();
     myEventDispatcher.getMulticaster().replaceFieldDocumentChanged();
   }
 
@@ -507,13 +482,8 @@ public class SearchReplaceComponent extends EditorHeaderComponent implements Dat
   }
 
   private static void adjustRows(@NotNull JTextArea area) {
-    area.setRows(Math.max(2, Math.min(3, StringUtil.countChars(area.getText(), '\n') + 1)));
+    area.setRows(Math.max(1, Math.min(3, StringUtil.countChars(area.getText(), '\n') + 1)));
   }
-
-  private static boolean isMultiline(@NotNull JTextComponent component) {
-    return component.getText().contains("\n");
-  }
-
 
   private void installCloseOnEscapeAction(@NotNull JTextComponent c) {
     ActionListener action = new ActionListener() {
@@ -524,7 +494,7 @@ public class SearchReplaceComponent extends EditorHeaderComponent implements Dat
     };
     c.registerKeyboardAction(action, KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_FOCUSED);
     if (KeymapUtil.isEmacsKeymap()) {
-      c.registerKeyboardAction(action, KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_MASK), JComponent.WHEN_FOCUSED);
+      c.registerKeyboardAction(action, KeyStroke.getKeyStroke(KeyEvent.VK_G, CTRL_MASK), JComponent.WHEN_FOCUSED);
     }
   }
 

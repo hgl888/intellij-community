@@ -43,7 +43,7 @@ import java.io.StringWriter;
 import java.util.*;
 
 public class GenerationUtil {
-  private static final Logger logger = Logger.getInstance("#" + GenerationUtil.class.getName());
+  private static final Logger logger = Logger.getInstance(GenerationUtil.class);
 
   /**
      * Handles any exception during the executing on this plugin.
@@ -124,7 +124,7 @@ public class GenerationUtil {
   /**
    * Generates the code using Velocity.
    * <p>
-   * This is used to create the <code>toString</code> method body and it's javadoc.
+   * This is used to create the {@code toString} method body and it's javadoc.
    *
    * @param clazz
    * @param selectedMembers       the selected members as both {@link PsiField} and {@link PsiMethod}.
@@ -141,13 +141,13 @@ public class GenerationUtil {
                                             int sortElements,
                                             boolean useFullyQualifiedName)
     throws GenerateCodeException {
-    return velocityGenerateCode(clazz, selectedMembers, Collections.<PsiMember>emptyList(), params, Collections.<String, Object>emptyMap(), templateMacro, sortElements, useFullyQualifiedName, false);
+    return velocityGenerateCode(clazz, selectedMembers, Collections.emptyList(), params, Collections.emptyMap(), templateMacro, sortElements, useFullyQualifiedName, false);
   }
 
   /**
    * Generates the code using Velocity.
    * <p/>
-   * This is used to create the <code>toString</code> method body and it's javadoc.
+   * This is used to create the {@code toString} method body and it's javadoc.
    *
    * @param selectedMembers the selected members as both {@link PsiField} and {@link PsiMethod}.
    * @param params          additional parameters stored with key/value in the map.
@@ -192,7 +192,7 @@ public class GenerationUtil {
       logger.debug("Velocity Context - adding members (fields and methods)");
       List<Element> elements = ElementUtils.getOnlyAsFieldAndMethodElements(selectedMembers, selectedNotNullMembers, useAccessors);
       // sort elements if enabled and not using chooser dialog
-      if (sortElements != 0) {
+      if (sortElements != 0 && sortElements < 3) {
         Collections.sort(elements, new ElementComparator(sortElements));
       }
       vc.put("members", elements);

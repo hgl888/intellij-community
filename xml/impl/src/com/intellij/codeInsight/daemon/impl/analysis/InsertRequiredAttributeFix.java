@@ -15,7 +15,6 @@
  */
 package com.intellij.codeInsight.daemon.impl.analysis;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.daemon.XmlErrorMessages;
 import com.intellij.codeInsight.intention.HighPriorityAction;
 import com.intellij.codeInsight.lookup.LookupElement;
@@ -41,10 +40,6 @@ import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * User: anna
- * Date: 18-Nov-2005
- */
 public class InsertRequiredAttributeFix extends LocalQuickFixAndIntentionActionOnPsiElement implements HighPriorityAction {
   private final String myAttrName;
   private final String[] myValues;
@@ -75,7 +70,6 @@ public class InsertRequiredAttributeFix extends LocalQuickFixAndIntentionActionO
                      @Nullable("is null when called from inspection") final Editor editor,
                      @NotNull PsiElement startElement,
                      @NotNull PsiElement endElement) {
-    if (!FileModificationService.getInstance().prepareFileForWrite(file)) return;
     XmlTag myTag = (XmlTag)startElement;
     ASTNode treeElement = SourceTreeToPsiMap.psiElementToTree(myTag);
 

@@ -16,20 +16,22 @@
 package com.jetbrains.python;
 
 import com.intellij.openapi.util.TextRange;
-import com.intellij.testFramework.UsefulTestCase;
+import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.python.inspections.PyNewStyleStringFormatParser;
 import com.jetbrains.python.inspections.PyNewStyleStringFormatParser.Field;
 import com.jetbrains.python.inspections.PyNewStyleStringFormatParser.ParseResult;
+import junit.framework.TestCase;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
+import static com.intellij.testFramework.UsefulTestCase.*;
 import static com.jetbrains.python.inspections.PyStringFormatParser.*;
 
 /**
  * @author yole
  */
-public class PyStringFormatParserTest extends UsefulTestCase {
+public class PyStringFormatParserTest extends TestCase {
   public void testSimple() {
     List<FormatStringChunk> chunks = parsePercentFormat("abc");
     assertEquals(1, chunks.size());
@@ -51,7 +53,7 @@ public class PyStringFormatParserTest extends UsefulTestCase {
   public void testFormat() {
     List<FormatStringChunk> chunks = parsePercentFormat("%s");
     assertEquals(1, chunks.size());
-    SubstitutionChunk chunk = (SubstitutionChunk)chunks.get(0);
+    PercentSubstitutionChunk chunk = (PercentSubstitutionChunk)chunks.get(0);
     assertEquals(0, chunk.getStartIndex());
     assertEquals(2, chunk.getEndIndex());
     assertEquals('s', chunk.getConversionType());
@@ -66,7 +68,7 @@ public class PyStringFormatParserTest extends UsefulTestCase {
   public void testMappingKey() {
     List<FormatStringChunk> chunks = parsePercentFormat("%(language)s");
     assertEquals(1, chunks.size());
-    SubstitutionChunk chunk = (SubstitutionChunk)chunks.get(0);
+    PercentSubstitutionChunk chunk = (PercentSubstitutionChunk)chunks.get(0);
     assertEquals("language", chunk.getMappingKey());
     assertEquals('s', chunk.getConversionType());
   }
@@ -74,7 +76,7 @@ public class PyStringFormatParserTest extends UsefulTestCase {
   public void testConversionFlags() {
     List<FormatStringChunk> chunks = parsePercentFormat("%#0d");
     assertEquals(1, chunks.size());
-    SubstitutionChunk chunk = (SubstitutionChunk)chunks.get(0);
+    PercentSubstitutionChunk chunk = (PercentSubstitutionChunk)chunks.get(0);
     assertEquals("#0", chunk.getConversionFlags());
   }
 
@@ -95,21 +97,21 @@ public class PyStringFormatParserTest extends UsefulTestCase {
   public void testLengthModifier() {
     List<FormatStringChunk> chunks = parsePercentFormat("%ld");
     assertEquals(1, chunks.size());
-    SubstitutionChunk chunk = (SubstitutionChunk)chunks.get(0);
+    PercentSubstitutionChunk chunk = (PercentSubstitutionChunk)chunks.get(0);
     assertEquals('l', chunk.getLengthModifier());
   }
 
   public void testDoubleAsterisk() {
     List<FormatStringChunk> chunks = parsePercentFormat("%**d");
     assertEquals(2, chunks.size());
-    SubstitutionChunk chunk = (SubstitutionChunk)chunks.get(0);
+    PercentSubstitutionChunk chunk = (PercentSubstitutionChunk)chunks.get(0);
     assertEquals(2, chunk.getEndIndex());
     assertEquals('\0', chunk.getConversionType());
   }
 
   public void testUnclosedMapping() {
     List<FormatStringChunk> chunks = parsePercentFormat("%(name1s");
-    SubstitutionChunk chunk = (SubstitutionChunk)chunks.get(0);
+    PercentSubstitutionChunk chunk = (PercentSubstitutionChunk)chunks.get(0);
     assertEquals("name1s", chunk.getMappingKey());
     assertTrue(chunk.isUnclosedMapping());
   }
@@ -145,6 +147,14 @@ public class PyStringFormatParserTest extends UsefulTestCase {
     assertEquals(TextRange.create(1, 4), chunks.get(0).getTextRange());
   }
 
+  public void testAutoPosition() {
+    final List<SubstitutionChunk> oldStyleChunks = filterSubstitutions(parsePercentFormat("%s %(foo)s %(bar)s %*.*d"));
+    assertOrderedEquals(ContainerUtil.map(oldStyleChunks, SubstitutionChunk::getAutoPosition), 0, null, null, 1);
+
+    final List<SubstitutionChunk> newStyleChunks = filterSubstitutions(parseNewStyleFormat("'{foo} {} {bar} {0} {}'"));
+    assertOrderedEquals(ContainerUtil.map(newStyleChunks, SubstitutionChunk::getAutoPosition), null, 0, null, null, 1);
+  }
+
   public void testNewStyleConstant() {
     List<FormatStringChunk> chunks = parseNewStyleFormat("a");
     assertEquals(1, chunks.size());
@@ -164,6 +174,78 @@ public class PyStringFormatParserTest extends UsefulTestCase {
     assertEquals(TextRange.create(7, 9), chunks.get(2).getTextRange());
   }
 
+  public void testNewStyleSign() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{:+}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 4), chunks.get(0).getTextRange());
+    assertTrue(((NewStyleSubstitutionChunk)chunks.get(0)).hasSignOption());
+  }
+
+  public void testNewStyleAlternateForm() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{:#}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 4), chunks.get(0).getTextRange());
+    assertTrue(((NewStyleSubstitutionChunk)chunks.get(0)).useAlternateForm());
+  }
+
+  public void testNewStyleZeroPadded() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{:0}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 4), chunks.get(0).getTextRange());
+    assertTrue(((NewStyleSubstitutionChunk)chunks.get(0)).hasZeroPadding());
+  }
+
+  public void testNewStyleWidth() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{:10}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 5), chunks.get(0).getTextRange());
+    assertEquals("10", ((NewStyleSubstitutionChunk)chunks.get(0)).getWidth());
+  }
+
+  public void testNewStyleZeroPaddingWidth() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{:010}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 6), chunks.get(0).getTextRange());
+    assertTrue(((NewStyleSubstitutionChunk)chunks.get(0)).hasZeroPadding());
+    assertEquals("10", ((NewStyleSubstitutionChunk)chunks.get(0)).getWidth());
+  }
+
+  public void testNewStyleThousandSeparator() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{:,}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 4), chunks.get(0).getTextRange());
+    assertTrue(((NewStyleSubstitutionChunk)chunks.get(0)).hasThousandsSeparator());
+  }
+
+  public void testNewStylePrecision() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{:.2}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 5), chunks.get(0).getTextRange());
+    assertEquals("2", ((NewStyleSubstitutionChunk)chunks.get(0)).getPrecision());
+  }
+
+  public void testNewStyleConversionType() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{:d}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 4), chunks.get(0).getTextRange());
+    assertEquals('d', ((NewStyleSubstitutionChunk)chunks.get(0)).getConversionType());
+  }
+
+  public void testNewStyleConversion() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{!s}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 4), chunks.get(0).getTextRange());
+    assertEquals("s", ((NewStyleSubstitutionChunk)chunks.get(0)).getConversion());
+  }
+
+  public void testNewStyleUnicodeEscaping() {
+    List<SubstitutionChunk> chunks = filterSubstitutions(parseNewStyleFormat("u\"\\N{LATIN SMALL LETTER B}{:s}\\N{NUMBER SIGN}\\\n" +
+                                                                             "        {:s}\\N{LATIN SMALL LETTER B}\""));
+    assertEquals(2, chunks.size());
+    assertEquals('s', chunks.get(0).getConversionType());
+    assertEquals('s', chunks.get(1).getConversionType());
+  }
+
   public void testNewStyleNestedFields() {
     final Field field = doParseAndGetFirstField("u'{foo:{bar} {baz}}'");
     assertEquals("foo", field.getFirstName());
@@ -178,8 +260,8 @@ public class PyStringFormatParserTest extends UsefulTestCase {
     final List<Field> topLevelFields = result.getFields();
     assertSize(2, topLevelFields);
     assertSize(5, result.getAllFields());
-    assertSameElements(result.getAllFields().stream().map(f -> f.getDepth()).toArray(), 1, 2, 3, 4, 1);
-    assertSameElements(result.getAllFields().stream().map(f -> f.getAutoPosition()).toArray(), 0, 1, 2, 3, 4);
+    assertOrderedEquals(result.getAllFields().stream().map(Field::getDepth).toArray(), 1, 2, 3, 4, 1);
+    assertOrderedEquals(result.getAllFields().stream().map(SubstitutionChunk::getAutoPosition).toArray(), 0, 1, 2, 3, 4);
   }
 
   public void testNewStyleAttrAndLookups() {
@@ -195,40 +277,40 @@ public class PyStringFormatParserTest extends UsefulTestCase {
 
     field = doParseAndGetFirstField("u'{foo.bar.baz}'");
     assertEquals("foo", field.getFirstName());
-    assertSameElements(field.getAttributesAndLookups(), ".bar", ".baz");
+    assertOrderedEquals(field.getAttributesAndLookups(), ".bar", ".baz");
 
     field = doParseAndGetFirstField("u'{foo[bar][baz]}'");
     assertEquals("foo", field.getFirstName());
-    assertSameElements(field.getAttributesAndLookups(), "[bar]", "[baz]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[bar]", "[baz]");
 
     field = doParseAndGetFirstField("u'{foo.bar[baz]}'");
     assertEquals("foo", field.getFirstName());
-    assertSameElements(field.getAttributesAndLookups(), ".bar", "[baz]");
+    assertOrderedEquals(field.getAttributesAndLookups(), ".bar", "[baz]");
 
     field = doParseAndGetFirstField("u'{foo.bar[baz}'");
     assertEquals("foo", field.getFirstName());
-    assertSameElements(field.getAttributesAndLookups(), ".bar");
+    assertOrderedEquals(field.getAttributesAndLookups(), ".bar");
 
     field = doParseAndGetFirstField("u'{foo[{bar[baz]}'");
     assertEquals("foo", field.getFirstName());
-    assertSameElements(field.getAttributesAndLookups(), "[{bar[baz]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[{bar[baz]");
 
     field = doParseAndGetFirstField("u'{foo[{} {0} {bar.baz}]'");
     assertEquals("foo", field.getFirstName());
-    assertSameElements(field.getAttributesAndLookups(), "[{} {0} {bar.baz}]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[{} {0} {bar.baz}]");
 
     field = doParseAndGetFirstField("u'{foo[bar]baz'");
     assertEquals("foo", field.getFirstName());
-    assertSameElements(field.getAttributesAndLookups(), "[bar]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[bar]");
 
     field = doParseAndGetFirstField("'{0[foo][.!:][}]}'");
     assertEquals("0", field.getFirstName());
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", "[.!:]", "[}]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", "[.!:]", "[}]");
 
     field = doParseAndGetFirstField("'{.foo.bar}'");
     assertEmpty(field.getFirstName());
     assertEquals(TextRange.create(2, 2), field.getFirstNameRange());
-    assertSameElements(field.getAttributesAndLookups(), ".foo", ".bar");
+    assertOrderedEquals(field.getAttributesAndLookups(), ".foo", ".bar");
 
     field = doParseAndGetFirstField("'{}'");
     assertEmpty(field.getFirstName());
@@ -261,71 +343,71 @@ public class PyStringFormatParserTest extends UsefulTestCase {
     assertEmpty(field.getAttributesAndLookups());
 
     field = doParseAndGetFirstField("'{0[foo].bar[baz]}'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
 
     field = doParseAndGetFirstField("'{0[foo].bar[baz]'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
 
     field = doParseAndGetFirstField("'{0[foo].bar[baz]");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
 
     // do not recover unfinished lookups
     field = doParseAndGetFirstField("'{0[foo].bar[ba}'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar");
 
     field = doParseAndGetFirstField("'{0[foo].bar[ba!}'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar");
 
     field = doParseAndGetFirstField("'{0[foo].bar[ba:}'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar");
 
     field = doParseAndGetFirstField("'{0[foo].bar[ba'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar");
 
     field = doParseAndGetFirstField("'{0[foo].bar[ba");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar");
 
     // do not recover illegal attributes
     field = doParseAndGetFirstField("'{0[foo].bar[baz]quux}'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
 
     field = doParseAndGetFirstField("'{0[foo].bar[baz]quux!}'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
 
     field = doParseAndGetFirstField("'{0[foo].bar[baz]quux:}'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
 
     field = doParseAndGetFirstField("'{0[foo].bar[baz]quux'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
 
     field = doParseAndGetFirstField("'{0[foo].bar[baz]quux");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar", "[baz]");
 
     field = doParseAndGetFirstField("'{0..}'");
     assertEquals("0", field.getFirstName());
-    assertSameElements(field.getAttributesAndLookups(), ".", ".");
+    assertOrderedEquals(field.getAttributesAndLookups(), ".", ".");
 
     // recover attributes
     field = doParseAndGetFirstField("'{0[foo].}'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".");
 
     field = doParseAndGetFirstField("'{0[foo].'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".");
 
     field = doParseAndGetFirstField("'{0[foo].");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".");
 
     field = doParseAndGetFirstField("'{0[foo].bar}'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar");
 
     field = doParseAndGetFirstField("'{0[foo].bar'");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar");
 
     field = doParseAndGetFirstField("'{0[foo].bar");
-    assertSameElements(field.getAttributesAndLookups(), "[foo]", ".bar");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[foo]", ".bar");
   }
 
-  public void testAutoPosition() {
+  public void testNewStyleAutoPosition() {
     final ParseResult result = PyNewStyleStringFormatParser.parse("'{foo} {} {bar} {0} {}'");
     final List<Field> topLevelFields = result.getFields();
     assertSize(5, topLevelFields);
@@ -361,12 +443,12 @@ public class PyStringFormatParserTest extends UsefulTestCase {
 
   public void testNewStyleNamedUnicodeEscapeInLookup() {
     final Field field = doParseAndGetFirstField("'{foo[\\N{ESCAPE WITH ]}]}'");
-    assertSameElements(field.getAttributesAndLookups(), "[\\N{ESCAPE WITH ]}]");
+    assertOrderedEquals(field.getAttributesAndLookups(), "[\\N{ESCAPE WITH ]}]");
   }
 
   public void testNewStyleNamedUnicodeEscapeInAttribute() {
     final Field field = doParseAndGetFirstField("'{foo.b\\N{ESCAPE WITH [}.b\\N{ESCAPE WITH .}}'");
-    assertSameElements(field.getAttributesAndLookups(), ".b\\N{ESCAPE WITH [}", ".b\\N{ESCAPE WITH .}");
+    assertOrderedEquals(field.getAttributesAndLookups(), ".b\\N{ESCAPE WITH [}", ".b\\N{ESCAPE WITH .}");
   }
 
   public void testNewStyleUnclosedLookupEndsWithRightBrace() {
@@ -388,5 +470,101 @@ public class PyStringFormatParserTest extends UsefulTestCase {
     final List<Field> topLevelFields = result.getFields();
     assertSize(1, topLevelFields);
     return topLevelFields.get(0);
+  }
+
+  public void testNewStyleMappingKeyFormatSpec() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{a:d}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 5), chunks.get(0).getTextRange());
+    assertEquals("a", ((NewStyleSubstitutionChunk)chunks.get(0)).getMappingKey());
+    assertEquals('d', ((NewStyleSubstitutionChunk)chunks.get(0)).getConversionType());
+  }
+
+  public void testNewStyleMappingKeyConversionFormatSpec() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{a!s:.2d}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 9), chunks.get(0).getTextRange());
+    assertEquals("a", ((NewStyleSubstitutionChunk)chunks.get(0)).getMappingKey());
+    assertEquals("s", ((NewStyleSubstitutionChunk)chunks.get(0)).getConversion());
+    assertEquals("2", ((NewStyleSubstitutionChunk)chunks.get(0)).getPrecision());
+    assertEquals('d', ((NewStyleSubstitutionChunk)chunks.get(0)).getConversionType());
+  }
+
+  public void testSkipAlign() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{a:*^d}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 7), chunks.get(0).getTextRange());
+    assertEquals("a", ((NewStyleSubstitutionChunk)chunks.get(0)).getMappingKey());
+    assertEquals('d', ((NewStyleSubstitutionChunk)chunks.get(0)).getConversionType());
+  }
+
+  public void testNewStyleAllPossibleSpecs() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{a!s:#010,.2d}");
+    assertEquals(1, chunks.size());
+    assertEquals(TextRange.create(0, 14), chunks.get(0).getTextRange());
+    assertEquals("a", ((NewStyleSubstitutionChunk)chunks.get(0)).getMappingKey());
+    assertEquals("s", ((NewStyleSubstitutionChunk)chunks.get(0)).getConversion());
+    assertEquals("2", ((NewStyleSubstitutionChunk)chunks.get(0)).getPrecision());
+    assertEquals('d', ((NewStyleSubstitutionChunk)chunks.get(0)).getConversionType());
+  }
+  
+  public void testNewStyleFiledNameWithAttribute() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{foo.a}");
+    assertEquals(1, chunks.size());
+    final NewStyleSubstitutionChunk chunk = (NewStyleSubstitutionChunk)chunks.get(0);
+    assertEquals(TextRange.create(0, 7), chunk.getTextRange());
+    assertEquals("foo", chunk.getMappingKey());
+    assertNotNull(chunk.getMappingKeyAttributeName());
+    assertEquals("a", chunk.getMappingKeyAttributeName());
+  }
+  
+  public void testNewStyleFiledNameWithElementIndex() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{foo[a]}");
+    assertEquals(1, chunks.size());
+    final NewStyleSubstitutionChunk chunk = (NewStyleSubstitutionChunk)chunks.get(0);
+    assertEquals(TextRange.create(0, 8), chunk.getTextRange());
+    assertEquals("foo", chunk.getMappingKey());
+    assertNotNull(chunk.getMappingKeyElementIndex());
+    assertEquals("a", chunk.getMappingKeyElementIndex());
+  }
+
+  public void testNewStyleFiledNameWithAttributeWithFormatSpec() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{foo.a:d}");
+    assertEquals(1, chunks.size());
+    final NewStyleSubstitutionChunk chunk = (NewStyleSubstitutionChunk)chunks.get(0);
+    assertEquals(TextRange.create(0, 9), chunk.getTextRange());
+    assertEquals("foo", chunk.getMappingKey());
+    assertNotNull(chunk.getMappingKeyAttributeName());
+    assertEquals("a", chunk.getMappingKeyAttributeName());
+    assertEquals('d', chunk.getConversionType());
+  }
+
+  public void testNewStyleFiledNameWithElementIndexWithFormatSpec() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{foo[a]:d}");
+    assertEquals(1, chunks.size());
+    final NewStyleSubstitutionChunk chunk = (NewStyleSubstitutionChunk)chunks.get(0);
+    assertEquals(TextRange.create(0, 10), chunk.getTextRange());
+    assertEquals("foo", chunk.getMappingKey());
+    assertNotNull(chunk.getMappingKeyElementIndex());
+    assertEquals("a", chunk.getMappingKeyElementIndex());
+    assertEquals('d', chunk.getConversionType());
+  } 
+  
+  public void testNewStyleFieldNameWithNestedElementIndex() {
+    final List<FormatStringChunk> chunks = parseNewStyleFormat("{foo[a][1].a[1]:d}");
+    assertEquals(1, chunks.size());
+    final NewStyleSubstitutionChunk chunk = (NewStyleSubstitutionChunk)chunks.get(0);
+    assertEquals(TextRange.create(0, 18), chunk.getTextRange());
+    assertEquals("foo", chunk.getMappingKey());
+    assertNotNull(chunk.getMappingKeyElementIndex());
+    assertEquals("a", chunk.getMappingKeyElementIndex());
+    assertEquals('d', chunk.getConversionType());
+  }
+  
+  public void testAsciiFormatSpecifierOldStyleFormat() {
+    final List<FormatStringChunk> chunks = parsePercentFormat("%a");
+    assertEquals(1, chunks.size());
+    final PercentSubstitutionChunk chunk = (PercentSubstitutionChunk)chunks.get(0);
+    assertEquals('a', chunk.getConversionType());
   }
 }

@@ -26,12 +26,6 @@ import org.jetbrains.idea.svn.SvnBundle;
 import javax.swing.*;
 import java.awt.*;
 
-/**
- * Created with IntelliJ IDEA.
- * User: Irina.Chernushina
- * Date: 11/16/12
- * Time: 2:55 PM
- */
 public class SvnEditCommitMessageDialog extends DialogWrapper {
   @Nullable private final Project myProject;
   private final String myOldText;
@@ -65,7 +59,6 @@ public class SvnEditCommitMessageDialog extends DialogWrapper {
     wrapper.add(labelPanel, BorderLayout.WEST);
     parentPanel.add(wrapper, BorderLayout.NORTH);
     myCommitMessage = new CommitMessage(myProject, false);
-    myCommitMessage.setCheckSpelling(true);
     myCommitMessage.setText(myOldText);
     parentPanel.add(myCommitMessage, BorderLayout.CENTER);
     return parentPanel;

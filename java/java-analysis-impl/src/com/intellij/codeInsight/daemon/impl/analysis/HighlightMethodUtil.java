@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,6 +40,7 @@ import com.intellij.psi.infos.MethodCandidateInfo;
 import com.intellij.psi.util.*;
 import com.intellij.refactoring.util.RefactoringChangeUtil;
 import com.intellij.ui.ColorUtil;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.VisibilityUtil;
 import com.intellij.util.containers.MostlySingularMultiMap;
 import com.intellij.util.ui.UIUtil;
@@ -50,9 +51,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
 
 /**
  * Highlight method problems
@@ -344,7 +343,8 @@ public class HighlightMethodUtil {
   static HighlightInfo checkMethodCall(@NotNull PsiMethodCallExpression methodCall,
                                        @NotNull PsiResolveHelper resolveHelper,
                                        @NotNull LanguageLevel languageLevel,
-                                       @NotNull JavaSdkVersion javaSdkVersion) {
+                                       @NotNull JavaSdkVersion javaSdkVersion,
+                                       @NotNull PsiFile file) {
     PsiExpressionList list = methodCall.getArgumentList();
     PsiReferenceExpression referenceToMethod = methodCall.getMethodExpression();
     JavaResolveResult[] results = referenceToMethod.multiResolve(true);
@@ -359,31 +359,38 @@ public class HighlightMethodUtil {
     if (resolved instanceof PsiMethod && resolveResult.isValidResult()) {
       TextRange fixRange = getFixRange(methodCall);
       highlightInfo = HighlightUtil.checkUnhandledExceptions(methodCall, fixRange);
-      if (highlightInfo == null) {
-        String invalidCallMessage =
-          LambdaUtil.getInvalidQualifier4StaticInterfaceMethodMessage((PsiMethod)resolved, methodCall.getMethodExpression(), resolveResult.getCurrentFileResolveScope(), languageLevel);
-        if (invalidCallMessage != null) {
-          invalidCallMessage = HighlightUtil.extendUnsupportedLanguageLevelDescription(invalidCallMessage, methodCall, languageLevel, methodCall.getContainingFile(), LanguageLevel.JDK_1_8);
-          highlightInfo = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).descriptionAndTooltip(invalidCallMessage).range(fixRange).create();
-          if (!languageLevel.isAtLeast(LanguageLevel.JDK_1_8)) {
-            QuickFixAction.registerQuickFixAction(highlightInfo, QUICK_FIX_FACTORY.createIncreaseLanguageLevelFix(LanguageLevel.JDK_1_8));
-          }
-        } else {
-          highlightInfo = GenericsHighlightUtil.checkInferredIntersections(substitutor, fixRange);
-        }
-        
-        if (highlightInfo == null) {
-          highlightInfo = checkVarargParameterErasureToBeAccessible((MethodCandidateInfo)resolveResult, methodCall);
-        }
 
-        if (highlightInfo == null) {
-          final String errorMessage = ((MethodCandidateInfo)resolveResult).getInferenceErrorMessage();
-          if (errorMessage != null) {
-            highlightInfo = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).descriptionAndTooltip(errorMessage).range(fixRange).create();
-            if (highlightInfo != null) {
-              registerMethodCallIntentions(highlightInfo, methodCall, list, resolveHelper);
-              registerMethodReturnFixAction(highlightInfo, (MethodCandidateInfo)resolveResult, methodCall);
+      if (highlightInfo == null && ((PsiMethod)resolved).hasModifierProperty(PsiModifier.STATIC)) {
+        PsiClass containingClass = ((PsiMethod)resolved).getContainingClass();
+        if (containingClass != null && containingClass.isInterface()) {
+          PsiReferenceExpression methodRef = methodCall.getMethodExpression();
+          PsiElement element = ObjectUtils.notNull(methodRef.getReferenceNameElement(), methodRef);
+          highlightInfo = HighlightUtil.checkFeature(element, HighlightUtil.Feature.STATIC_INTERFACE_CALLS, languageLevel, file);
+          if (highlightInfo == null) {
+            String message = checkStaticInterfaceMethodCallQualifier(methodRef, resolveResult.getCurrentFileResolveScope(), containingClass);
+            if (message != null) {
+              highlightInfo = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).descriptionAndTooltip(message).range(fixRange).create();
             }
+          }
+        }
+      }
+
+      if (highlightInfo == null) {
+        highlightInfo = GenericsHighlightUtil.checkInferredIntersections(substitutor, fixRange);
+      }
+
+      if (highlightInfo == null) {
+        highlightInfo = checkVarargParameterErasureToBeAccessible((MethodCandidateInfo)resolveResult, methodCall);
+      }
+
+      if (highlightInfo == null) {
+        String errorMessage = ((MethodCandidateInfo)resolveResult).getInferenceErrorMessage();
+        if (errorMessage != null) {
+          highlightInfo = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).descriptionAndTooltip(errorMessage).range(fixRange).create();
+          if (highlightInfo != null) {
+            registerMethodCallIntentions(highlightInfo, methodCall, list, resolveHelper);
+            registerMethodReturnFixAction(highlightInfo, (MethodCandidateInfo)resolveResult, methodCall);
+            registerTargetTypeFixesBasedOnApplicabilityInference(methodCall, (MethodCandidateInfo)resolveResult, (PsiMethod)resolved, highlightInfo);
           }
         }
       }
@@ -424,16 +431,18 @@ public class HighlightMethodUtil {
           if (highlightInfo != null) {
             registerMethodCallIntentions(highlightInfo, methodCall, list, resolveHelper);
             registerMethodReturnFixAction(highlightInfo, candidateInfo, methodCall);
+            registerTargetTypeFixesBasedOnApplicabilityInference(methodCall, candidateInfo, resolvedMethod, highlightInfo);
           }
         }
         else {
           PsiReferenceExpression methodExpression = methodCall.getMethodExpression();
           PsiReferenceParameterList typeArgumentList = methodCall.getTypeArgumentList();
+          PsiSubstitutor applicabilitySubstitutor = candidateInfo.getSubstitutor(false);
           if (typeArgumentList.getTypeArguments().length == 0 && resolvedMethod.hasTypeParameters()) {
-            highlightInfo = GenericsHighlightUtil.checkInferredTypeArguments(resolvedMethod, methodCall, substitutor);
+            highlightInfo = GenericsHighlightUtil.checkInferredTypeArguments(resolvedMethod, methodCall, applicabilitySubstitutor);
           }
           else {
-            highlightInfo = GenericsHighlightUtil.checkParameterizedReferenceTypeArguments(resolved, methodExpression, substitutor, javaSdkVersion);
+            highlightInfo = GenericsHighlightUtil.checkParameterizedReferenceTypeArguments(resolved, methodExpression, applicabilitySubstitutor, javaSdkVersion);
           }
         }
       }
@@ -449,14 +458,82 @@ public class HighlightMethodUtil {
           QuickFixAction.registerQuickFixAction(highlightInfo, range, QUICK_FIX_FACTORY.createCreateMethodFromUsageFix(methodCall));
           QuickFixAction.registerQuickFixAction(highlightInfo, range, QUICK_FIX_FACTORY.createCreateAbstractMethodFromUsageFix(methodCall));
           QuickFixAction.registerQuickFixAction(highlightInfo, range, QUICK_FIX_FACTORY.createCreatePropertyFromUsageFix(methodCall));
+          QuickFixAction.registerQuickFixAction(highlightInfo, range, QUICK_FIX_FACTORY.createStaticImportMethodFix(methodCall));
+          if (resolved instanceof PsiVariable && languageLevel.isAtLeast(LanguageLevel.JDK_1_8)) {
+            PsiMethod method = LambdaUtil.getFunctionalInterfaceMethod(((PsiVariable)resolved).getType());
+            if (method != null) {
+              QuickFixAction.registerQuickFixAction(highlightInfo, range, QUICK_FIX_FACTORY.createInsertMethodCallFix(methodCall, method));
+            }
+          }
         }
       }
     }
     if (highlightInfo == null) {
-      highlightInfo = GenericsHighlightUtil.checkParameterizedReferenceTypeArguments(resolved, referenceToMethod, substitutor,
-                                                                                     javaSdkVersion);
+      highlightInfo = GenericsHighlightUtil.checkParameterizedReferenceTypeArguments(resolved, referenceToMethod, substitutor, javaSdkVersion);
     }
     return highlightInfo;
+  }
+
+  private static void registerTargetTypeFixesBasedOnApplicabilityInference(@NotNull PsiMethodCallExpression methodCall,
+                                                                           MethodCandidateInfo resolveResult,
+                                                                           PsiMethod resolved,
+                                                                           HighlightInfo highlightInfo) {
+    PsiElement parent = PsiUtil.skipParenthesizedExprUp(methodCall.getParent());
+    PsiVariable variable = null;
+    if (parent instanceof PsiVariable) {
+      variable = (PsiVariable)parent;
+    }
+    else if (parent instanceof PsiAssignmentExpression) {
+      PsiExpression lExpression = ((PsiAssignmentExpression)parent).getLExpression();
+      if (lExpression instanceof PsiReferenceExpression) {
+        PsiElement resolve = ((PsiReferenceExpression)lExpression).resolve();
+        if (resolve instanceof PsiVariable) {
+          variable = (PsiVariable)resolve;
+        }
+      }
+    }
+
+    if (variable != null) {
+      PsiType rType = methodCall.getType();
+      if (rType != null && !variable.getType().isAssignableFrom(rType)) {
+        PsiType expectedTypeByApplicabilityConstraints = resolveResult.getSubstitutor(false).substitute(resolved.getReturnType());
+        if (expectedTypeByApplicabilityConstraints != null && !expectedTypeByApplicabilityConstraints.equals(rType)) {
+          HighlightUtil.registerChangeVariableTypeFixes(variable, expectedTypeByApplicabilityConstraints, methodCall, highlightInfo);
+        }
+      }
+    }
+  }
+
+  /* see also PsiReferenceExpressionImpl.hasValidQualifier() */
+  @Nullable
+  private static String checkStaticInterfaceMethodCallQualifier(PsiReferenceExpression ref, PsiElement scope, PsiClass containingClass) {
+    PsiExpression qualifierExpression = ref.getQualifierExpression();
+    if (qualifierExpression == null && (scope instanceof PsiImportStaticStatement || PsiTreeUtil.isAncestor(containingClass, ref, true))) {
+      return null;
+    }
+
+    if (qualifierExpression instanceof PsiReferenceExpression) {
+      PsiElement resolve = ((PsiReferenceExpression)qualifierExpression).resolve();
+      if (resolve == containingClass) {
+        return null;
+      }
+
+      if (resolve instanceof PsiTypeParameter) {
+        Set<PsiClass> classes = new HashSet<>();
+        for (PsiClassType type : ((PsiTypeParameter)resolve).getExtendsListTypes()) {
+          PsiClass aClass = type.resolve();
+          if (aClass != null) {
+            classes.add(aClass);
+          }
+        }
+
+        if (classes.size() == 1 && classes.contains(containingClass)) {
+          return null;
+        }
+      }
+    }
+
+    return JavaErrorMessages.message("static.interface.method.call.qualifier");
   }
 
   private static void registerMethodReturnFixAction(HighlightInfo highlightInfo,
@@ -550,12 +627,14 @@ public class HighlightMethodUtil {
 
   @Nullable
   static HighlightInfo checkAmbiguousMethodCallIdentifier(@NotNull PsiReferenceExpression referenceToMethod,
-                                                @NotNull JavaResolveResult[] resolveResults,
-                                                @NotNull PsiExpressionList list,
-                                                final PsiElement element,
-                                                @NotNull JavaResolveResult resolveResult,
-                                                @NotNull PsiMethodCallExpression methodCall,
-                                                @NotNull PsiResolveHelper resolveHelper) {
+                                                          @NotNull JavaResolveResult[] resolveResults,
+                                                          @NotNull PsiExpressionList list,
+                                                          final PsiElement element,
+                                                          @NotNull JavaResolveResult resolveResult,
+                                                          @NotNull PsiMethodCallExpression methodCall,
+                                                          @NotNull PsiResolveHelper resolveHelper,
+                                                          @NotNull LanguageLevel languageLevel,
+                                                          @NotNull PsiFile file) {
     MethodCandidateInfo methodCandidate1 = null;
     MethodCandidateInfo methodCandidate2 = null;
     for (JavaResolveResult result : resolveResults) {
@@ -578,37 +657,39 @@ public class HighlightMethodUtil {
       return null;
     }
     String description;
-    PsiElement elementToHighlight;
+    PsiElement elementToHighlight = ObjectUtils.notNull(referenceToMethod.getReferenceNameElement(), referenceToMethod);
     if (element != null && !resolveResult.isAccessible()) {
       description = HighlightUtil.buildProblemWithAccessDescription(referenceToMethod, resolveResult);
-      elementToHighlight = referenceToMethod.getReferenceNameElement();
     }
     else if (element != null && !resolveResult.isStaticsScopeCorrect()) {
-      final LanguageLevel languageLevel = PsiUtil.getLanguageLevel(referenceToMethod);
-      final String staticInterfaceMethodMessage = 
-        element instanceof PsiMethod 
-        ? LambdaUtil.getInvalidQualifier4StaticInterfaceMethodMessage((PsiMethod)element, referenceToMethod, 
-                                                                      resolveResult.getCurrentFileResolveScope(), languageLevel) 
-        : null;
-      if (staticInterfaceMethodMessage != null) {
-        description = HighlightUtil.extendUnsupportedLanguageLevelDescription(staticInterfaceMethodMessage, methodCall, languageLevel, referenceToMethod.getContainingFile(), LanguageLevel.JDK_1_8);
+      if (element instanceof PsiMethod && ((PsiMethod)element).hasModifierProperty(PsiModifier.STATIC)) {
+        PsiClass containingClass = ((PsiMethod)element).getContainingClass();
+        if (containingClass != null && containingClass.isInterface()) {
+          HighlightInfo info = HighlightUtil.checkFeature(elementToHighlight, HighlightUtil.Feature.STATIC_INTERFACE_CALLS, languageLevel, file);
+          if (info != null) return info;
+          description = checkStaticInterfaceMethodCallQualifier(referenceToMethod, resolveResult.getCurrentFileResolveScope(), containingClass);
+          if (description != null) {
+            HighlightInfo highlightInfo = HighlightInfo.newHighlightInfo(highlightInfoType).range(elementToHighlight).description(description)
+              .escapedToolTip(XmlStringUtil.escapeString(description)).create();
+            QuickFixAction.registerQuickFixAction(highlightInfo, QUICK_FIX_FACTORY.createAccessStaticViaInstanceFix(referenceToMethod, resolveResult));
+            return highlightInfo;
+          }
+        }
       }
-      else {
-        description = HighlightUtil.buildProblemWithStaticDescription(element);
-      }
-      elementToHighlight = referenceToMethod.getReferenceNameElement();
+
+      description = HighlightUtil.buildProblemWithStaticDescription(element);
     }
     else {
       String methodName = referenceToMethod.getReferenceName() + buildArgTypesList(list);
       description = JavaErrorMessages.message("cannot.resolve.method", methodName);
       if (candidates.length == 0) {
-        elementToHighlight = referenceToMethod.getReferenceNameElement();
         highlightInfoType = HighlightInfoType.WRONG_REF;
       }
       else {
         return null;
       }
     }
+
     String toolTip = XmlStringUtil.escapeString(description);
     HighlightInfo info =
       HighlightInfo.newHighlightInfo(highlightInfoType).range(elementToHighlight).description(description).escapedToolTip(toolTip).create();
@@ -622,6 +703,7 @@ public class HighlightMethodUtil {
     WrapArrayToArraysAsListFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
     WrapLongWithMathToIntExactFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
     WrapObjectWithOptionalOfNullableFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
+    WrapLongWithMathToIntExactFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
     PermuteArgumentsFix.registerFix(info, methodCall, candidates, fixRange);
     WrapExpressionFix.registerWrapAction(candidates, list.getExpressions(), info);
     registerChangeParameterClassFix(methodCall, list, info);
@@ -710,6 +792,7 @@ public class HighlightMethodUtil {
     WrapArrayToArraysAsListFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
     WrapLongWithMathToIntExactFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
     WrapObjectWithOptionalOfNullableFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
+    WrapStringWithFileFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
     PermuteArgumentsFix.registerFix(info, methodCall, candidates, fixRange);
     WrapExpressionFix.registerWrapAction(candidates, list.getExpressions(), info);
     registerChangeParameterClassFix(methodCall, list, info);
@@ -757,6 +840,7 @@ public class HighlightMethodUtil {
     WrapArrayToArraysAsListFix.REGISTAR.registerCastActions(methodCandidates, methodCall, highlightInfo, fixRange);
     WrapLongWithMathToIntExactFix.REGISTAR.registerCastActions(methodCandidates, methodCall, highlightInfo, fixRange);
     WrapObjectWithOptionalOfNullableFix.REGISTAR.registerCastActions(methodCandidates, methodCall, highlightInfo, fixRange);
+    WrapStringWithFileFix.REGISTAR.registerCastActions(methodCandidates, methodCall, highlightInfo, fixRange);
     registerMethodAccessLevelIntentions(methodCandidates, methodCall, list, highlightInfo);
     registerChangeMethodSignatureFromUsageIntentions(methodCandidates, list, highlightInfo, fixRange);
     RemoveRedundantArgumentsFix.registerIntentions(methodCandidates, list, highlightInfo, fixRange);
@@ -846,7 +930,7 @@ public class HighlightMethodUtil {
 
     @Language("HTML")
     @NonNls String parensizedName = methodName + (parameters.length == 0 ? "(&nbsp;)&nbsp;" : "");
-    String errorMessage = info != null ? info.getParentInferenceErrorMessage(list) : null;
+    String errorMessage = info != null ? info.getInferenceErrorMessage() : null;
     return JavaErrorMessages.message(
       "argument.mismatch.html.tooltip",
       cols - parameters.length + 1,
@@ -959,7 +1043,7 @@ public class HighlightMethodUtil {
     }
 
     s+= "</table>";
-    final String errorMessage = info != null ? info.getParentInferenceErrorMessage(list) : null;
+    final String errorMessage = info != null ? info.getInferenceErrorMessage() : null;
     if (errorMessage != null) {
       s+= "reason: "; 
       s += XmlStringUtil.escapeString(errorMessage).replaceAll("\n", "<br/>");
@@ -1039,7 +1123,7 @@ public class HighlightMethodUtil {
 
       String description = JavaErrorMessages.message("missing.method.body");
       errorResult = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(start, end).descriptionAndTooltip(description).create();
-      if (HighlightUtil.getIncompatibleModifier(PsiModifier.ABSTRACT, method.getModifierList()) == null) {
+      if (HighlightUtil.getIncompatibleModifier(PsiModifier.ABSTRACT, method.getModifierList()) == null && !(aClass instanceof PsiAnonymousClass)) {
         QuickFixAction.registerQuickFixAction(errorResult,
                                               QUICK_FIX_FACTORY.createModifierListFix(method, PsiModifier.ABSTRACT, true, false));
       }
@@ -1134,8 +1218,13 @@ public class HighlightMethodUtil {
         description = JavaErrorMessages.message("extension.method.should.have.a.body");
         additionalFixes.add(QUICK_FIX_FACTORY.createAddMethodBodyFix(method));
       }
-      else if (isInterface && isStatic && languageLevel.isAtLeast(LanguageLevel.JDK_1_8)) {
-        description = "Static methods in interfaces should have a body";
+      else if (isInterface) {
+        if (isStatic && languageLevel.isAtLeast(LanguageLevel.JDK_1_8)) {
+          description = "Static methods in interfaces should have a body";
+        }
+        else if (isPrivate && languageLevel.isAtLeast(LanguageLevel.JDK_1_9)) {
+          description = "Private methods in interfaces should have a body";
+        }
       }
     }
     else if (isInterface) {
@@ -1227,6 +1316,7 @@ public class HighlightMethodUtil {
     HighlightInfo info = HighlightClassUtil.checkBaseClassDefaultConstructorProblem(aClass, refCountHolder, resolveHelper, textRange, handledExceptions);
     if (info != null) {
       QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createInsertSuperFix(constructor));
+      QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createInsertThisFix(constructor));
       QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createAddDefaultConstructorFix(aClass.getSuperClass()));
     }
     return info;
@@ -1345,7 +1435,7 @@ public class HighlightMethodUtil {
                 return null;
               }
             }
-            if (otherSuperMethod.getTypeParameters().length > 0 && JavaGenericsUtil.isRawToGeneric(curType, otherReturnType)) return null;
+            if (otherSuperMethod.getTypeParameters().length > 0 && JavaGenericsUtil.isRawToGeneric(otherReturnType, curType)) return null;
           }
           return createIncompatibleReturnTypeMessage(otherSuperMethod, currentMethod, curType, otherReturnType,
                                                      JavaErrorMessages.message("unrelated.overriding.methods.return.types"), TextRange.EMPTY_RANGE);

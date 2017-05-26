@@ -202,9 +202,39 @@ def map(function, sequence, *sequence_1):
     """Return a list of the results of applying the function to the items of
     the argument sequence(s).
 
-    :type function: ((T) -> V) | None
+    :type function: None | (T) -> V
     :type sequence: collections.Iterable[T]
-    :rtype: list[V] | bytes | unicode
+    :rtype: list[V]
+    """
+    pass
+
+
+def min(*args, key=None, default=None):
+    """Return the smallest item in an iterable or the smallest of two or more
+    arguments.
+
+    :type args: T
+    :rtype: T
+    """
+    pass
+
+
+def max(*args, key=None, default=None):
+    """Return the largest item in an iterable or the largest of two or more
+    arguments.
+
+    :type args: T
+    :rtype: T
+    """
+    pass
+
+
+def sum(iterable, start=0):
+    """Sums start and the items of an iterable from left to right and returns
+    the total.
+
+    :type iterable: collections.Iterable[T]
+    :rtype: T
     """
     pass
 
@@ -1072,7 +1102,7 @@ class float(object):
         return 0.0
 
     @staticmethod
-    def fromhex(cls, string):
+    def fromhex(string):
         """Create a floating-point number from a hexadecimal string.
 
         :type string: str
@@ -2934,3 +2964,19 @@ class __method(object):
         if sys.version_info >= (2, 6):
             self.__func__ = None
             self.__self__ = None
+
+
+def input(prompt=None):
+    """
+    :type prompt: Any
+    :rtype: Any
+    """
+    pass
+
+
+def raw_input(prompt=None):
+    """
+    :type prompt: Any
+    :rtype: str
+    """
+    pass

@@ -17,7 +17,6 @@ package org.jetbrains.plugins.terminal;
 
 import com.google.common.collect.Lists;
 import com.intellij.execution.TaskExecutor;
-import com.intellij.execution.configurations.EncodingEnvironmentUtil;
 import com.intellij.execution.process.ProcessAdapter;
 import com.intellij.execution.process.ProcessEvent;
 import com.intellij.execution.process.ProcessHandler;
@@ -26,8 +25,10 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.CharsetToolkit;
 import com.intellij.util.ArrayUtil;
+import com.intellij.util.EnvironmentUtil;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.HashMap;
 import com.jediterm.pty.PtyProcessTtyConnector;
@@ -53,6 +54,10 @@ import java.util.concurrent.Future;
  */
 public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess> {
   private static final Logger LOG = Logger.getInstance(LocalTerminalDirectRunner.class);
+  public static final String JEDITERM_USER_RCFILE = "JEDITERM_USER_RCFILE";
+  public static final String ZDOTDIR = "ZDOTDIR";
+  public static final String XDG_CONFIG_HOME = "XDG_CONFIG_HOME";
+
 
   private final Charset myDefaultCharset;
 
@@ -65,8 +70,13 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
     return name.equals("bash") || name.equals("sh") || name.equals("zsh");
   }
 
-  private static String getShellName(String path) {
-    return new File(path).getName();
+  private static String getShellName(@Nullable String path) {
+    if (path == null) {
+      return null;
+    }
+    else {
+      return new File(path).getName();
+    }
   }
 
   private static String findRCFile(String shellName) {
@@ -75,10 +85,12 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
         shellName = "bash";
       }
       try {
-
         String rcfile = "jediterm-" + shellName + ".in";
         if ("zsh".equals(shellName)) {
           rcfile = ".zshrc";
+        }
+        else if ("fish".equals(shellName)) {
+          rcfile = "fish/config.fish";
         }
         URL resource = LocalTerminalDirectRunner.class.getClassLoader().getResource(rcfile);
         if (resource != null && "jar".equals(resource.getProtocol())) {
@@ -110,7 +122,10 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
     if (!SystemInfo.isWindows) {
       envs.put("TERM", "xterm-256color");
     }
-    EncodingEnvironmentUtil.setLocaleEnvironmentIfMac(envs, myDefaultCharset);
+
+    if (SystemInfo.isMac) {
+      EnvironmentUtil.setLocaleEnv(envs, myDefaultCharset);
+    }
 
     String[] command = getCommand(envs);
 
@@ -119,7 +134,7 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
         command = customizer.customizeCommandAndEnvironment(myProject, command, envs);
 
         if (directory == null) {
-          directory = customizer.getDefaultFolder();
+          directory = customizer.getDefaultFolder(myProject);
         }
       }
       catch (Exception e) {
@@ -128,7 +143,9 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
     }
 
     try {
-      return PtyProcess.exec(command, envs, directory != null ? directory : TerminalProjectOptionsProvider.Companion.getInstance(myProject).getStartingDirectory());
+      return PtyProcess.exec(command, envs, directory != null
+                                            ? directory
+                                            : TerminalProjectOptionsProvider.Companion.getInstance(myProject).getStartingDirectory());
     }
     catch (IOException e) {
       throw new ExecutionException(e);
@@ -160,11 +177,11 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
 
     String shellPath = getShellPath();
 
-    return getCommand(shellPath, envs, TerminalOptionsProvider.getInstance().shellIntegration());
+    return getCommand(shellPath, envs, TerminalOptionsProvider.Companion.getInstance().shellIntegration());
   }
 
-  private String getShellPath() {
-    return TerminalProjectOptionsProvider.Companion.getInstance(myProject).getShellPath();
+  private static String getShellPath() {
+    return TerminalOptionsProvider.Companion.getInstance().getShellPath();
   }
 
   @NotNull
@@ -172,9 +189,8 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
     if (SystemInfo.isUnix) {
       List<String> command = Lists.newArrayList(shellPath.split(" "));
 
-      String shellCommand = command.get(0);
-      String shellName = command.size() > 0 ? getShellName(shellCommand) : null;
-
+      String shellCommand = command.size() > 0 ? command.get(0) : null;
+      String shellName = getShellName(shellCommand);
 
       if (shellName != null) {
         command.remove(0);
@@ -189,7 +205,27 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
             addRcFileArgument(envs, command, result, rcFilePath, "--rcfile");
           }
           else if (shellName.equals("zsh")) {
-            envs.put("ZDOTDIR", new File(rcFilePath).getParent());
+            String zdotdir = EnvironmentUtil.getEnvironmentMap().get(ZDOTDIR);
+            if (StringUtil.isNotEmpty(zdotdir)) {
+              envs.put("_OLD_ZDOTDIR", zdotdir);
+              File zshRc = new File(FileUtil.expandUserHome(zdotdir), ".zshrc");
+              if (zshRc.exists()) {
+                envs.put(JEDITERM_USER_RCFILE, zshRc.getAbsolutePath());
+              }
+            }
+            envs.put(ZDOTDIR, new File(rcFilePath).getParent());
+          }
+          else if (shellName.equals("fish")) {
+            String xdgConfig = EnvironmentUtil.getEnvironmentMap().get(XDG_CONFIG_HOME);
+            if (StringUtil.isNotEmpty(xdgConfig)) {
+              File fishConfig = new File(new File(FileUtil.expandUserHome(xdgConfig), "fish"), "config.fish");
+              if (fishConfig.exists()) {
+                envs.put(JEDITERM_USER_RCFILE, fishConfig.getAbsolutePath());
+              }
+              envs.put("OLD_" + XDG_CONFIG_HOME, xdgConfig);
+            }
+
+            envs.put(XDG_CONFIG_HOME, new File(rcFilePath).getParentFile().getParent());
           }
         }
 
@@ -198,6 +234,10 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
             result.add("--login");
           }
           result.add("-i");
+        }
+
+        if (isLogin(command)) {
+          envs.put("LOGIN_SHELL", "1");
         }
 
         result.addAll(command);
@@ -222,14 +262,18 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
     if (idx >= 0) {
       command.remove(idx);
       if (idx < command.size()) {
-        envs.put("JEDITERM_USER_RCFILE", FileUtil.expandUserHome(command.get(idx)));
+        envs.put(JEDITERM_USER_RCFILE, FileUtil.expandUserHome(command.get(idx)));
         command.remove(idx);
       }
     }
   }
 
   private static boolean loginOrInteractive(List<String> command) {
-    return command.contains("-i") || command.contains("--login") || command.contains("-l");
+    return command.contains("-i") || isLogin(command);
+  }
+
+  private static boolean isLogin(List<String> command) {
+    return command.contains("--login") || command.contains("-l");
   }
 
   private static class PtyProcessHandler extends ProcessHandler implements TaskExecutor {

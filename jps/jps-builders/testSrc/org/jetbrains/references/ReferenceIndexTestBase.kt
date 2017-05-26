@@ -18,12 +18,13 @@ package org.jetbrains.references
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vfs.CharsetToolkit
 import com.intellij.util.PathUtil
+import com.intellij.util.indexing.IndexId
+import com.intellij.util.indexing.impl.MapIndexStorage
+import com.intellij.util.indexing.impl.MapReduceIndex
 import com.intellij.util.io.PersistentStringEnumerator
-import com.sun.tools.javac.util.Convert
-import org.jetbrains.jps.backwardRefs.BackwardReferenceIndexWriter
-import org.jetbrains.jps.backwardRefs.ByteArrayEnumerator
-import org.jetbrains.jps.backwardRefs.CompilerBackwardReferenceIndex
-import org.jetbrains.jps.backwardRefs.LightRef
+import org.jetbrains.jps.backwardRefs.*
+import org.jetbrains.jps.backwardRefs.index.CompiledFileData
+import org.jetbrains.jps.backwardRefs.index.CompilerIndices
 import org.jetbrains.jps.builders.JpsBuildTestCase
 import org.jetbrains.jps.builders.TestProjectBuilderLogger
 import org.jetbrains.jps.builders.logging.BuildLoggingManager
@@ -74,7 +75,7 @@ abstract class ReferenceIndexTestBase : JpsBuildTestCase() {
     val pd = createProjectDescriptor(BuildLoggingManager(TestProjectBuilderLogger()))
     val manager = pd.dataManager
     val buildDir = manager.dataPaths.dataStorageRoot
-    val index = CompilerBackwardReferenceIndex(buildDir)
+    val index = CompilerBackwardReferenceIndex(buildDir, true)
 
     try {
       val fileEnumerator = index.filePathEnumerator
@@ -83,14 +84,17 @@ abstract class ReferenceIndexTestBase : JpsBuildTestCase() {
       val result = StringBuilder()
       result.append("Backward Hierarchy:\n")
       val hierarchyText = mutableListOf<String>()
-      index.backwardHierarchyMap.forEachEntry { superClass, inheritors ->
+      storage(index, CompilerIndices.BACK_HIERARCHY).processKeys { superClass ->
         val superClassName = superClass.asText(nameEnumerator)
         val inheritorsText = mutableListOf<String>()
-        inheritors.forEach { id ->
-          inheritorsText.add(id.asText(nameEnumerator))
+        index[CompilerIndices.BACK_HIERARCHY].getData(superClass).forEach { i, children ->
+          children.mapTo(inheritorsText) { it.asText(nameEnumerator) }
+          true
         }
-        inheritorsText.sort()
-        hierarchyText.add(superClassName + " -> " + inheritorsText.joinToString(separator = " "))
+        if (!inheritorsText.isEmpty()) {
+          inheritorsText.sort()
+          hierarchyText.add(superClassName + " -> " + inheritorsText.joinToString(separator = " "))
+        }
         true
       }
       hierarchyText.sort()
@@ -98,13 +102,20 @@ abstract class ReferenceIndexTestBase : JpsBuildTestCase() {
 
       result.append("\n\nBackward References:\n")
       val referencesText = mutableListOf<String>()
-      index.backwardReferenceMap.forEachEntry { usage, files ->
+      storage(index, CompilerIndices.BACK_USAGES).processKeys { usage ->
         val referents = mutableListOf<String>()
-        files.forEach { id ->
-          referents.add(id.asFileName(fileEnumerator))
+        val valueIt = index[CompilerIndices.BACK_USAGES].getData(usage)
+
+        var sumOccurrences = 0
+        valueIt.forEach({ fileId, occurrenceCount ->
+                          referents.add(fileId.asFileName(fileEnumerator))
+                          sumOccurrences += occurrenceCount
+                          true
+                        })
+        if (!referents.isEmpty()) {
+          referents.sort()
+          referencesText.add(usage.asText(nameEnumerator) + " in " + referents.joinToString(separator = " ") + " occurrences = $sumOccurrences")
         }
-        referents.sort()
-        referencesText.add(usage.asText(nameEnumerator) + " in " + referents.joinToString(separator = " "))
         true
       }
       referencesText.sort()
@@ -112,38 +123,79 @@ abstract class ReferenceIndexTestBase : JpsBuildTestCase() {
 
       result.append("\n\nClass Definitions:\n")
       val classDefs = mutableListOf<String>()
-      index.backwardClassDefinitionMap.forEachEntry { usage, files ->
+      storage(index, CompilerIndices.BACK_CLASS_DEF).processKeys { usage ->
         val definitionFiles = mutableListOf<String>()
-        files.forEach { id ->
-          definitionFiles.add(id.asFileName(fileEnumerator))
+        val valueIt = index[CompilerIndices.BACK_CLASS_DEF].getData(usage).valueIterator
+        while (valueIt.hasNext()) {
+          valueIt.next()
+          val files = valueIt.inputIdsIterator
+          while (files.hasNext()) {
+            definitionFiles.add(files.next().asFileName(fileEnumerator))
+          }
         }
-        definitionFiles.sort()
-        classDefs.add(usage.asText(nameEnumerator) + " in " + definitionFiles.joinToString(separator = " "))
+        if (!definitionFiles.isEmpty()) {
+          definitionFiles.sort()
+          classDefs.add(usage.asText(nameEnumerator) + " in " + definitionFiles.joinToString(separator = " "))
+        }
         true
       }
       classDefs.sort()
       result.append(classDefs.joinToString(separator = "\n"))
 
+      result.append("\n\nMembers Signatures:\n")
+      val signs = mutableListOf<String>()
+      storage(index, CompilerIndices.BACK_MEMBER_SIGN).processKeys { sign ->
+        val definedMembers = mutableListOf<String>()
+        val valueIt = index[CompilerIndices.BACK_MEMBER_SIGN].getData(sign).valueIterator
+        while (valueIt.hasNext()) {
+          val nextRefs = valueIt.next()
+          nextRefs.mapTo(definedMembers) { it.asText(nameEnumerator) }
+        }
+        if (!definedMembers.isEmpty()) {
+          definedMembers.sort()
+          signs.add(sign.asText(nameEnumerator) + " <- " + definedMembers.joinToString(separator = " "))
+        }
+        true
+      }
+      signs.sort()
+      result.append(signs.joinToString(separator = "\n"))
+
       return result.toString()
-    } finally {
+    }
+    finally {
       index.close()
+      pd.release()
     }
   }
 
+  private fun <K, V> storage(index: CompilerBackwardReferenceIndex, id: IndexId<K, V>) = (index[id] as MapReduceIndex<K, V, CompiledFileData>).storage as MapIndexStorage<K, V>
+
   private fun getTestDataPath() = testDataRootPath + "/" + getTestName(true) + "/"
 
-  private fun Int.asName(byteArrayEnumerator: ByteArrayEnumerator): String = Convert.utf2string(byteArrayEnumerator.valueOf(this))
+  private fun Int.asName(nameEnumerator: NameEnumerator): String = nameEnumerator.getName(this)
 
-  private fun CompilerBackwardReferenceIndex.LightDefinition.asText(byteArrayEnumerator: ByteArrayEnumerator) = this.ref.asText(byteArrayEnumerator)
-
-  private fun LightRef.asText(byteArrayEnumerator: ByteArrayEnumerator): String =
+  private fun LightRef.asText(nameEnumerator: NameEnumerator): String =
       when (this) {
-        is LightRef.JavaLightMethodRef -> "${this.owner.name.asName(byteArrayEnumerator)}.${this.name.asName(byteArrayEnumerator)}(${this.parameterCount})"
-        is LightRef.JavaLightFieldRef -> "${this.owner.name.asName(byteArrayEnumerator)}.${this.name.asName(byteArrayEnumerator)}"
-        is LightRef.JavaLightClassRef -> this.name.asName(byteArrayEnumerator)
+        is LightRef.JavaLightMethodRef -> "${this.owner.name.asName(nameEnumerator)}.${this.name.asName(nameEnumerator)}(${this.parameterCount})"
+        is LightRef.JavaLightFieldRef -> "${this.owner.name.asName(nameEnumerator)}.${this.name.asName(nameEnumerator)}"
+        is LightRef.JavaLightClassRef -> this.name.asName(nameEnumerator)
         is LightRef.JavaLightFunExprDef -> "fun_expr(id=${this.id})"
+        is LightRef.JavaLightAnonymousClassRef -> "anonymous(id=${this.name})"
         else -> throw UnsupportedOperationException()
       }
+
+  private fun SignatureData.asText(nameEnumerator: NameEnumerator): String {
+    return (if (this.isStatic) "static " else "") + this.rawReturnType.asName(nameEnumerator) + decodeVectorKind(this.iteratorKind)
+  }
+
+  private fun decodeVectorKind(kind: Byte): String {
+    when (kind) {
+      0.toByte() -> return ""
+      1.toByte() -> return "[]"
+      (-1).toByte() -> return " iterator"
+    }
+    throw IllegalArgumentException()
+  }
 
   private fun Int.asFileName(fileNameEnumerator: PersistentStringEnumerator) = FileUtil.getNameWithoutExtension(File(fileNameEnumerator.valueOf(this)).canonicalFile)
 }

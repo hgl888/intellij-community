@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,11 +28,11 @@ import com.intellij.codeInsight.intention.impl.FieldFromParameterUtils;
 import com.intellij.codeInspection.ex.GlobalInspectionContextBase;
 import com.intellij.ide.util.MemberChooser;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
@@ -43,7 +43,6 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.refactoring.changeSignature.ParameterInfoImpl;
 import com.intellij.refactoring.util.RefactoringUtil;
-import com.intellij.util.Function;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
@@ -278,12 +277,8 @@ public class CreateConstructorParameterFromFieldFix implements IntentionAction {
       ChangeMethodSignatureFromUsageFix.performChange(project, editor, file, constructor, minUsagesNumber, newParamInfos, true, true);
     if (parameterInfos == null) return false;
     final ParameterInfoImpl[] resultParams = parameterInfos.toArray(new ParameterInfoImpl[parameterInfos.size()]);
-    return ApplicationManager.getApplication().runWriteAction(new Computable<Boolean>() {
-      @Override
-      public Boolean compute() {
-        return doCreate(project, editor, parameters, constructorPointer, resultParams, usedFields, cleanupElements);
-      }
-    });
+    return WriteAction
+      .compute(() -> doCreate(project, editor, parameters, constructorPointer, resultParams, usedFields, cleanupElements));
   }
 
   private static String createDummyMethod(PsiMethod constructor, ParameterInfoImpl[] newParamInfos) {
@@ -334,7 +329,7 @@ public class CreateConstructorParameterFromFieldFix implements IntentionAction {
         if (parameter == null) {
           continue;
         }
-        NullableNotNullManager.getInstance(field.getProject()).copyNotNullAnnotation(field, parameter);
+        NullableNotNullManager.getInstance(field.getProject()).copyNullableOrNotNullAnnotation(field, parameter);
         cleanupElements.add(manager.createSmartPsiElementPointer(parameter));
         final PsiElement assignmentStatement = AssignFieldFromParameterAction.addFieldAssignmentStatement(project, field, parameter, editor);
         if (assignmentStatement != null) {

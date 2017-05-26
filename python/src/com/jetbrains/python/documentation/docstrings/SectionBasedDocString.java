@@ -265,9 +265,9 @@ public abstract class SectionBasedDocString extends DocStringLineParser implemen
    * Properly partitions line by first colon taking into account possible Sphinx references inside
    * <p/>
    * <h3>Example</h3>
-   * <pre><code>
+   * <pre>{@code
    *   runtime (:class:`Runtime`): Use it to access the environment.
-   * </code></pre>
+   * }</pre>
    */
   @NotNull
   protected static List<Substring> splitByFirstColon(@NotNull Substring line) {
@@ -574,7 +574,7 @@ public abstract class SectionBasedDocString extends DocStringLineParser implemen
     private final Substring myDescription;
 
     public SectionField(@Nullable Substring name, @Nullable Substring type, @Nullable Substring description) {
-      this(name == null ? Collections.<Substring>emptyList() : Collections.singletonList(name), type, description);
+      this(name == null ? Collections.emptyList() : Collections.singletonList(name), type, description);
     }
 
     public SectionField(@NotNull List<Substring> names, @Nullable Substring type, @Nullable Substring description) {

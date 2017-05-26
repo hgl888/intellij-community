@@ -21,7 +21,6 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.*;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Pair;
 import com.intellij.ui.PopupBorder;
 import com.intellij.ui.ScreenUtil;
 import com.intellij.ui.ScrollPaneFactory;
@@ -78,7 +77,7 @@ public abstract class WizardPopup extends AbstractPopup implements ActionListene
 
     final JComponent content = createContent();
 
-    JScrollPane scrollPane = ScrollPaneFactory.createScrollPane(content);
+    JScrollPane scrollPane = createScrollPane(content);
     scrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
     scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
     scrollPane.getHorizontalScrollBar().setBorder(null);
@@ -90,8 +89,8 @@ public abstract class WizardPopup extends AbstractPopup implements ActionListene
 
     final Project project = CommonDataKeys.PROJECT.getData(DataManager.getInstance().getDataContext());
     init(project, scrollPane, getPreferredFocusableComponent(), true, true, true, null,
-         false, aStep.getTitle(), null, true, null, false, null, null, null, false, null, true, false, true, null, 0f,
-         null, true, false, new Component[0], null, SwingConstants.LEFT, true, Collections.<Pair<ActionListener, KeyStroke>>emptyList(),
+         isResizable(), aStep.getTitle(), null, true, null, false, null, null, null, false, null, true, false, true, null, 0f,
+         null, true, false, new Component[0], null, SwingConstants.LEFT, true, Collections.emptyList(),
          null, null, false, true, true, true, null);
 
     registerAction("disposeAll", KeyEvent.VK_ESCAPE, InputEvent.SHIFT_MASK, new AbstractAction() {
@@ -124,6 +123,11 @@ public abstract class WizardPopup extends AbstractPopup implements ActionListene
 
 
 
+  }
+
+  @NotNull
+  protected JScrollPane createScrollPane(JComponent content) {
+    return ScrollPaneFactory.createScrollPane(content);
   }
 
   private void disposeAll() {
@@ -291,6 +295,10 @@ public abstract class WizardPopup extends AbstractPopup implements ActionListene
     return new MyContainer(resizable, border, isToDrawMacCorner);
   }
 
+  protected boolean isResizable() {
+    return false;
+  }
+
   private class MyContainer extends MyContentPanel {
     private MyContainer(final boolean resizable, final PopupBorder border, final boolean drawMacCorner) {
       super(resizable, border, drawMacCorner);
@@ -300,6 +308,9 @@ public abstract class WizardPopup extends AbstractPopup implements ActionListene
 
     @Override
     public Dimension getPreferredSize() {
+      if (isPreferredSizeSet()) {
+        return super.getPreferredSize();
+      }
       final Component focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
       Point p = null;
       if (focusOwner != null && focusOwner.isShowing()) {
@@ -338,7 +349,9 @@ public abstract class WizardPopup extends AbstractPopup implements ActionListene
 
   public final boolean dispatch(KeyEvent event) {
     if (event.getID() != KeyEvent.KEY_PRESSED && event.getID() != KeyEvent.KEY_RELEASED) {
-      return false;
+      // do not dispatch these events to Swing
+      event.consume();
+      return true;
     }
 
     if (event.getID() == KeyEvent.KEY_PRESSED) {

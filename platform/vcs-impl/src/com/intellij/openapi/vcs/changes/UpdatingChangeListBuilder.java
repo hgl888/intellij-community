@@ -15,10 +15,9 @@
  */
 package com.intellij.openapi.vcs.changes;
 
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileTypeManager;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Factory;
 import com.intellij.openapi.util.Getter;
 import com.intellij.openapi.vcs.FilePath;
@@ -39,7 +38,7 @@ class UpdatingChangeListBuilder implements ChangelistBuilder {
   private final Getter<Boolean> myDisposedGetter;
   private VcsDirtyScope myScope;
   private FoldersCutDownWorker myFoldersCutDownWorker;
-  private final ChangeListManager myСhangeListManager;
+  private final ChangeListManager myChangeListManager;
   private final ProjectLevelVcsManager myVcsManager;
   private final ChangeListManagerGate myGate;
   private Factory<JComponent> myAdditionalInfo;
@@ -47,11 +46,11 @@ class UpdatingChangeListBuilder implements ChangelistBuilder {
   UpdatingChangeListBuilder(final ChangeListWorker changeListWorker,
                             final FileHolderComposite composite,
                             final Getter<Boolean> disposedGetter,
-                            final ChangeListManager сhangeListManager, final ChangeListManagerGate gate) {
+                            final ChangeListManager changeListManager, final ChangeListManagerGate gate) {
     myChangeListWorker = changeListWorker;
     myComposite = composite;
     myDisposedGetter = disposedGetter;
-    myСhangeListManager = сhangeListManager;
+    myChangeListManager = changeListManager;
     myGate = gate;
     myVcsManager = ProjectLevelVcsManager.getInstance(changeListWorker.getProject());
   }
@@ -114,12 +113,9 @@ class UpdatingChangeListBuilder implements ChangelistBuilder {
   }
 
   private boolean isIgnoredByVcs(final VirtualFile file) {
-    return ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {
-      @Override
-      public Boolean compute() {
-        checkIfDisposed();
-        return myVcsManager.isIgnored(file);
-      }
+    return ReadAction.compute(() -> {
+      checkIfDisposed();
+      return myVcsManager.isIgnored(file);
     });
   }
 
@@ -131,7 +127,7 @@ class UpdatingChangeListBuilder implements ChangelistBuilder {
     checkIfDisposed();
     if (isIgnoredByVcs(file)) return;
     if (myScope.belongsTo(VcsUtil.getFilePath(file))) {
-      if (myСhangeListManager.isIgnoredFile(file)) {
+      if (myChangeListManager.isIgnoredFile(file)) {
         myComposite.getIgnoredFileHolder().addFile(file);
       }
       else if (myComposite.getIgnoredFileHolder().containsFile(file)) {

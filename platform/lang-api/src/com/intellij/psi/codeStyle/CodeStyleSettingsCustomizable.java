@@ -188,6 +188,7 @@ public interface CodeStyleSettingsCustomizable {
     BRACE_STYLE,
     CLASS_BRACE_STYLE,
     METHOD_BRACE_STYLE,
+    LAMBDA_BRACE_STYLE,
     USE_FLYING_GEESE_BRACES,
     FLYING_GEESE_BRACES_GAP,
     DO_NOT_INDENT_TOP_LEVEL_CLASS_MEMBERS,
@@ -196,6 +197,7 @@ public interface CodeStyleSettingsCustomizable {
     CATCH_ON_NEW_LINE,
     FINALLY_ON_NEW_LINE,
     INDENT_CASE_FROM_SWITCH,
+    CASE_STATEMENT_ON_NEW_LINE,
     SPECIAL_ELSE_IF_TREATMENT,
     ENUM_CONSTANTS_WRAP,
     ALIGN_CONSECUTIVE_VARIABLE_DECLARATIONS,
@@ -329,7 +331,7 @@ public interface CodeStyleSettingsCustomizable {
 
   /**
    * Moves a standard option to another group.
-   * @param fieldName The field name of the option to move (as defined in <code>CommonCodeStyleSettings</code> class).
+   * @param fieldName The field name of the option to move (as defined in {@code CommonCodeStyleSettings} class).
    * @param newGroup  The new group name (the group may be one of existing ones). A custom group name can be used if supported by consumer.
    */
   default void moveStandardOption(String fieldName, String newGroup) {

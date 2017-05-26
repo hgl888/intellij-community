@@ -33,7 +33,6 @@ import org.jetbrains.plugins.groovy.codeStyle.GrReferenceAdjuster
 import org.jetbrains.plugins.groovy.codeStyle.GroovyCodeStyleSettings
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrCodeReferenceElement
 import org.jetbrains.plugins.groovy.util.TestUtils
-
 /**
  * @author Maxim.Medvedev
  */
@@ -43,7 +42,7 @@ class GroovyCompletionTest extends GroovyCompletionTestBase {
   @Override
   protected void setUp() {
     super.setUp()
-    CamelHumpMatcher.forceStartMatching(testRootDisposable)
+    CamelHumpMatcher.forceStartMatching(myFixture.testRootDisposable)
   }
 
   @Override
@@ -955,12 +954,12 @@ class Fopppp {
 
   void testExcludeStringBuffer() {
     assert doContainsTest('StringBuffer', 'StringBuff<caret>f')
-    JavaProjectCodeInsightSettings.setExcludedNames(project, testRootDisposable, StringBuffer.name)
+    JavaProjectCodeInsightSettings.setExcludedNames(project, myFixture.testRootDisposable, StringBuffer.name)
     assert !doContainsTest('StringBuffer', 'StringBuff<caret>f')
   }
 
   void testStaticMethodOnExcludedClass() {
-    JavaProjectCodeInsightSettings.setExcludedNames(project, testRootDisposable, String.name)
+    JavaProjectCodeInsightSettings.setExcludedNames(project, myFixture.testRootDisposable, String.name)
     assert doContainsTest('valueOf', 'String.val<caret>f')
   }
 
@@ -1729,7 +1728,7 @@ class Baz {}''', '', CompletionType.BASIC, CompletionResult.contain, 'xxx', 'yyy
   }
 
   void "test honor statistics"() {
-    ((StatisticsManagerImpl)StatisticsManager.instance).enableStatistics(testRootDisposable)
+    ((StatisticsManagerImpl)StatisticsManager.instance).enableStatistics(myFixture.testRootDisposable)
 
     myFixture.addClass("class Foo { Object getMessage() {} }; class Bar extends Foo { Object getMessages(); }")
     configure "b = new Bar();\nb.mes<caret>"
@@ -1954,5 +1953,12 @@ class C implements T<String> {
   <caret>
 }
 ''', '', CompletionType.BASIC, CompletionResult.contain, 1, 'public String quack')
+  }
+
+  void "test non-imported class after new"() {
+    def uClass = myFixture.addClass('package foo; public class U {}')
+    configure('new U<caret>x')
+    myFixture.completeBasic()
+    assert myFixture.lookupElements[0].object == uClass
   }
 }

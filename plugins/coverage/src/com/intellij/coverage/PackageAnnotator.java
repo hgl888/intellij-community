@@ -15,7 +15,7 @@
  */
 package com.intellij.coverage;
 
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
@@ -23,7 +23,6 @@ import com.intellij.openapi.module.ModuleUtil;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.*;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
@@ -35,6 +34,7 @@ import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiPackage;
 import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.rt.coverage.data.ClassData;
 import com.intellij.rt.coverage.data.LineCoverage;
 import com.intellij.rt.coverage.data.LineData;
@@ -56,7 +56,7 @@ import java.util.Map;
  */
 public class PackageAnnotator {
 
-  private static final Logger LOG = Logger.getInstance("#" + PackageAnnotator.class.getName());
+  private static final Logger LOG = Logger.getInstance(PackageAnnotator.class);
   private static final String DEFAULT_CONSTRUCTOR_NAME_SIGNATURE = "<init>()V";
 
   private final PsiPackage myPackage;
@@ -309,7 +309,7 @@ public class PackageAnnotator {
               JavaPsiFacade.getInstance(myManager.getProject()).findClass(toplevelClassSrcFQName, GlobalSearchScope.moduleScope(module));
             if (aClass == null || !aClass.isValid()) return Boolean.FALSE;
             psiClassRef.set(aClass);
-            containingFileRef.set(aClass.getNavigationElement().getContainingFile().getVirtualFile());
+            containingFileRef.set(PsiUtilCore.getVirtualFile(aClass.getNavigationElement()));
             if (containingFileRef.isNull()) {
               LOG.info("No virtual file found for: " + aClass);
               return null;
@@ -429,13 +429,17 @@ public class PackageAnnotator {
       boolean touchedClass = false;
       final Collection methodSigs = classData.getMethodSigs();
       for (final Object nameAndSig : methodSigs) {
+        final int covered = classData.getStatus((String)nameAndSig);
+        if (covered != LineCoverage.NONE) {
+          touchedClass = true;
+        }
+
         if (isGeneratedDefaultConstructor(psiClass, (String)nameAndSig)) {
           continue;
         }
-        final int covered = classData.getStatus((String)nameAndSig);
+
         if (covered != LineCoverage.NONE) {
           toplevelClassCoverageInfo.coveredMethodCount++;
-          touchedClass = true;
         }
         toplevelClassCoverageInfo.totalMethodCount++;
       }
@@ -490,11 +494,7 @@ public class PackageAnnotator {
     if (aClass == null) {
       return false;
     }
-    return ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {
-      public Boolean compute() {
-        return aClass.getConstructors().length == 0;
-      }
-    });
+    return ReadAction.compute(() -> aClass.getConstructors().length == 0);
   }
 
   private static ClassCoverageInfo getOrCreateClassCoverageInfo(final Map<String, ClassCoverageInfo> toplevelClassCoverage,

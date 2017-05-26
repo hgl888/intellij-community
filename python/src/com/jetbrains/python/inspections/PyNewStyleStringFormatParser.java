@@ -117,6 +117,8 @@ public class PyNewStyleStringFormatParser {
   private Field parseField(int startOffset, int recursionDepth) {
     assert myNodeText.charAt(startOffset) == '{';
 
+    int autoFieldNumber = myImplicitlyNumberedFieldsCounter;
+
     // in the order of appearance inside a field
     final TIntArrayList attrAndLookupBounds = new TIntArrayList();
     int conversionStart = -1;
@@ -155,6 +157,11 @@ public class PyNewStyleStringFormatParser {
           if (!recovering) {
             // avoid duplicate offsets in sequences like "]." or "]["
             addIfNotLastItem(attrAndLookupBounds, offset);
+            
+            // no name in the field, increment implicitly named fields counter
+            if (attrAndLookupBounds.size() == 1 && attrAndLookupBounds.get(0) == startOffset + 1) {
+              myImplicitlyNumberedFieldsCounter++;
+            }
           }
 
           if (c == ':') {
@@ -194,23 +201,18 @@ public class PyNewStyleStringFormatParser {
       addIfNotLastItem(attrAndLookupBounds, contentEnd);
     }
 
-
-    final Field field = new Field(myNodeText,
-                                  startOffset,
-                                  attrAndLookupBounds.toNativeArray(),
-                                  conversionStart,
-                                  formatSpecStart,
-                                  nestedFields,
-                                  rightBraceOffset,
-                                  rightBraceOffset == -1 ? contentEnd : rightBraceOffset + 1,
-                                  myImplicitlyNumberedFieldsCounter,
-                                  recursionDepth);
-
     assert !attrAndLookupBounds.isEmpty();
-    if (attrAndLookupBounds.get(0) == startOffset + 1) {
-      myImplicitlyNumberedFieldsCounter++;
-    }
-    return field;
+
+    return new Field(myNodeText,
+                     startOffset,
+                     attrAndLookupBounds.toNativeArray(),
+                     conversionStart,
+                     formatSpecStart,
+                     nestedFields,
+                     rightBraceOffset,
+                     rightBraceOffset == -1 ? contentEnd : rightBraceOffset + 1,
+                     autoFieldNumber,
+                     recursionDepth);
   }
 
   private static void addIfNotLastItem(TIntArrayList attrAndLookupBounds, int offset) {
@@ -242,7 +244,6 @@ public class PyNewStyleStringFormatParser {
     private final List<Field> myNestedFields;
     private final int myRightBraceOffset;
     private final int myEndOffset;
-    private final Integer myAutoPosition;
 
 
     private final int myDepth;
@@ -257,7 +258,7 @@ public class PyNewStyleStringFormatParser {
                   int endOffset,
                   int autoPosition,
                   int depth) {
-      super(leftBraceOffset);
+      super(leftBraceOffset, endOffset);
       myNodeText = nodeText;
       myLeftBraceOffset = leftBraceOffset;
       myAttributesAndLookups = attrAndLookupBounds;
@@ -268,13 +269,11 @@ public class PyNewStyleStringFormatParser {
       myEndOffset = endOffset;
       myDepth = depth;
 
-      setEndIndex(myEndOffset);
       final String name = getFirstName();
       if (name.isEmpty()) {
-        myAutoPosition = autoPosition;
+        setAutoPosition(autoPosition);
       }
       else {
-        myAutoPosition = null;
         try {
           setPosition(Integer.parseInt(name));
         }
@@ -396,17 +395,6 @@ public class PyNewStyleStringFormatParser {
       return Collections.unmodifiableList(result);
     }
 
-    /**
-     * Automatic index of the field if neither mapping key nor explicit index was given, {@code null} otherwise.
-     * <p/>
-     * Basically, it's the number of automatically numbered fields preceding the current one.
-     * Note that this is somewhat unreliable because it's an error to use fields with both explicit
-     * and implicit indexing.
-     */
-    @Nullable
-    public Integer getAutoPosition() {
-      return myAutoPosition;
-    }
     /**
      * The level of how deep this field is nested in the string literal. Level of 0 means a top-level field, level of 1 means a field
      * that is in the format specification of a top-level field, etc.

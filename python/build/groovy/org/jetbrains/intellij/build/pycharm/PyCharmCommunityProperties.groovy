@@ -30,7 +30,7 @@ class PyCharmCommunityProperties extends PyCharmPropertiesBase {
     productLayout.platformApiModules = CommunityRepositoryModules.PLATFORM_API_MODULES + ["dom-openapi"]
     productLayout.platformImplementationModules = CommunityRepositoryModules.PLATFORM_IMPLEMENTATION_MODULES + [
       "dom-impl", "python-community", "python-community-ide-resources",
-      "python-ide-community", "python-community-configure", "python-openapi", "python-psi-api", "platform-main"
+      "python-community-ide", "python-community-configure", "python-openapi", "python-psi-api", "platform-main"
     ]
     productLayout.bundledPluginModules = new File("$communityHome/python/build/plugin-list.txt").readLines()
     productLayout.mainModules = ["main_pycharm_ce"]
@@ -69,10 +69,7 @@ class PyCharmCommunityProperties extends PyCharmPropertiesBase {
       }
 
       @Override
-      void copyAdditionalFiles(BuildContext context, String targetDirectory) {
-        super.copyAdditionalFiles(context, targetDirectory)
-        context.ant.copy(file: "$context.paths.projectHome/python/help/pycharmhelp.jar", todir: "$targetDirectory/help", failonerror: false)
-      }
+      String getBaseDownloadUrlForJre() { "https://download.jetbrains.com/python" }
     }
   }
 
@@ -86,11 +83,6 @@ class PyCharmCommunityProperties extends PyCharmPropertiesBase {
       String getRootDirectoryName(ApplicationInfoProperties applicationInfo, String buildNumber) {
         "pycharm-community-${applicationInfo.isEAP ? buildNumber : applicationInfo.fullVersion}"
       }
-
-      @Override
-      void copyAdditionalFiles(BuildContext context, String targetDirectory) {
-        context.ant.copy(file: "$context.paths.projectHome/python/help/pycharmhelp.jar", todir: "$targetDirectory/help", failonerror: false)
-      }
     }
   }
 
@@ -100,7 +92,6 @@ class PyCharmCommunityProperties extends PyCharmPropertiesBase {
       {
         icnsPath = "$projectHome/python/resources/PyCharmCore.icns"
         bundleIdentifier = "com.jetbrains.pycharm"
-        helpId = "PY"
         dmgImagePath = "$projectHome/python/build/DMG_background.png"
       }
 

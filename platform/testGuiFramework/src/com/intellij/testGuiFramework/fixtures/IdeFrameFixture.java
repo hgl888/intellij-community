@@ -19,6 +19,9 @@ import com.intellij.codeInspection.ui.InspectionTree;
 import com.intellij.ide.RecentProjectsManager;
 import com.intellij.ide.actions.ShowSettingsUtilImpl;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionPlaces;
+import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.externalSystem.model.ExternalSystemException;
@@ -57,6 +60,7 @@ import javax.swing.*;
 import javax.swing.tree.TreeNode;
 import java.awt.*;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
 import java.io.File;
 import java.util.*;
 import java.util.List;
@@ -75,7 +79,7 @@ import static org.fest.util.Strings.quote;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 
-public class IdeFrameFixture extends ComponentFixture<IdeFrameFixture, IdeFrameImpl> {
+public class IdeFrameFixture extends ComponentFixture<IdeFrameFixture, IdeFrameImpl>{
   @NotNull private final File myProjectPath;
 
   private EditorFixture myEditor;
@@ -241,11 +245,8 @@ public class IdeFrameFixture extends ComponentFixture<IdeFrameFixture, IdeFrameI
 
   @NotNull
   public IdeFrameFixture invokeProjectMakeAndSimulateFailure(@NotNull final String failure) {
-    Runnable failTask = new Runnable() {
-      @Override
-      public void run() {
-        throw new ExternalSystemException(failure);
-      }
+    Runnable failTask = () -> {
+      throw new ExternalSystemException(failure);
     };
     //ApplicationManager.getApplication().putUserData(EXECUTE_BEFORE_PROJECT_BUILD_IN_GUI_TEST_KEY, failTask);
     selectProjectMakeAction();
@@ -295,6 +296,19 @@ public class IdeFrameFixture extends ComponentFixture<IdeFrameFixture, IdeFrameI
    */
   public void invokeMenuPath(@NotNull String... path) {
     getMenuFixture().invokeMenuPath(path);
+  }
+
+  /**
+   * Invokes an action from main menu
+   *
+   * @param mainMenuAction is the typical AnAction with ActionPlaces.MAIN_MENU
+   */
+  public void invokeMainMenu(@NotNull String mainMenuActionId) {
+    ActionManager actionManager = ActionManager.getInstance();
+    AnAction mainMenuAction = actionManager.getAction(mainMenuActionId);
+    JMenuBar jMenuBar = this.target().getRootPane().getJMenuBar();
+    MouseEvent fakeMainMenuMouseEvent = new MouseEvent(jMenuBar, MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0, MouseInfo.getPointerInfo().getLocation().x, MouseInfo.getPointerInfo().getLocation().y, 1,  false);
+    ApplicationManager.getApplication().invokeLater(() -> actionManager.tryToExecute(mainMenuAction, fakeMainMenuMouseEvent, null, ActionPlaces.MAIN_MENU, true));
   }
 
   /**
@@ -369,11 +383,8 @@ public class IdeFrameFixture extends ComponentFixture<IdeFrameFixture, IdeFrameI
 
   @NotNull
   public IdeFrameFixture requestProjectSyncAndSimulateFailure(@NotNull final String failure) {
-    Runnable failTask = new Runnable() {
-      @Override
-      public void run() {
-        throw new ExternalSystemException(failure);
-      }
+    Runnable failTask = () -> {
+      throw new ExternalSystemException(failure);
     };
     //ApplicationManager.getApplication().putUserData(EXECUTE_BEFORE_PROJECT_SYNC_TASK_IN_GUI_TEST_KEY, failTask);
     // When simulating the error, we don't have to wait for sync to happen. Sync never happens because the error is thrown before it (sync)
@@ -589,12 +600,9 @@ public class IdeFrameFixture extends ComponentFixture<IdeFrameFixture, IdeFrameI
   public IdeSettingsDialogFixture openIdeSettings() {
     // Using invokeLater because we are going to show a *modal* dialog via API (instead of clicking a button, for example.) If we use
     // GuiActionRunner the test will hang until the modal dialog is closed.
-    ApplicationManager.getApplication().invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        Project project = getProject();
-        ShowSettingsUtil.getInstance().showSettingsDialog(project, ShowSettingsUtilImpl.getConfigurableGroups(project, true));
-      }
+    ApplicationManager.getApplication().invokeLater(() -> {
+      Project project = getProject();
+      ShowSettingsUtil.getInstance().showSettingsDialog(project, ShowSettingsUtilImpl.getConfigurableGroups(project, true));
     });
     return IdeSettingsDialogFixture.find(robot());
   }

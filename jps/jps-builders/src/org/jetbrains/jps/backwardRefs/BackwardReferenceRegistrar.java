@@ -15,19 +15,24 @@
  */
 package org.jetbrains.jps.backwardRefs;
 
+import gnu.trove.TObjectIntHashMap;
+import org.jetbrains.jps.javac.ast.api.JavacDef;
 import org.jetbrains.jps.javac.ast.api.JavacFileReferencesRegistrar;
-import org.jetbrains.jps.javac.ast.api.JavacRefSymbol;
+import org.jetbrains.jps.javac.ast.api.JavacRef;
 
 import java.util.List;
-import java.util.Set;
 
 public class BackwardReferenceRegistrar implements JavacFileReferencesRegistrar {
-  private BackwardReferenceIndexWriter myWriter;
+  private volatile BackwardReferenceIndexWriter myWriter;
 
   @Override
-  public boolean initialize() {
+  public void initialize() {
     myWriter = BackwardReferenceIndexWriter.getInstance();
-    return myWriter != null;
+  }
+
+  @Override
+  public boolean isEnabled() {
+    return BackwardReferenceIndexWriter.isEnabled() && BackwardReferenceIndexWriter.getInstance() != null;
   }
 
   @Override
@@ -36,7 +41,7 @@ public class BackwardReferenceRegistrar implements JavacFileReferencesRegistrar 
   }
 
   @Override
-  public void registerFile(String filePath, Set<JavacRefSymbol> refs, List<JavacRefSymbol> defs) {
+  public void registerFile(String filePath, TObjectIntHashMap<JavacRef> refs, List<JavacDef> defs) {
     BackwardReferenceIndexUtil.registerFile(filePath, refs, defs, myWriter);
   }
 }

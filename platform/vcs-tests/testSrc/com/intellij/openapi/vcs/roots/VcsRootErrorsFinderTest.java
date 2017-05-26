@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package com.intellij.openapi.vcs.roots;
 
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.vcs.VcsDirectoryMapping;
 import com.intellij.openapi.vcs.VcsRootError;
 import com.intellij.openapi.vcs.VcsRootErrorImpl;
@@ -31,7 +30,7 @@ import java.util.Collection;
 /**
  * @author Nadya Zabrodina
  */
-public class VcsRootErrorsFinderTest extends VcsRootPlatformTest {
+public class VcsRootErrorsFinderTest extends VcsRootBaseTest {
 
   static final String PROJECT = VcsDirectoryMapping.PROJECT_CONSTANT;
 
@@ -179,23 +178,19 @@ public class VcsRootErrorsFinderTest extends VcsRootPlatformTest {
     expected.addAll(unregAll(vcsRootConfiguration.getUnregErrors()));
     expected.addAll(extraAll(vcsRootConfiguration.getExtraErrors()));
     myProjectRoot.refresh(false, true);
-    Collection<VcsRootError> actual = ContainerUtil.filter(new VcsRootErrorsFinder(myProject).find(), new Condition<VcsRootError>() {
-      @Override
-      public boolean value(VcsRootError error) {
-        return error.getVcsKey().equals(myVcs.getKeyInstanceMethod());
-      }
-    });
+    Collection<VcsRootError> actual = ContainerUtil.filter(new VcsRootErrorsFinder(myProject).find(),
+                                                           error -> error.getVcsKey().equals(myVcs.getKeyInstanceMethod()));
     VcsTestUtil.assertEqualCollections(actual, expected);
   }
 
   void addVcsRoots(@NotNull Collection<String> relativeRoots) {
     for (String root : relativeRoots) {
       if (root.equals(PROJECT)) {
-        myVcsManager.setDirectoryMapping("", myVcsName);
+        vcsManager.setDirectoryMapping("", myVcsName);
       }
       else {
         String absoluteRoot = VcsTestUtil.toAbsolute(root, myProject);
-        myVcsManager.setDirectoryMapping(absoluteRoot, myVcsName);
+        vcsManager.setDirectoryMapping(absoluteRoot, myVcsName);
       }
     }
   }

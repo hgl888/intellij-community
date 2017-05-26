@@ -15,6 +15,7 @@
  */
 package com.intellij.configurationStore
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.ExternalizableScheme
 import com.intellij.openapi.options.SchemeManagerFactory
 import com.intellij.openapi.util.io.FileUtil
@@ -22,16 +23,14 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.ProjectRule
 import com.intellij.testFramework.TemporaryDirectory
-import com.intellij.util.SmartList
+import com.intellij.testFramework.runInEdtAndWait
 import com.intellij.util.io.createDirectories
 import com.intellij.util.io.directoryStreamIfExists
+import com.intellij.util.io.readText
 import com.intellij.util.io.write
-import com.intellij.util.lang.CompoundRuntimeException
 import com.intellij.util.loadElement
 import com.intellij.util.toByteArray
-import com.intellij.util.xmlb.XmlSerializer
 import com.intellij.util.xmlb.annotations.Tag
-import com.intellij.util.xmlb.serialize
 import gnu.trove.THashMap
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -144,7 +143,7 @@ internal class SchemeManagerTest {
   }
 
   fun TestScheme.save(file: Path) {
-    file.write(serialize().toByteArray())
+    file.write(serialize()!!.toByteArray())
   }
 
   @Test fun `different extensions`() {
@@ -310,6 +309,48 @@ internal class SchemeManagerTest {
     assertThat(dir.resolve("s2.xml")).isRegularFile()
   }
 
+  @Test fun `rename A to B and B to A`() {
+    val dir = tempDirManager.newPath()
+    val schemeManager = createSchemeManager(dir)
+
+    val a = TestScheme("a", "a")
+    val b = TestScheme("b", "b")
+    schemeManager.setSchemes(listOf(a, b))
+    schemeManager.save()
+
+    assertThat(dir.resolve("a.xml")).isRegularFile()
+    assertThat(dir.resolve("b.xml")).isRegularFile()
+
+    a.name = "b"
+    b.name = "a"
+
+    schemeManager.save()
+
+    assertThat(dir.resolve("a.xml").readText()).isEqualTo("""<scheme name="a" data="b" />""")
+    assertThat(dir.resolve("b.xml").readText()).isEqualTo("""<scheme name="b" data="a" />""")
+  }
+
+  @Test fun `VFS - rename A to B and B to A`() {
+    val dir = tempDirManager.newPath()
+    val schemeManager = SchemeManagerImpl(FILE_SPEC, TestSchemesProcessor(), null, dir, messageBus = ApplicationManager.getApplication().messageBus)
+
+    val a = TestScheme("a", "a")
+    val b = TestScheme("b", "b")
+    schemeManager.setSchemes(listOf(a, b))
+    runInEdtAndWait { schemeManager.save() }
+
+    assertThat(dir.resolve("a.xml")).isRegularFile()
+    assertThat(dir.resolve("b.xml")).isRegularFile()
+
+    a.name = "b"
+    b.name = "a"
+
+    runInEdtAndWait { schemeManager.save() }
+
+    assertThat(dir.resolve("a.xml").readText()).isEqualTo("""<scheme name="a" data="b" />""")
+    assertThat(dir.resolve("b.xml").readText()).isEqualTo("""<scheme name="b" data="a" />""")
+  }
+
   @Test fun `path must not contains ROOT_CONFIG macro`() {
     assertThatThrownBy({ SchemeManagerFactory.getInstance().create("\$ROOT_CONFIG$/foo", TestSchemesProcessor()) }).hasMessage("Path must not contains ROOT_CONFIG macro, corrected: foo")
   }
@@ -374,7 +415,7 @@ private fun checkSchemes(baseDir: Path, expected: String, ignoreDeleted: Boolean
 
   baseDir.directoryStreamIfExists {
     for (file in it) {
-      val scheme = XmlSerializer.deserialize(loadElement(file), TestScheme::class.java)!!
+      val scheme = loadElement(file).deserialize(TestScheme::class.java)
       assertThat(fileToSchemeMap.get(FileUtil.getNameWithoutExtension(file.fileName.toString()))).isEqualTo(scheme.name)
     }
   }
@@ -388,7 +429,7 @@ data class TestScheme(@field:com.intellij.util.xmlb.annotations.Attribute @field
     name = value
   }
 
-  override fun writeScheme() = serialize()
+  override fun writeScheme() = serialize()!!
 }
 
 open class TestSchemesProcessor : LazySchemeProcessor<TestScheme, TestScheme>() {
@@ -396,14 +437,8 @@ open class TestSchemesProcessor : LazySchemeProcessor<TestScheme, TestScheme>() 
                             name: String,
                             attributeProvider: Function<String, String?>,
                             isBundled: Boolean): TestScheme {
-    val scheme = XmlSerializer.deserialize(dataHolder.read(), TestScheme::class.java)!!
+    val scheme = dataHolder.read().deserialize(TestScheme::class.java)
     dataHolder.updateDigest(scheme)
     return scheme
   }
-}
-
-fun SchemeManagerImpl<*, *>.save() {
-  val errors = SmartList<Throwable>()
-  save(errors)
-  CompoundRuntimeException.throwIfNotEmpty(errors)
 }

@@ -29,11 +29,13 @@ import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Function;
 import com.intellij.util.WaitFor;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.xdebugger.XSourcePosition;
 import com.intellij.xdebugger.frame.XValueChildrenList;
 import com.jetbrains.python.console.parsing.PythonConsoleData;
 import com.jetbrains.python.console.pydev.*;
 import com.jetbrains.python.debugger.*;
+import com.jetbrains.python.debugger.containerview.PyViewNumericContainerAction;
 import com.jetbrains.python.debugger.pydev.GetVariableCommand;
 import com.jetbrains.python.debugger.pydev.ProtocolParser;
 import org.apache.xmlrpc.WebServer;
@@ -102,6 +104,9 @@ public class PydevConsoleCommunication extends AbstractConsoleCommunication impl
   private boolean myExecuting;
   private PythonDebugConsoleCommunication myDebugCommunication;
   private boolean myNeedsMore = false;
+
+  private PythonConsoleView myConsoleView;
+  private List<PyFrameListener> myFrameListeners = ContainerUtil.createLockFreeCopyOnWriteList();
 
   /**
    * Initializes the xml-rpc communication.
@@ -184,6 +189,10 @@ public class PydevConsoleCommunication extends AbstractConsoleCommunication impl
     }
     else if ("NotifyAboutMagic".equals(method)) {
       return execNotifyAboutMagic(params);
+    }
+    else if ("ShowConsole".equals(method)) {
+      myConsoleView.setConsoleEnabled(true);
+      return "";
     }
     else {
       throw new UnsupportedOperationException();
@@ -623,6 +632,14 @@ public class PydevConsoleCommunication extends AbstractConsoleCommunication impl
     throw new PyDebuggerException("pydevconsole failed to execute connectToDebugger", exception);
   }
 
+  @Override
+  public void notifyCommandExecuted(boolean more) {
+    super.notifyCommandExecuted(more);
+    for (PyFrameListener listener : myFrameListeners) {
+      listener.frameChanged();
+    }
+  }
+
   private static void checkError(Object ret) throws PyDebuggerException {
     if (ret instanceof Object[] && ((Object[])ret).length == 1) {
       throw new PyDebuggerException(((Object[])ret)[0].toString());
@@ -675,5 +692,19 @@ public class PydevConsoleCommunication extends AbstractConsoleCommunication impl
       }
       return true;
     }
+  }
+
+  public void setConsoleView(PythonConsoleView consoleView) {
+    myConsoleView = consoleView;
+  }
+
+  @Override
+  public void showNumericContainer(PyDebugValue value) {
+    PyViewNumericContainerAction.showNumericViewer(myProject, value);
+  }
+
+  @Override
+  public void addFrameListener(@NotNull PyFrameListener listener) {
+    myFrameListeners.add(listener);
   }
 }

@@ -19,12 +19,11 @@ import com.intellij.codeInsight.CodeInsightBundle;
 import com.intellij.codeInsight.CodeInsightSettings;
 import com.intellij.codeInsight.generation.ui.GenerateEqualsWizard;
 import com.intellij.codeInsight.hint.HintManager;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.util.Computable;
 import com.intellij.psi.*;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.util.IncorrectOperationException;
@@ -57,8 +56,8 @@ public class GenerateEqualsHandler extends GenerateMembersHandlerBase {
     final PsiMethod equalsMethod = GenerateEqualsHelper.findMethod(aClass, GenerateEqualsHelper.getEqualsSignature(project, scope));
     final PsiMethod hashCodeMethod = GenerateEqualsHelper.findMethod(aClass, GenerateEqualsHelper.getHashCodeSignature());
 
-    boolean needEquals = equalsMethod == null;
-    boolean needHashCode = hashCodeMethod == null;
+    boolean needEquals = needToGenerateMethod(equalsMethod);
+    boolean needHashCode = needToGenerateMethod(hashCodeMethod);
     if (!needEquals && !needHashCode) {
       String text = aClass instanceof PsiAnonymousClass
                     ? CodeInsightBundle.message("generate.equals.and.hashcode.already.defined.warning.anonymous")
@@ -67,18 +66,15 @@ public class GenerateEqualsHandler extends GenerateMembersHandlerBase {
       if (Messages.showYesNoDialog(project, text,
                                    CodeInsightBundle.message("generate.equals.and.hashcode.already.defined.title"),
                                    Messages.getQuestionIcon()) == Messages.YES) {
-        if (!ApplicationManager.getApplication().runWriteAction(new Computable<Boolean>() {
-          @Override
-          public Boolean compute() {
-            try {
-              equalsMethod.delete();
-              hashCodeMethod.delete();
-              return Boolean.TRUE;
-            }
-            catch (IncorrectOperationException e) {
-              LOG.error(e);
-              return Boolean.FALSE;
-            }
+        if (!WriteAction.compute(() -> {
+          try {
+            equalsMethod.delete();
+            hashCodeMethod.delete();
+            return Boolean.TRUE;
+          }
+          catch (IncorrectOperationException e) {
+            LOG.error(e);
+            return Boolean.FALSE;
           }
         }).booleanValue()) {
           return null;
@@ -105,6 +101,10 @@ public class GenerateEqualsHandler extends GenerateMembersHandlerBase {
     myHashCodeFields = wizard.getHashCodeFields();
     myNonNullFields = wizard.getNonNullFields();
     return DUMMY_RESULT;
+  }
+
+  static boolean needToGenerateMethod(PsiMethod equalsMethod) {
+    return equalsMethod == null || !equalsMethod.isPhysical();
   }
 
   private static boolean hasNonStaticFields(PsiClass aClass) {

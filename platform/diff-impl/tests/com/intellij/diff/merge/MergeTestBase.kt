@@ -16,15 +16,15 @@
 package com.intellij.diff.merge
 
 import com.intellij.diff.DiffContentFactoryImpl
-import com.intellij.diff.DiffTestCase
+import com.intellij.diff.HeavyDiffTestCase
 import com.intellij.diff.contents.DocumentContent
 import com.intellij.diff.merge.MergeTestBase.SidesState.*
-import com.intellij.diff.merge.TextMergeViewer
 import com.intellij.diff.merge.TextMergeViewer.MyThreesideViewer
 import com.intellij.diff.util.DiffUtil
 import com.intellij.diff.util.Side
 import com.intellij.diff.util.TextDiffType
 import com.intellij.diff.util.ThreeSide
+import com.intellij.idea.ActionsBundle
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -38,27 +38,9 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Couple
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.text.StringUtil
-import com.intellij.testFramework.fixtures.IdeaProjectTestFixture
-import com.intellij.testFramework.fixtures.IdeaTestFixtureFactory
 import com.intellij.util.ui.UIUtil
 
-abstract class MergeTestBase : DiffTestCase() {
-  private var projectFixture: IdeaProjectTestFixture? = null
-  private var project: Project? = null
-
-  override fun setUp() {
-    super.setUp()
-    projectFixture = IdeaTestFixtureFactory.getFixtureFactory().createFixtureBuilder(getTestName(true)).fixture
-    projectFixture!!.setUp()
-    project = projectFixture!!.project
-  }
-
-  override fun tearDown() {
-    projectFixture?.tearDown()
-    project = null
-    super.tearDown()
-  }
-
+abstract class MergeTestBase : HeavyDiffTestCase() {
   fun test1(left: String, base: String, right: String, f: TestBuilder.() -> Unit) {
     test(left, base, right, 1, f)
   }
@@ -90,7 +72,8 @@ abstract class MergeTestBase : DiffTestCase() {
       val builder = TestBuilder(viewer, toolbar.toolbarActions ?: emptyList())
       builder.assertChangesCount(changesCount)
       builder.f()
-    } finally {
+    }
+    finally {
       Disposer.dispose(viewer)
     }
   }
@@ -101,7 +84,7 @@ abstract class MergeTestBase : DiffTestCase() {
     val editor: EditorEx = viewer.editor
     val document: Document = editor.document
 
-    private val textEditor = TextEditorProvider.getInstance().getTextEditor(editor);
+    private val textEditor = TextEditorProvider.getInstance().getTextEditor(editor)
     private val undoManager = UndoManager.getInstance(project!!)
 
     fun change(num: Int): TextMergeChange {
@@ -115,10 +98,14 @@ abstract class MergeTestBase : DiffTestCase() {
     // Actions
     //
 
-    fun runActionByTitle(name: String): Boolean {
-      val action = actions.filter { name.equals(it.templatePresentation.text) }
-      assertTrue(action.size == 1, action.toString())
-      return runAction(action[0])
+    fun runApplyNonConflictsAction(side: ThreeSide) {
+      runActionById(side.select("Diff.ApplyNonConflicts.Left", "Diff.ApplyNonConflicts", "Diff.ApplyNonConflicts.Right")!!)
+    }
+
+    private fun runActionById(id: String): Boolean {
+      val text = ActionsBundle.actionText(id)
+      val action = actions.filter { text == it.templatePresentation.text }.single()
+      return runAction(action)
     }
 
     private fun runAction(action: AnAction): Boolean {
@@ -144,7 +131,6 @@ abstract class MergeTestBase : DiffTestCase() {
 
     fun write(f: () -> Unit): Unit {
       ApplicationManager.getApplication().runWriteAction({ CommandProcessor.getInstance().executeCommand(project, f, null, null) })
-      UIUtil.dispatchAllInvocationEvents()
     }
 
     fun Int.ignore(side: Side, modifier: Boolean = false) {
@@ -155,6 +141,19 @@ abstract class MergeTestBase : DiffTestCase() {
     fun Int.apply(side: Side, modifier: Boolean = false) {
       val change = change(this)
       command(change) { viewer.replaceChange(change, side, modifier) }
+    }
+
+    fun Int.resolve() {
+      val change = change(this)
+      command(change) {
+        assertTrue(change.isConflict && viewer.canApplyNonConflictedChange(change, ThreeSide.BASE))
+        viewer.applyNonConflictedChange(change, ThreeSide.BASE)
+      }
+    }
+
+    fun Int.canResolveConflict(): Boolean {
+      val change = change(this)
+      return viewer.canApplyNonConflictedChange(change, ThreeSide.BASE)
     }
 
     //
@@ -372,8 +371,8 @@ abstract class MergeTestBase : DiffTestCase() {
     LEFT, RIGHT, BOTH, NONE
   }
 
-  private data class ViewerState private constructor(private val content: CharSequence,
-                                                     private val changes: List<ViewerState.ChangeState>) {
+  private data class ViewerState constructor(private val content: CharSequence,
+                                             private val changes: List<ViewerState.ChangeState>) {
     companion object {
       fun recordState(viewer: MyThreesideViewer): ViewerState {
         val content = viewer.editor.document.immutableCharSequence
@@ -385,7 +384,11 @@ abstract class MergeTestBase : DiffTestCase() {
         val document = viewer.editor.document;
         val content = DiffUtil.getLinesContent(document, change.startLine, change.endLine)
 
-        val resolved = if (change.isResolved) BOTH else if (change.isResolved(Side.LEFT)) LEFT else if (change.isResolved(Side.RIGHT)) RIGHT else NONE
+        val resolved =
+          if (change.isResolved) BOTH
+          else if (change.isResolved(Side.LEFT)) LEFT
+          else if (change.isResolved(Side.RIGHT)) RIGHT
+          else NONE
 
         val starts = Trio.from { change.getStartLine(it) }
         val ends = Trio.from { change.getStartLine(it) }
@@ -399,7 +402,7 @@ abstract class MergeTestBase : DiffTestCase() {
       if (other !is ViewerState) return false
 
       if (!StringUtil.equals(content, other.content)) return false
-      if (!changes.equals(other.changes)) return false
+      if (changes != other.changes) return false
       return true
     }
 
@@ -414,9 +417,9 @@ abstract class MergeTestBase : DiffTestCase() {
         if (other !is ChangeState) return false
 
         if (!StringUtil.equals(content, other.content)) return false
-        if (!starts.equals(other.starts)) return false
-        if (!ends.equals(other.ends)) return false
-        if (!resolved.equals(other.resolved)) return false
+        if (starts != other.starts) return false
+        if (ends != other.ends) return false
+        if (resolved != other.resolved) return false
         return true
       }
 

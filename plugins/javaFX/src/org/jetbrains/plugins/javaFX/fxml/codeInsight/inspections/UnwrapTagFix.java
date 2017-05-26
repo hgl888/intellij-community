@@ -15,7 +15,6 @@
  */
 package org.jetbrains.plugins.javaFX.fxml.codeInsight.inspections;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.diagnostic.Logger;
@@ -29,11 +28,8 @@ import com.intellij.psi.xml.XmlTagChild;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.javaFX.fxml.JavaFxFileTypeFactory;
 
-/**
-* User: anna
-*/
 public class UnwrapTagFix implements LocalQuickFix {
-  private static final Logger LOG = Logger.getInstance("#" + UnwrapTagFix.class.getName());
+  private static final Logger LOG = Logger.getInstance(UnwrapTagFix.class);
   private final String myTagName;
 
   public UnwrapTagFix(String tagName) {
@@ -63,7 +59,6 @@ public class UnwrapTagFix implements LocalQuickFix {
       if (xmlTag != null) {
         final XmlTag parentTag = xmlTag.getParentTag();
         final PsiElement[] children = PsiTreeUtil.getChildrenOfType(xmlTag, XmlTagChild.class);
-        if (!FileModificationService.getInstance().preparePsiElementsForWrite(element)) return;
         if (children != null && children.length > 0 && parentTag != null) {
           parentTag.addRange(children[0], children[children.length - 1]);
         }

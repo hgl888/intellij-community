@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import com.intellij.openapi.options.SchemeElement;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.util.SmartList;
-import com.intellij.util.containers.IntArrayList;
+import gnu.trove.THashSet;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -40,6 +40,7 @@ public class TemplateImpl extends Template implements SchemeElement {
   private List<Segment> mySegments = null;
   private String myTemplateText = null;
   private String myId;
+  @Nullable private Throwable myBuildingTemplateTrace;
 
   public boolean equals(Object o) {
     if (this == o) return true;
@@ -57,7 +58,7 @@ public class TemplateImpl extends Template implements SchemeElement {
     if (!myString.equals(template.myString)) return false;
     if (myTemplateText != null ? !myTemplateText.equals(template.myTemplateText) : template.myTemplateText != null) return false;
 
-    if (!new HashSet<>(myVariables).equals(new HashSet<>(template.myVariables))) return false;
+    if (!new THashSet<>(myVariables).equals(new THashSet<>(template.myVariables))) return false;
     if (isDeactivated != template.isDeactivated) return false;
 
     return true;
@@ -85,7 +86,7 @@ public class TemplateImpl extends Template implements SchemeElement {
   @NonNls public static final String SELECTION_END = "SELECTION_END";
   @NonNls public static final String ARG = "ARG";
 
-  public static final Set<String> INTERNAL_VARS_SET = new HashSet<>(Arrays.asList(
+  public static final Set<String> INTERNAL_VARS_SET = new THashSet<>(Arrays.asList(
     END, SELECTION, SELECTION_START, SELECTION_END));
 
   private boolean isDeactivated = false;
@@ -104,8 +105,6 @@ public class TemplateImpl extends Template implements SchemeElement {
 
   private boolean myIsInline = false;
 
-
-
   public TemplateImpl(@NotNull String key, @NotNull String group) {
     this(key, null, group);
     toParseSegments = false;
@@ -114,11 +113,15 @@ public class TemplateImpl extends Template implements SchemeElement {
   }
 
   public TemplateImpl(@NotNull String key, String string, @NotNull String group) {
+    this(key, string, group, true);
+  }
+
+  TemplateImpl(@NotNull String key, String string, @NotNull String group, boolean storeBuildingStacktrace) {
     myKey = key;
     myString = StringUtil.convertLineSeparators(StringUtil.notNullize(string));
     myGroupName = group;
+    myBuildingTemplateTrace = storeBuildingStacktrace ? new Throwable() : null;
   }
-
 
   @Override
   public void addTextSegment(@NotNull String text) {
@@ -143,8 +146,7 @@ public class TemplateImpl extends Template implements SchemeElement {
                               boolean isAlwaysStopAt,
                               boolean skipOnStart) {
     if (mySegments != null) {
-      Segment segment = new Segment(name, myTemplateText.length());
-      mySegments.add(segment);
+      addVariableSegment(name);
     }
     Variable variable = new Variable(name, expression, defaultValueExpression, isAlwaysStopAt, skipOnStart);
     myVariables.add(variable);
@@ -152,21 +154,25 @@ public class TemplateImpl extends Template implements SchemeElement {
   }
 
   @Override
+  public Variable addVariable(@NotNull String name, String expression, String defaultValue, boolean isAlwaysStopAt) {
+    Variable variable = new Variable(name, expression, defaultValue, isAlwaysStopAt);
+    myVariables.add(variable);
+    return variable;
+  }
+
+  @Override
   public void addEndVariable() {
-    Segment segment = new Segment(END, myTemplateText.length());
-    mySegments.add(segment);
+    addVariableSegment(END);
   }
 
   @Override
   public void addSelectionStartVariable() {
-    Segment segment = new Segment(SELECTION_START, myTemplateText.length());
-    mySegments.add(segment);
+    addVariableSegment(SELECTION_START);
   }
 
   @Override
   public void addSelectionEndVariable() {
-    Segment segment = new Segment(SELECTION_END, myTemplateText.length());
-    mySegments.add(segment);
+    addVariableSegment(SELECTION_END);
   }
 
   @Override
@@ -201,7 +207,7 @@ public class TemplateImpl extends Template implements SchemeElement {
     for (Property property : Property.values()) {
       boolean value = another.getValue(property);
       if (value != Template.getDefaultValue(property)) {
-        setValue(property, value);
+        setValue(property, true);
       }
     }
     for (Variable variable : another.myVariables) {
@@ -246,7 +252,8 @@ public class TemplateImpl extends Template implements SchemeElement {
     return isDeactivated;
   }
 
-  @NotNull public TemplateContext getTemplateContext() {
+  @NotNull
+  public TemplateContext getTemplateContext() {
     return myTemplateContext;
   }
 
@@ -271,18 +278,6 @@ public class TemplateImpl extends Template implements SchemeElement {
       }
     }
     return -1;
-  }
-
-  public IntArrayList getVariableSegmentNumbers(String variableName) {
-    IntArrayList result = new IntArrayList();
-    parseSegments();
-    for (int i = 0; i < mySegments.size(); i++) {
-      Segment segment = mySegments.get(i);
-      if (segment.name.equals(variableName)) {
-        result.add(i);
-      }
-    }
-    return result;
   }
 
   @NotNull
@@ -348,13 +343,8 @@ public class TemplateImpl extends Template implements SchemeElement {
   public void removeAllParsed() {
     myVariables.clear();
     mySegments = null;
-  }
-
-  @Override
-  public Variable addVariable(@NotNull String name, String expression, String defaultValue, boolean isAlwaysStopAt) {
-    Variable variable = new Variable(name, expression, defaultValue, isAlwaysStopAt);
-    myVariables.add(variable);
-    return variable;
+    toParseSegments = true;
+    myBuildingTemplateTrace = new Throwable();
   }
 
   public void removeVariable(int i) {
@@ -412,7 +402,9 @@ public class TemplateImpl extends Template implements SchemeElement {
    */
   public void setString(@NotNull String string) {
     myString = StringUtil.convertLineSeparators(string);
+    mySegments = null;
     toParseSegments = true;
+    myBuildingTemplateTrace = new Throwable();
   }
 
   @Override
@@ -420,8 +412,11 @@ public class TemplateImpl extends Template implements SchemeElement {
     return myDescription;
   }
 
-  public void setDescription(String description) {
-    myDescription = description;
+  public void setDescription(@Nullable String value) {
+    value = StringUtil.notNullize(value).trim();
+    if (!StringUtil.equals(value, myDescription)) {
+      myDescription = value;
+    }
   }
 
   public char getShortcutChar() {
@@ -508,5 +503,10 @@ public class TemplateImpl extends Template implements SchemeElement {
   @Override
   public String toString() {
     return myGroupName +"/" + myKey;
+  }
+
+  @Nullable
+  public Throwable getBuildingTemplateTrace() {
+    return myBuildingTemplateTrace;
   }
 }

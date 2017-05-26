@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-/**
- * User: zolotov
- * Date: 1/25/13
- */
 public abstract class EmmetParser {
   private final List<ZenCodingToken> myTokens;
   protected final CustomTemplateCallback myCallback;
@@ -218,7 +214,8 @@ public abstract class EmmetParser {
     if (template == null) {
       return false;
     }
-    return token.setTemplate(template, myCallback);
+    token.setTemplate(template, myCallback);
+    return true;
   }
 
   @Nullable

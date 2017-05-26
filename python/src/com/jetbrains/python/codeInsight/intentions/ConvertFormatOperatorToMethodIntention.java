@@ -47,7 +47,7 @@ import static com.jetbrains.python.psi.PyUtil.guessLanguageLevel;
 import static com.jetbrains.python.psi.PyUtil.sure;
 
 /**
- * Replaces expressions like <code>"%s" % values</code> with likes of <code>"{0:s}".format(values)</code>.
+ * Replaces expressions like {@code "%s" % values} with likes of {@code "{0:s}".format(values)}.
  * <br/>
  * Author: Alexey.Ivanov, dcheryasov
  */
@@ -285,7 +285,9 @@ public class ConvertFormatOperatorToMethodIntention extends PyBaseIntentionActio
     final PyType rhsType = context.getType(rhs);
     String prefix = "";
     final LanguageLevel languageLevel = guessLanguageLevel(project);
-    if (!languageLevel.isPy3K() && PyTypeChecker.match(PyBuiltinCache.getInstance(rhs).getObjectType("unicode"), rhsType, context)) {
+    final PyBuiltinCache builtinCache = PyBuiltinCache.getInstance(rhs);
+    if (!languageLevel.isPy3K() && PyTypeChecker.match(builtinCache.getUnicodeType(languageLevel), rhsType, context) &&
+        !PyTypeChecker.match(builtinCache.getBytesType(languageLevel), rhsType, context)) {
       prefix = "u";
     }
     final PyStringLiteralExpression leftExpression = (PyStringLiteralExpression)element.getLeftExpression();

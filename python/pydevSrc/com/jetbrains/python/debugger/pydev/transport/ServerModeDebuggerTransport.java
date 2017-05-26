@@ -2,7 +2,6 @@ package com.jetbrains.python.debugger.pydev.transport;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.vfs.CharsetToolkit;
-import com.jetbrains.python.debugger.pydev.ProtocolFrame;
 import com.jetbrains.python.debugger.pydev.RemoteDebugger;
 import org.jetbrains.annotations.NotNull;
 
@@ -97,11 +96,6 @@ public class ServerModeDebuggerTransport extends BaseDebuggerTransport {
   }
 
   @Override
-  public void messageReceived(@NotNull ProtocolFrame frame) {
-    // do nothing
-  }
-
-  @Override
   protected boolean sendMessageImpl(byte[] packed) throws IOException {
     synchronized (mySocketObject) {
       if (mySocket == null) {
@@ -114,12 +108,24 @@ public class ServerModeDebuggerTransport extends BaseDebuggerTransport {
     }
   }
 
+  @Override
+  protected void onSocketException() {
+    myDebugger.disconnect();
+    myDebugger.fireCommunicationError();
+  }
+
   public static class DebuggerReader extends BaseDebuggerReader {
     public DebuggerReader(@NotNull RemoteDebugger debugger, @NotNull InputStream stream) throws IOException {
       super(stream, CharsetToolkit.UTF8_CHARSET, debugger); //TODO: correct encoding?
       start(getClass().getName());
     }
 
+    @Override
+    protected void onExit() {
+      getDebugger().fireExitEvent();
+    }
+
+    @Override
     protected void onCommunicationError() {getDebugger().fireCommunicationError();}
   }
 }

@@ -37,7 +37,7 @@ import java.util.Set;
 
 /**
  * Common code style settings can be used by several programming languages. Each language may have its own
- * instance of <code>CommonCodeStyleSettings</code>.
+ * instance of {@code CommonCodeStyleSettings}.
  *
  * @author Rustam Vishnyakov
  */
@@ -324,6 +324,7 @@ public class CommonCodeStyleSettings {
   @BraceStyleConstant public int BRACE_STYLE = END_OF_LINE;
   @BraceStyleConstant public int CLASS_BRACE_STYLE = END_OF_LINE;
   @BraceStyleConstant public int METHOD_BRACE_STYLE = END_OF_LINE;
+  @BraceStyleConstant public int LAMBDA_BRACE_STYLE = END_OF_LINE;
 
   /**
    * Defines if 'flying geese' style should be used for curly braces formatting, e.g. if we want to format code like
@@ -343,11 +344,6 @@ public class CommonCodeStyleSettings {
    * </pre>
    */
   public boolean USE_FLYING_GEESE_BRACES = false;
-
-  /**
-   * Defines number of white spaces between curly braces in case of {@link #USE_FLYING_GEESE_BRACES 'flying geese'} style usage.
-   */
-  public int FLYING_GEESE_BRACES_GAP = 1;
 
   public boolean DO_NOT_INDENT_TOP_LEVEL_CLASS_MEMBERS = false;
 
@@ -392,6 +388,8 @@ public class CommonCodeStyleSettings {
   public boolean FINALLY_ON_NEW_LINE = false;
 
   public boolean INDENT_CASE_FROM_SWITCH = true;
+  
+  public boolean CASE_STATEMENT_ON_NEW_LINE = true;
 
   /**
    * Controls "break" position relative to "case".
@@ -407,9 +405,9 @@ public class CommonCodeStyleSettings {
   /**
    * Indicates if long sequence of chained method calls should be aligned.
    * <p/>
-   * E.g. if statement like <code>'foo.bar().bar().bar();'</code> should be reformatted to the one below if,
-   * say, last <code>'bar()'</code> call exceeds right margin. The code looks as follows after reformatting
-   * if this property is <code>true</code>:
+   * E.g. if statement like {@code 'foo.bar().bar().bar();'} should be reformatted to the one below if,
+   * say, last {@code 'bar()'} call exceeds right margin. The code looks as follows after reformatting
+   * if this property is {@code true}:
    * <p/>
    * <pre>
    *     foo.bar().bar()
@@ -929,7 +927,6 @@ public class CommonCodeStyleSettings {
 
     private FileIndentOptionsProvider myFileIndentOptionsProvider;
     private static final Key<CommonCodeStyleSettings.IndentOptions> INDENT_OPTIONS_KEY = Key.create("INDENT_OPTIONS_KEY");
-    private boolean myInaccurate;
     private boolean myOverrideLanguageOptions;
 
     @Override
@@ -1023,7 +1020,7 @@ public class CommonCodeStyleSettings {
     }
 
     @Nullable
-    static IndentOptions retrieveFromAssociatedDocument(@NotNull PsiFile file) {
+    public static IndentOptions retrieveFromAssociatedDocument(@NotNull PsiFile file) {
       Document document = PsiDocumentManager.getInstance(file.getProject()).getDocument(file);
       return document != null ? document.getUserData(INDENT_OPTIONS_KEY) : null;
     }
@@ -1037,7 +1034,7 @@ public class CommonCodeStyleSettings {
     }
 
     /**
-     * Make the indent options override options defined for a language block if the block implements <code>BlockEx.getLanguage()</code> 
+     * Make the indent options override options defined for a language block if the block implements {@code BlockEx.getLanguage()}
      * Useful when indent options provider must take a priority over any language settings for a formatter block.
      * 
      * @param overrideLanguageOptions True if language block options should be ignored.
@@ -1046,5 +1043,18 @@ public class CommonCodeStyleSettings {
     public void setOverrideLanguageOptions(boolean overrideLanguageOptions) {
       myOverrideLanguageOptions = overrideLanguageOptions;
     }
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+    if (obj instanceof CommonCodeStyleSettings) {
+      if (
+        ReflectionUtil.comparePublicNonFinalFields(this, obj) &&
+        myIndentOptions.equals(((CommonCodeStyleSettings)obj).getIndentOptions())
+        ) {
+        return true;
+      }
+    }
+    return false;
   }
 }

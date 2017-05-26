@@ -20,7 +20,6 @@ import com.intellij.util.Consumer;
 import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.XDebuggerTestUtil;
 import com.jetbrains.env.PyEnvTestCase;
-import com.jetbrains.env.Staging;
 import com.jetbrains.env.python.debug.PyDebuggerTask;
 import com.jetbrains.python.debugger.ArrayChunk;
 import com.jetbrains.python.debugger.PyDebugValue;
@@ -36,13 +35,9 @@ import java.util.Set;
 import static com.intellij.testFramework.UsefulTestCase.assertSameElements;
 import static org.junit.Assert.assertEquals;
 
-/**
- * Created by Yuli Fiterman on 5/10/2016.
- */
 public class PythonDataViewerTest extends PyEnvTestCase {
 
   @Test
-  @Staging
   public void testDataFrameChunkRetrieval() throws Exception {
     runPythonTest(new PyDataFrameDebuggerTask(getRelativeTestDataPath(), "test_dataframe.py", ImmutableSet.of(7, 15, 22)) {
       @Override
@@ -66,7 +61,6 @@ public class PythonDataViewerTest extends PyEnvTestCase {
   }
 
   @Test
-  @Staging
   public void testMultiIndexDataFrame() throws Exception {
     runPythonTest(new PyDataFrameDebuggerTask(getRelativeTestDataPath(), "test_dataframe_multiindex.py", ImmutableSet.of(5, 10)) {
       @Override

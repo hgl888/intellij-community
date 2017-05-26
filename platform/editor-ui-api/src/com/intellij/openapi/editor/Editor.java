@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import javax.swing.*;
 import javax.swing.border.Border;
 import java.awt.*;
 import java.awt.event.MouseEvent;
+import java.awt.geom.Point2D;
 
 /**
  * Represents an instance of the IDEA text editor.
@@ -204,6 +205,12 @@ public interface Editor extends UserDataHolder {
   Point visualPositionToXY(@NotNull VisualPosition visible);
 
   /**
+   * Same as {@link #visualPositionToXY(VisualPosition)}, but returns potentially more precise result.
+   */
+  @NotNull
+  Point2D visualPositionToPoint2D(@NotNull VisualPosition pos);
+
+  /**
    * Maps a visual position in the editor (with folded lines and columns not included in the line and column count) to
    * a logical position (the line and column ignoring folding).
    *
@@ -270,6 +277,48 @@ public interface Editor extends UserDataHolder {
    */
   @NotNull
   VisualPosition xyToVisualPosition(@NotNull Point p);
+
+  /**
+   * Same as {{@link #xyToVisualPosition(Point)}}, but allows to specify target point with higher precision.
+   */
+  @NotNull
+  VisualPosition xyToVisualPosition(@NotNull Point2D p);
+
+  /**
+   * @since 2017.2
+   */
+  @NotNull
+  default Point offsetToXY(int offset) {
+    return offsetToXY(offset, false, false);
+  }
+
+  /**
+   * @see #offsetToVisualPosition(int, boolean, boolean)
+   * @since 2017.2
+   */
+  @NotNull
+  default Point offsetToXY(int offset, boolean leanForward, boolean beforeSoftWrap) {
+    VisualPosition visualPosition = offsetToVisualPosition(offset, leanForward, beforeSoftWrap);
+    return visualPositionToXY(visualPosition);
+  }
+
+  /**
+   * @since 2017.2
+   */
+  @NotNull
+  default Point2D offsetToPoint2D(int offset) {
+    return offsetToPoint2D(offset, false, false);
+  }
+
+  /**
+   * @see #offsetToVisualPosition(int, boolean, boolean)
+   * @since 2017.2
+   */
+  @NotNull
+  default Point2D offsetToPoint2D(int offset, boolean leanForward, boolean beforeSoftWrap) {
+    VisualPosition visualPosition = offsetToVisualPosition(offset, leanForward, beforeSoftWrap);
+    return visualPositionToPoint2D(visualPosition);
+  }
 
   /**
    * Adds a listener for receiving notifications about mouse clicks in the editor and
@@ -380,4 +429,7 @@ public interface Editor extends UserDataHolder {
 
   @NotNull
   InlayModel getInlayModel();
+
+  @NotNull
+  EditorKind getEditorKind();
 }

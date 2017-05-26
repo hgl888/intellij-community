@@ -16,7 +16,6 @@
 package com.intellij.codeInsight.intention.impl;
 
 import com.intellij.codeInsight.CodeInsightBundle;
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
 import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.editor.Editor;
@@ -94,8 +93,6 @@ public class SplitDeclarationAction extends PsiElementBaseIntentionAction {
 
   @Override
   public void invoke(@NotNull Project project, Editor editor, @NotNull PsiElement element) throws IncorrectOperationException {
-    if (!FileModificationService.getInstance().preparePsiElementForWrite(element)) return;
-
     final PsiDeclarationStatement decl = PsiTreeUtil.getParentOfType(element, PsiDeclarationStatement.class);
 
     final PsiManager psiManager = PsiManager.getInstance(project);
@@ -140,7 +137,7 @@ public class SplitDeclarationAction extends PsiElementBaseIntentionAction {
         }
 
         final PsiElement parent = block.getParent();
-        final PsiAssignmentExpression replaced = (PsiAssignmentExpression)decl.replace(statement);
+        PsiExpressionStatement replaced = (PsiExpressionStatement)decl.replace(statement);
         if (!(parent instanceof PsiCodeBlock)) {
           final PsiBlockStatement blockStatement =
             (PsiBlockStatement)JavaPsiFacade.getElementFactory(project).createStatementFromText("{}", null);
@@ -152,7 +149,7 @@ public class SplitDeclarationAction extends PsiElementBaseIntentionAction {
         else {
           parent.addBefore(varDeclStatement, block);
         }
-        return replaced;
+        return (PsiAssignmentExpression)replaced.getExpression();
       }
       else {
         return (PsiAssignmentExpression)((PsiExpressionStatement)block.addAfter(statement, decl)).getExpression();

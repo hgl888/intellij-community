@@ -19,9 +19,11 @@ import com.intellij.facet.Facet;
 import com.intellij.facet.FacetModel;
 import com.intellij.facet.FacetTypeId;
 import com.intellij.facet.ModifiableFacetModel;
+import com.intellij.ide.highlighter.ModuleFileType;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.externalSystem.model.project.LibraryData;
+import com.intellij.openapi.externalSystem.model.project.ModuleData;
 import com.intellij.openapi.module.ModifiableModuleModel;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleWithNameAlreadyExists;
@@ -36,6 +38,8 @@ import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
 import com.intellij.openapi.roots.ui.configuration.FacetsProvider;
 import com.intellij.openapi.roots.ui.configuration.ModulesProvider;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.UserDataHolderBase;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.packaging.artifacts.ArtifactModel;
@@ -47,6 +51,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.graph.CachingSemiGraph;
 import com.intellij.util.graph.Graph;
 import com.intellij.util.graph.GraphGenerator;
+import com.intellij.util.graph.InboundSemiGraph;
 import gnu.trove.THashMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -55,6 +60,7 @@ import java.io.File;
 import java.util.*;
 
 import static com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil.isRelated;
+import static com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil.toCanonicalPath;
 
 public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProviderImpl implements IdeModifiableModelsProvider {
   private static final Logger LOG = Logger.getInstance(AbstractIdeModifiableModelsProvider.class);
@@ -67,6 +73,8 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
   private ModifiableArtifactModel myModifiableArtifactModel;
   private AbstractIdeModifiableModelsProvider.MyPackagingElementResolvingContext myPackagingElementResolvingContext;
   private final ArtifactExternalDependenciesImporter myArtifactExternalDependenciesImporter;
+
+  @NotNull private final MyUserDataHolderBase myUserData = new MyUserDataHolderBase();
 
   public AbstractIdeModifiableModelsProvider(@NotNull Project project) {
     super(project);
@@ -128,6 +136,21 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
     // set module type id explicitly otherwise it can not be set if there is an existing module (with the same filePath) and w/o 'type' attribute
     module.setOption(Module.ELEMENT_TYPE, moduleTypeId);
     return module;
+  }
+
+  @NotNull
+  @Override
+  public Module newModule(@NotNull ModuleData moduleData) {
+    String filePath = moduleData.getModuleFilePath();
+    String moduleTypeId = moduleData.getModuleTypeId();
+    for (String candidate : suggestModuleNameCandidates(moduleData)) {
+      Module module = findIdeModule(candidate);
+      if (module == null) {
+        filePath = toCanonicalPath(moduleData.getModuleFileDirectoryPath() + "/" + candidate + ModuleFileType.DOT_DEFAULT_EXTENSION);
+        break;
+      }
+    }
+    return newModule(filePath, moduleTypeId);
   }
 
   @Nullable
@@ -218,6 +241,11 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
   }
 
   @Override
+  public Library createLibrary(String name, @Nullable ProjectModelExternalSource externalSource) {
+    return getModifiableProjectLibrariesModel().createLibrary(name, null, externalSource);
+  }
+
+  @Override
   public void removeLibrary(Library library) {
     getModifiableProjectLibrariesModel().removeLibrary(library);
   }
@@ -251,15 +279,15 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
   @Override
   public List<Module> getAllDependentModules(@NotNull Module module) {
     final ArrayList<Module> list = new ArrayList<>();
-    final Graph<Module> graph = getModuleGraph(true);
+    final Graph<Module> graph = getModuleGraph();
     for (Iterator<Module> i = graph.getOut(module); i.hasNext();) {
       list.add(i.next());
     }
     return list;
   }
 
-  private Graph<Module> getModuleGraph(final boolean includeTests) {
-    return GraphGenerator.create(CachingSemiGraph.create(new GraphGenerator.SemiGraph<Module>() {
+  private Graph<Module> getModuleGraph() {
+    return GraphGenerator.generate(CachingSemiGraph.cache(new InboundSemiGraph<Module>() {
       @Override
       public Collection<Module> getNodes() {
         return ContainerUtil.list(getModules());
@@ -267,10 +295,16 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
 
       @Override
       public Iterator<Module> getIn(Module m) {
-        Module[] dependentModules = getModifiableRootModel(m).getModuleDependencies(includeTests);
+        Module[] dependentModules = getModifiableRootModel(m).getModuleDependencies(true);
         return Arrays.asList(dependentModules).iterator();
       }
     }));
+  }
+
+  private static class MyUserDataHolderBase extends UserDataHolderBase {
+    void clear() {
+      clearUserData();
+    }
   }
 
   private class MyPackagingElementResolvingContext implements PackagingElementResolvingContext {
@@ -383,6 +417,7 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
         myModifiableArtifactModel.commit();
       }
     });
+    myUserData.clear();
   }
 
   @Override
@@ -408,10 +443,28 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
     myModifiableRootModels.clear();
     myModifiableFacetModels.clear();
     myModifiableLibraryModels.clear();
+    myUserData.clear();
   }
 
   @Override
   public void setTestModuleProperties(Module testModule, String productionModuleName) {
     myProductionModulesForTestModules.put(testModule, productionModuleName);
+  }
+
+  @Nullable
+  @Override
+  public String getProductionModuleName(Module module) {
+    return myProductionModulesForTestModules.get(module);
+  }
+
+  @Nullable
+  @Override
+  public <T> T getUserData(@NotNull Key<T> key) {
+    return myUserData.getUserData(key);
+  }
+
+  @Override
+  public <T> void putUserData(@NotNull Key<T> key, @Nullable T value) {
+    myUserData.putUserData(key, value);
   }
 }

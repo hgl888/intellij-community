@@ -8,7 +8,7 @@ import java.rmi.Remote;
 import java.rmi.RemoteException;
 
 /**
- * Defines interface for the entity that manages notifications about progress of long-running operations performed at Gradle API side.
+ * Defines interface for the entity that manages notifications about progress of long-running operations performed at external system API side.
  * <p/>
  * Implementations of this interface are expected to be thread-safe.
  * 
@@ -19,11 +19,7 @@ public interface RemoteExternalSystemProgressNotificationManager extends Remote 
 
   RemoteExternalSystemProgressNotificationManager NULL_OBJECT = new RemoteExternalSystemProgressNotificationManager() {
     @Override
-    public void onQueued(@NotNull ExternalSystemTaskId id, @NotNull String projectPath) throws RemoteException {
-    }
-
-    @Override
-    public void onStart(@NotNull ExternalSystemTaskId id) {
+    public void onStart(@NotNull ExternalSystemTaskId id, @NotNull String projectPath) throws RemoteException {
     }
 
     @Override
@@ -55,9 +51,7 @@ public interface RemoteExternalSystemProgressNotificationManager extends Remote 
     }
   };
 
-  void onQueued(@NotNull ExternalSystemTaskId id, @NotNull String projectPath) throws RemoteException;
-
-  void onStart(@NotNull ExternalSystemTaskId id) throws RemoteException;
+  void onStart(@NotNull ExternalSystemTaskId id, @NotNull String projectPath) throws RemoteException;
 
   void onStatusChange(@NotNull ExternalSystemTaskNotificationEvent event) throws RemoteException;
 

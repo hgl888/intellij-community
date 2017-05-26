@@ -24,8 +24,9 @@ import com.intellij.concurrency.JobLauncher;
 import com.intellij.injected.editor.EditorWindow;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ex.ApplicationManagerEx;
+import com.intellij.openapi.application.ex.ApplicationUtil;
+import com.intellij.openapi.application.impl.ApplicationImpl;
 import com.intellij.openapi.application.impl.ApplicationInfoImpl;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -44,7 +45,6 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Pair;
-import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Functions;
@@ -197,7 +197,7 @@ class PassExecutorService implements Disposable {
       createScheduledPass(fileEditor, pass, toBeSubmitted, ContainerUtil.emptyList(), freePasses, dependentPasses, updateProgress, threadsToStartCountdown);
     }
 
-    if (CHECK_CONSISTENCY && !ApplicationInfoImpl.isInPerformanceTest()) {
+    if (CHECK_CONSISTENCY && !ApplicationInfoImpl.isInStressTest()) {
       assertConsistency(freePasses, toBeSubmitted, threadsToStartCountdown);
     }
 
@@ -387,7 +387,7 @@ class PassExecutorService implements Disposable {
     private final AtomicInteger myRunningPredecessorsCount = new AtomicInteger(0);
     private final Collection<ScheduledPass> mySuccessorsOnCompletion = new ArrayList<>();
     private final Collection<ScheduledPass> mySuccessorsOnSubmit = new ArrayList<>();
-    private final DaemonProgressIndicator myUpdateProgress;
+    @NotNull private final DaemonProgressIndicator myUpdateProgress;
 
     private ScheduledPass(@NotNull FileEditor fileEditor,
                           @NotNull TextEditorHighlightingPass pass,
@@ -401,13 +401,18 @@ class PassExecutorService implements Disposable {
 
     @Override
     public void run() {
-      try {
-        doRun();
-      }
-      catch (RuntimeException | Error e) {
-        saveException(e,myUpdateProgress);
-        throw e;
-      }
+      ((ApplicationImpl)ApplicationManager.getApplication()).executeByImpatientReader(() -> {
+        try {
+          doRun();
+        }
+        catch (ApplicationUtil.CannotRunReadActionException e) {
+          myUpdateProgress.cancel();
+        }
+        catch (RuntimeException | Error e) {
+          saveException(e, myUpdateProgress);
+          throw e;
+        }
+      });
     }
 
     private void doRun() {
@@ -517,16 +522,14 @@ class PassExecutorService implements Disposable {
         throw new RuntimeException(message, e);
       }
       if (threadsToStartCountdown.decrementAndGet() == 0) {
-        if (pass instanceof ProgressableTextEditorHighlightingPass) {
-          ((ProgressableTextEditorHighlightingPass)pass).waitForHighlightInfosApplied();
-        }
+        HighlightingSessionImpl.waitForAllSessionsHighlightInfosApplied(updateProgress);
         log(updateProgress, pass, "Stopping ");
         updateProgress.stopIfRunning();
       }
       else {
         log(updateProgress, pass, "Finished but there are passes in the queue: " + threadsToStartCountdown.get());
       }
-    }, Registry.is("ide.perProjectModality") ? ModalityState.defaultModalityState() : ModalityState.stateForComponent(fileEditor.getComponent()));
+    }, updateProgress.getModalityState());
   }
 
   protected boolean isDisposed() {

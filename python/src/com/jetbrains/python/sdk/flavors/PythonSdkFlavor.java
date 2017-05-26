@@ -18,6 +18,7 @@ package com.jetbrains.python.sdk.flavors;
 import com.google.common.collect.Lists;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.execution.process.ProcessOutput;
+import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.projectRoots.Sdk;
@@ -28,6 +29,7 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.PatternUtil;
 import com.jetbrains.python.psi.LanguageLevel;
+import com.jetbrains.python.run.CommandLinePatcher;
 import com.jetbrains.python.sdk.PySdkUtil;
 import com.jetbrains.python.sdk.PythonEnvUtil;
 import com.jetbrains.python.sdk.PythonSdkAdditionalData;
@@ -80,7 +82,7 @@ public abstract class PythonSdkFlavor {
     List<PythonSdkFlavor> result = new ArrayList<>();
 
     if (SystemInfo.isWindows) {
-      result.add(WinPythonSdkFlavor.INSTANCE);
+      result.add(ServiceManager.getService(WinPythonSdkFlavor.class));
     }
     else if (SystemInfo.isMac) {
       result.add(MacPythonSdkFlavor.INSTANCE);
@@ -93,16 +95,21 @@ public abstract class PythonSdkFlavor {
       result.addAll(getPlatformIndependentFlavors());
     }
 
-    for (PythonFlavorProvider provider : Extensions.getExtensions(PythonFlavorProvider.EP_NAME)) {
-      PythonSdkFlavor flavor = provider.getFlavor(addPlatformIndependent);
-      if (flavor != null) {
-        result.add(flavor);
-      }
-    }
+    result.addAll(getPlatformFlavorsFromExtensions(addPlatformIndependent));
 
     return result;
   }
 
+  public static List<PythonSdkFlavor> getPlatformFlavorsFromExtensions(boolean isInpedendent) {
+    List<PythonSdkFlavor> result = new ArrayList<>();
+    for (PythonFlavorProvider provider : Extensions.getExtensions(PythonFlavorProvider.EP_NAME)) {
+      PythonSdkFlavor flavor = provider.getFlavor(isInpedendent);
+      if (flavor != null) {
+        result.add(flavor);
+      }
+    }
+    return result;
+  }
 
   public static List<PythonSdkFlavor> getPlatformIndependentFlavors() {
     List<PythonSdkFlavor> result = Lists.newArrayList();
@@ -148,6 +155,12 @@ public abstract class PythonSdkFlavor {
         return flavor;
       }
     }
+
+    for (PythonSdkFlavor flavor: getPlatformFlavorsFromExtensions(true)) {
+      if (flavor.isValidSdkHome(sdkPath)) {
+        return flavor;
+      }
+    }          
     return null;
   }
 
@@ -243,5 +256,10 @@ public abstract class PythonSdkFlavor {
 
   public VirtualFile getSdkPath(VirtualFile path) {
     return path;
+  }
+
+  @Nullable
+  public CommandLinePatcher commandLinePatcher() {
+    return null;
   }
 }

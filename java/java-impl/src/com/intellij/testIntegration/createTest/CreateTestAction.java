@@ -16,6 +16,7 @@
 package com.intellij.testIntegration.createTest;
 
 import com.intellij.codeInsight.CodeInsightBundle;
+import com.intellij.codeInsight.TestFrameworks;
 import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.command.CommandProcessor;
@@ -85,7 +86,7 @@ public class CreateTestAction extends PsiElementBaseIntentionAction {
 
     PsiClass psiClass = getContainingClass(element);
 
-    if (psiClass == null) return false;
+    if (psiClass == null || element.getContainingFile().getContainingDirectory() == null) return false;
 
     Module srcModule = ModuleUtilCore.findModuleForPsiElement(psiClass);
     if (srcModule == null) return false;
@@ -94,7 +95,8 @@ public class CreateTestAction extends PsiElementBaseIntentionAction {
         psiClass instanceof PsiAnonymousClass) {
       return false;
     }
-    return true;
+    
+    return TestFrameworks.detectFramework(psiClass) == null;
   }
 
   @Override
@@ -109,7 +111,7 @@ public class CreateTestAction extends PsiElementBaseIntentionAction {
     PsiDirectory srcDir = element.getContainingFile().getContainingDirectory();
     PsiPackage srcPackage = JavaDirectoryService.getInstance().getPackage(srcDir);
 
-    final PropertiesComponent propertiesComponent = PropertiesComponent.getInstance();
+    final PropertiesComponent propertiesComponent = PropertiesComponent.getInstance(project);
     Module testModule = suggestModuleForTests(project, srcModule);
     final List<VirtualFile> testRootUrls = computeTestRoots(testModule);
     if (testRootUrls.isEmpty() && computeSuitableTestRootUrls(testModule).isEmpty()) {
@@ -136,7 +138,7 @@ public class CreateTestAction extends PsiElementBaseIntentionAction {
   }
 
   @NotNull
-  private static Module suggestModuleForTests(@NotNull Project project, @NotNull Module productionModule) {
+  public static Module suggestModuleForTests(@NotNull Project project, @NotNull Module productionModule) {
     for (Module module : ModuleManager.getInstance(project).getModules()) {
       if (productionModule.equals(TestModuleProperties.getInstance(module).getProductionModule())) {
         return module;

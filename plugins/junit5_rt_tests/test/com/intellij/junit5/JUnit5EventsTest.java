@@ -16,6 +16,7 @@
 package com.intellij.junit5;
 
 import com.intellij.openapi.util.text.StringUtil;
+import jetbrains.buildServer.messages.serviceMessages.MapSerializerUtil;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.engine.descriptor.ClassTestDescriptor;
 import org.junit.jupiter.engine.descriptor.MethodTestDescriptor;
@@ -31,6 +32,7 @@ import org.opentest4j.MultipleFailuresError;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.stream.Stream;
 
@@ -72,23 +74,24 @@ class JUnit5EventsTest {
                                                              TestClass.class.getDeclaredMethod("test1"));
     TestIdentifier identifier = TestIdentifier.from(testDescriptor);
     myExecutionListener.executionStarted(identifier);
-    MultipleFailuresError multipleFailuresError = new MultipleFailuresError("2 errors");
-    multipleFailuresError.addFailure(new AssertionFailedError("message1", "expected1", "actual1"));
-    multipleFailuresError.addFailure(new AssertionFailedError("message2", "expected2", "actual2"));
+    MultipleFailuresError multipleFailuresError = new MultipleFailuresError("2 errors", Arrays.asList
+      (new AssertionFailedError("message1", "expected1", "actual1"),
+       new AssertionFailedError("message2", "expected2", "actual2")));
     myExecutionListener.executionFinished(identifier, TestExecutionResult.failed(multipleFailuresError));
 
 
+    String lineSeparator = MapSerializerUtil.escapeStr(System.getProperty("line.separator"), MapSerializerUtil.STD_ESCAPER);
     Assertions.assertEquals("##teamcity[enteredTheMatrix]\n" +
                             "\n" +
-                            "##teamcity[testStarted id='[engine:engine]' name='test1()' locationHint='java:test://com.intellij.junit5.JUnit5EventsTest$TestClass.test1']\n" +
+                            "##teamcity[testStarted id='|[engine:engine|]' name='test1()' locationHint='java:test://com.intellij.junit5.JUnit5EventsTest$TestClass.test1']\n" +
                             "\n" +
-                            "##teamcity[testFailed actual='actual1' expected='expected1' name='test1()' details='' id='|[engine:engine|]' message='']\n" +
+                            "##teamcity[testFailed name='test1()' id='|[engine:engine|]' details='' message='' expected='expected1' actual='actual1']\n" +
                             "\n" +
-                            "##teamcity[testFailed actual='actual2' expected='expected2' name='test1()' details='' id='|[engine:engine|]' message='']\n" +
+                            "##teamcity[testFailed name='test1()' id='|[engine:engine|]' details='' message='' expected='expected2' actual='actual2']\n" +
                             "\n" +
-                            "##teamcity[testFailed name='test1()' details='TRACE' id='|[engine:engine|]' message='2 errors (2 failures)|n\tmessage1|n\tmessage2']\n" +
+                            "##teamcity[testFailed name='test1()' id='|[engine:engine|]' details='TRACE' message='2 errors (2 failures)" + lineSeparator + "\tmessage1" + lineSeparator + "\tmessage2']\n" +
                             "\n" +
-                            "##teamcity[testFinished id='[engine:engine]' name='test1()']\n", StringUtil.convertLineSeparators(myBuf.toString()));
+                            "##teamcity[testFinished id='|[engine:engine|]' name='test1()']\n", StringUtil.convertLineSeparators(myBuf.toString()));
   }
 
   @Test
@@ -104,14 +107,14 @@ class JUnit5EventsTest {
 
     Assertions.assertEquals("##teamcity[enteredTheMatrix]\n" +
                             "##teamcity[treeEnded]\n" +
-                            "##teamcity[testSuiteStarted id='[engine:engine1]' name='brokenStream()']\n" +
+                            "##teamcity[testSuiteStarted id='|[engine:engine1|]' name='brokenStream()']\n" +
                             "\n" +
-                            "##teamcity[testStarted id='[engine:engine1]' name='brokenStream()' locationHint='java:suite://com.intellij.junit5.JUnit5EventsTest$TestClass.brokenStream']\n" +
+                            "##teamcity[testStarted name='Class Configuration' locationHint='java:suite://com.intellij.junit5.JUnit5EventsTest$TestClass.brokenStream']\n" +
                             "\n" +
-                            "##teamcity[testFailed name='brokenStream()' details='TRACE' id='|[engine:engine1|]' error='true' message='']\n" +
+                            "##teamcity[testFailed name='Class Configuration' id='Class Configuration' details='TRACE' error='true' message='']\n" +
                             "\n" +
-                            "##teamcity[testFinished id='[engine:engine1]' name='brokenStream()']\n" +
-                            "##teamcity[testSuiteFinished  id='[engine:engine1]' name='brokenStream()']\n", StringUtil.convertLineSeparators(myBuf.toString()));
+                            "##teamcity[testFinished name='Class Configuration']\n" +
+                            "##teamcity[testSuiteFinished  id='|[engine:engine1|]' name='brokenStream()']\n", StringUtil.convertLineSeparators(myBuf.toString()));
   }
 
   private static class TestClass {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,12 @@
  */
 package com.intellij.util.xml.ui;
 
-import com.intellij.openapi.command.CommandAdapter;
 import com.intellij.openapi.command.CommandEvent;
+import com.intellij.openapi.command.CommandListener;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDocumentManager;
 
@@ -31,11 +31,10 @@ import java.util.Set;
  * @author peter
  */
 public class UndoHelper {
-  private final Project myProject;
   private boolean myShowing;
   private final Set<Document> myCurrentDocuments = new HashSet<>();
   private boolean myDirty;
-  private final DocumentAdapter myDocumentAdapter = new DocumentAdapter() {
+  private final DocumentListener myDocumentAdapter = new DocumentListener() {
     @Override
     public void documentChanged(DocumentEvent e) {
       if (myShowing) {
@@ -45,9 +44,8 @@ public class UndoHelper {
   };
 
   public UndoHelper(final Project project, final Committable committable) {
-    myProject = project;
     final PsiDocumentManager psiDocumentManager = PsiDocumentManager.getInstance(project);
-    CommandProcessor.getInstance().addCommandListener(new CommandAdapter() {
+    CommandProcessor.getInstance().addCommandListener(new CommandListener() {
       @Override
       public void commandStarted(CommandEvent event) {
         undoTransparentActionStarted();
@@ -86,23 +84,11 @@ public class UndoHelper {
   }
 
   public final void setShowing(final boolean showing) {
-    commitAllDocuments();
     myShowing = showing;
   }
 
   public boolean isShowing() {
     return myShowing;
-  }
-
-  public final void commitAllDocuments() {
-    final PsiDocumentManager manager = getDocumentManager();
-    for (final Document document : myCurrentDocuments) {
-      manager.commitDocument(document);
-    }
-  }
-
-  private PsiDocumentManager getDocumentManager() {
-    return PsiDocumentManager.getInstance(myProject);
   }
 
   public final void addWatchedDocument(final Document document) {

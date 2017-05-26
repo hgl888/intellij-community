@@ -51,7 +51,7 @@ public class CollectHighlightsUtil {
                                                     final int endOffset,
                                                     boolean includeAllParents) {
     PsiElement commonParent = findCommonParent(root, startOffset, endOffset);
-    if (commonParent == null) return new ArrayList<PsiElement>();
+    if (commonParent == null) return new ArrayList<>();
     final List<PsiElement> list = getElementsToHighlight(commonParent, startOffset, endOffset);
 
     PsiElement parent = commonParent;
@@ -68,17 +68,17 @@ public class CollectHighlightsUtil {
   private static final int STARTING_TREE_HEIGHT = 100;
 
   @NotNull
-  private static List<PsiElement> getElementsToHighlight(@NotNull PsiElement commonParent, final int startOffset, final int endOffset) {
-    final List<PsiElement> result = new ArrayList<PsiElement>();
-    final int currentOffset = commonParent.getTextRange().getStartOffset();
+  private static List<PsiElement> getElementsToHighlight(@NotNull PsiElement parent, final int startOffset, final int endOffset) {
+    final List<PsiElement> result = new ArrayList<>();
+    final int currentOffset = parent.getTextRange().getStartOffset();
     final Condition<PsiElement>[] filters = Extensions.getExtensions(EP_NAME);
 
     int offset = currentOffset;
 
     final TIntStack starts = new TIntStack(STARTING_TREE_HEIGHT);
-    final Stack<PsiElement> elements = new Stack<PsiElement>(STARTING_TREE_HEIGHT);
-    final Stack<PsiElement> children = new Stack<PsiElement>(STARTING_TREE_HEIGHT);
-    PsiElement element = commonParent;
+    final Stack<PsiElement> elements = new Stack<>(STARTING_TREE_HEIGHT);
+    final Stack<PsiElement> children = new Stack<>(STARTING_TREE_HEIGHT);
+    PsiElement element = parent;
 
     PsiElement child = PsiUtilCore.NULL_PSI_ELEMENT;
     while (true) {
@@ -111,6 +111,7 @@ public class CollectHighlightsUtil {
         int start = starts.pop();
         if (startOffset <= start && offset <= endOffset) {
           assert element != null;
+          assert element != PsiUtilCore.NULL_PSI_ELEMENT;
           result.add(element);
         }
 
@@ -123,6 +124,7 @@ public class CollectHighlightsUtil {
         children.push(child.getNextSibling());
         starts.push(offset);
         assert element != null;
+        assert element != PsiUtilCore.NULL_PSI_ELEMENT;
         elements.push(element);
         element = child;
         child = PsiUtilCore.NULL_PSI_ELEMENT;

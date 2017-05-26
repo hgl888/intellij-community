@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * User: anna
- * Date: 10-Jan-2007
- */
 package com.intellij.codeInspection.ex;
 
 import com.intellij.codeInspection.CommonProblemDescriptor;
@@ -131,9 +127,7 @@ public class InspectionRVContentProviderImpl extends InspectionRVContentProvider
           assert problem != null;
           elemNode
             .insertByOrder(ReadAction.compute(() -> new ProblemDescriptionNode(refElement, problem, toolWrapper, presentation)), true);
-          if (problems.length == 1) {
-            elemNode.setProblem(problems[0]);
-          }
+          elemNode.setProblem(elemNode.getChildCount() == 1 ? problems[0] : null);
         }
     }
     else {

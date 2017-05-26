@@ -19,7 +19,6 @@ import com.intellij.codeInspection.LocalInspectionToolSession;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemsHolder;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.options.ShowSettingsUtil;
@@ -34,10 +33,6 @@ import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- *
- * User: ktisha
- */
 public class PyInterpreterInspection extends PyInspection {
 
   @Nls
@@ -88,11 +83,13 @@ public class PyInterpreterInspection extends PyInspection {
     }
 
     @Override
+    public boolean startInWriteAction() {
+      return false;
+    }
+
+    @Override
     public void applyFix(@NotNull final Project project, @NotNull ProblemDescriptor descriptor) {
-      ApplicationManager.getApplication().invokeLater(() -> {
-        // outside of read action
-        ShowSettingsUtil.getInstance().showSettingsDialog(project, "Project Interpreter");
-      });
+      ShowSettingsUtil.getInstance().showSettingsDialog(project, "Project Interpreter");
     }
   }
 }

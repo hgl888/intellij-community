@@ -31,8 +31,6 @@ import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.options.ex.ConfigurableCardPanel;
 import com.intellij.openapi.options.ex.ConfigurableExtensionPointUtil;
 import com.intellij.openapi.options.ex.ConfigurableVisitor;
-import com.intellij.openapi.project.DumbModePermission;
-import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.ActionCallback;
 import com.intellij.openapi.util.Disposer;
@@ -53,7 +51,9 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.util.ResourceBundle;
 
+import static com.intellij.ui.ScrollPaneFactory.createScrollPane;
 import static java.awt.Toolkit.getDefaultToolkit;
+import static javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER;
 import static javax.swing.SwingUtilities.isDescendingFrom;
 
 /**
@@ -75,7 +75,7 @@ class ConfigurableEditor extends AbstractEditor implements AnActionListener, AWT
   private final AbstractAction myApplyAction = new AbstractAction(CommonBundle.getApplyButtonText()) {
     @Override
     public void actionPerformed(ActionEvent event) {
-      DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, () -> apply());
+      apply();
     }
   };
   private final AbstractAction myResetAction = new AbstractAction(RESET_NAME) {
@@ -187,7 +187,7 @@ class ConfigurableEditor extends AbstractEditor implements AnActionListener, AWT
     }
   }
 
-  private void requestUpdate() {
+  void requestUpdate() {
     final Configurable configurable = myConfigurable;
     myQueue.queue(new Update(this) {
       @Override
@@ -298,7 +298,9 @@ class ConfigurableEditor extends AbstractEditor implements AnActionListener, AWT
         }
       }
     }
-    return content;
+    JScrollPane pane = createScrollPane(content, true);
+    pane.setHorizontalScrollBarPolicy(HORIZONTAL_SCROLLBAR_NEVER);
+    return pane;
   }
 
   private static String getString(Configurable configurable, String key) {

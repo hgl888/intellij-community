@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.OnePixelSplitter;
+import com.intellij.ui.SearchTextField;
 import com.intellij.ui.components.panels.VerticalLayout;
 import com.intellij.ui.treeStructure.SimpleNode;
 import com.intellij.util.Alarm;
@@ -51,6 +52,7 @@ import java.util.Map;
 final class SettingsEditor extends AbstractEditor implements DataProvider {
   private static final String SELECTED_CONFIGURABLE = "settings.editor.selected.configurable";
   private static final String SPLITTER_PROPORTION = "settings.editor.splitter.proportion";
+  private static final float SPLITTER_PROPORTION_DEFAULT_VALUE = .2f;
 
   private final PropertiesComponent myProperties;
   private final Settings mySettings;
@@ -64,7 +66,7 @@ final class SettingsEditor extends AbstractEditor implements DataProvider {
   private final LoadingDecorator myLoadingDecorator;
   private final Banner myBanner;
 
-  SettingsEditor(Disposable parent, Project project, ConfigurableGroup[] groups, Configurable configurable, final String filter) {
+  SettingsEditor(Disposable parent, Project project, ConfigurableGroup[] groups, Configurable configurable, final String filter, final ISettingsTreeViewFactory factory) {
     super(parent);
 
     myProperties = PropertiesComponent.getInstance(project);
@@ -73,6 +75,11 @@ final class SettingsEditor extends AbstractEditor implements DataProvider {
       protected ActionCallback selectImpl(Configurable configurable) {
         myFilter.update(null, false, true);
         return myTreeView.select(configurable);
+      }
+
+      @Override
+      public void revalidate() {
+        myEditor.requestUpdate();
       }
     };
     mySearch = new SettingsSearch() {
@@ -144,7 +151,7 @@ final class SettingsEditor extends AbstractEditor implements DataProvider {
         }
       }
     });
-    myTreeView = new SettingsTreeView(myFilter, groups);
+    myTreeView = factory.createTreeView(myFilter, groups);
     myTreeView.myTree.addKeyListener(mySearch);
     myEditor = new ConfigurableEditor(this, null) {
       @Override
@@ -163,6 +170,7 @@ final class SettingsEditor extends AbstractEditor implements DataProvider {
             myFilter.myContext.fireModifiedRemoved(configurable, null);
           }
         }
+        mySearch.updateToolTipText();
         myFilter.myContext.fireErrorsChanged(map, null);
         if (!map.isEmpty()) {
           myTreeView.select(map.keySet().iterator().next());
@@ -209,11 +217,12 @@ final class SettingsEditor extends AbstractEditor implements DataProvider {
     JComponent right = new JPanel(new BorderLayout());
     right.add(BorderLayout.NORTH, myBanner);
     right.add(BorderLayout.CENTER, myLoadingDecorator.getComponent());
-    mySplitter = new OnePixelSplitter(false, myProperties.getFloat(SPLITTER_PROPORTION, .2f));
+    mySplitter = new OnePixelSplitter(false, myProperties.getFloat(SPLITTER_PROPORTION, SPLITTER_PROPORTION_DEFAULT_VALUE));
     mySplitter.setHonorComponentsMinimumSize(true);
     mySplitter.setFirstComponent(left);
     mySplitter.setSecondComponent(right);
     mySpotlightPainter = new SpotlightPainter(myEditor, this) {
+      @Override
       void updateNow() {
         Configurable configurable = myFilter.myContext.getCurrentConfigurable();
         if (myTreeView.myTree.hasFocus() || mySearch.getTextEditor().hasFocus()) {
@@ -270,12 +279,12 @@ final class SettingsEditor extends AbstractEditor implements DataProvider {
 
   @Override
   public Object getData(@NonNls String dataId) {
-    return Settings.KEY.is(dataId) ? mySettings : null;
+    return Settings.KEY.is(dataId) ? mySettings : SearchTextField.KEY.is(dataId) ? mySearch : null;
   }
 
   @Override
   void disposeOnce() {
-    myProperties.setValue(SPLITTER_PROPORTION, Float.toString(mySplitter.getProportion()));
+    myProperties.setValue(SPLITTER_PROPORTION, mySplitter.getProportion(), SPLITTER_PROPORTION_DEFAULT_VALUE);
   }
 
   @Override
@@ -318,6 +327,10 @@ final class SettingsEditor extends AbstractEditor implements DataProvider {
   @Override
   JComponent getPreferredFocusedComponent() {
     return myTreeView != null ? myTreeView.myTree : myEditor;
+  }
+
+  public void addOptionsListener(OptionsEditorColleague colleague) {
+    myFilter.myContext.addColleague(colleague);
   }
 
   void updateStatus(Configurable configurable) {

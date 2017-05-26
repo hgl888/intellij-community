@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,14 @@ package com.intellij.util.io;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.ConcurrencyUtil;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * @author Konstantin Kolosovsky.
@@ -53,15 +56,16 @@ public abstract class BaseDataReader {
       myFinishedFuture = executeOnPooledThread(new Runnable() {
         @Override
         public void run() {
-          String oldThreadName = Thread.currentThread().getName();
-          if (!StringUtil.isEmptyOrSpaces(presentableName)) {
-            Thread.currentThread().setName("BaseDataReader: " + presentableName);
-          }
-          try {
+          if (StringUtil.isEmptyOrSpaces(presentableName)) {
             doRun();
           }
-          finally {
-            Thread.currentThread().setName(oldThreadName);
+          else {
+            ConcurrencyUtil.runUnderThreadName("BaseDataReader: " + presentableName, new Runnable() {
+              @Override
+              public void run() {
+                doRun();
+              }
+            });
           }
         }
       });
@@ -69,12 +73,11 @@ public abstract class BaseDataReader {
   }
 
   /**
-   * Please don't override this method as the BseOSProcessProcessHandler assumes that it can be two reading modes: blocking and non-blocking.
+   * Please don't override this method as the BaseOSProcessProcessHandler assumes that it can be two reading modes: blocking and non-blocking.
    * Implement {@link #readAvailableBlocking} and {@link #readAvailableNonBlocking} instead.
-   * 
-   * 
+   *
    * If the process handler assumes that reader handles the blocking mode, while it doesn't, it will result into premature stream close.
-   * 
+   *
    * @return true in case any data was read
    * @throws IOException if an exception during IO happened
    */
@@ -83,9 +86,7 @@ public abstract class BaseDataReader {
   }
 
   /**
-   * 
    * Non-blocking read returns the control back to the process handler when there is no data to read.
-   * 
    */
   protected boolean readAvailableNonBlocking() throws IOException {
     throw new UnsupportedOperationException();
@@ -125,6 +126,8 @@ public abstract class BaseDataReader {
     int getTimeToSleep(boolean wasActive);
   }
 
+  /** @deprecated use one of default policies (recommended) or implement your own (to be removed in IDEA 2018) */
+  @SuppressWarnings("DeprecatedIsStillUsed")
   public static class AdaptiveSleepingPolicy implements SleepingPolicy {
     private static final int maxSleepTimeWhenIdle = 200;
     private static final int maxIterationsWithCurrentSleepTime = 50;
@@ -166,9 +169,8 @@ public abstract class BaseDataReader {
         stopSignalled = isStopped;
 
         if (!stopSignalled) {
-          // if process stopped, there is no sense to sleep, 
+          // if process stopped, there is no sense to sleep,
           // just check if there is unread output in the stream
-
           synchronized (mySleepMonitor) {
             mySleepMonitor.wait(mySleepingPolicy.getTimeToSleep(read));
           }
@@ -190,7 +192,7 @@ public abstract class BaseDataReader {
       }
     }
   }
-  
+
   private void resumeReading() {
     synchronized (mySleepMonitor) {
       mySleepMonitor.notifyAll();
@@ -207,6 +209,15 @@ public abstract class BaseDataReader {
   public void waitFor() throws InterruptedException {
     try {
       myFinishedFuture.get();
+    }
+    catch (ExecutionException e) {
+      LOG.error(e);
+    }
+  }
+
+  public void waitFor(long timeout, TimeUnit unit) throws InterruptedException, TimeoutException {
+    try {
+      myFinishedFuture.get(timeout, unit);
     }
     catch (ExecutionException e) {
       LOG.error(e);

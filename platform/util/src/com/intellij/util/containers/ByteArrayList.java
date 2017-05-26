@@ -20,6 +20,7 @@ package com.intellij.util.containers;
 
 import gnu.trove.HashFunctions;
 import gnu.trove.TIntProcedure;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
 import java.util.Random;
@@ -45,7 +46,7 @@ public class ByteArrayList implements  Cloneable {
     protected static final int DEFAULT_CAPACITY = 4;
 
     /**
-     * Creates a new <code>TIntArrayList</code> instance with the
+     * Creates a new {@code TIntArrayList} instance with the
      * default capacity.
      */
     public ByteArrayList() {
@@ -53,10 +54,10 @@ public class ByteArrayList implements  Cloneable {
     }
 
     /**
-     * Creates a new <code>TIntArrayList</code> instance with the
+     * Creates a new {@code TIntArrayList} instance with the
      * specified capacity.
      *
-     * @param capacity an <code>int</code> value
+     * @param capacity an {@code int} value
      */
     public ByteArrayList(int capacity) {
         _data = new byte[capacity];
@@ -64,12 +65,12 @@ public class ByteArrayList implements  Cloneable {
     }
 
     /**
-     * Creates a new <code>TIntArrayList</code> instance whose
+     * Creates a new {@code TIntArrayList} instance whose
      * capacity is the greater of the length of <tt>values</tt> and
      * DEFAULT_CAPACITY and whose initial contents are the specified
      * values.
      *
-     * @param values an <code>int[]</code> value
+     * @param values an {@code int[]} value
      */
     public ByteArrayList(byte[] values) {
         this(Math.max(values.length, DEFAULT_CAPACITY));
@@ -84,7 +85,7 @@ public class ByteArrayList implements  Cloneable {
      * resize unless <tt>capacity</tt> requires more than twice the
      * current capacity.
      *
-     * @param capacity an <code>int</code> value
+     * @param capacity an {@code int} value
      */
     public void ensureCapacity(int capacity) {
       byte[] data = _data;
@@ -131,7 +132,7 @@ public class ByteArrayList implements  Cloneable {
     /**
      * Adds <tt>val</tt> to the end of the list, growing as needed.
      *
-     * @param val an <code>int</code> value
+     * @param val an {@code int} value
      */
     public void add(byte val) {
         ensureCapacity(_pos + 1);
@@ -142,7 +143,7 @@ public class ByteArrayList implements  Cloneable {
      * Adds the values in the array <tt>vals</tt> to the end of the
      * list, in order.
      *
-     * @param vals an <code>int[]</code> value
+     * @param vals an {@code int[]} value
      */
     public void add(byte[] vals) {
         add(vals, 0, vals.length);
@@ -152,7 +153,7 @@ public class ByteArrayList implements  Cloneable {
      * Adds a subset of the values in the array <tt>vals</tt> to the
      * end of the list, in order.
      *
-     * @param vals an <code>int[]</code> value
+     * @param vals an {@code int[]} value
      * @param offset the offset at which to start copying
      * @param length the number of values to copy.
      */
@@ -167,8 +168,8 @@ public class ByteArrayList implements  Cloneable {
      * values including and to the right of <tt>offset</tt> are shifted
      * to the right.
      *
-     * @param offset an <code>int</code> value
-     * @param value an <code>int</code> value
+     * @param offset an {@code int} value
+     * @param value an {@code int} value
      */
     public void insert(int offset, byte value) {
         if (offset == _pos) {
@@ -188,8 +189,8 @@ public class ByteArrayList implements  Cloneable {
      * <tt>offset</tt>.  All values including and to the right of
      * <tt>offset</tt> are shifted to the right.
      *
-     * @param offset an <code>int</code> value
-     * @param values an <code>int[]</code> value
+     * @param offset an {@code int} value
+     * @param values an {@code int[]} value
      */
     public void insert(int offset, byte[] values) {
         insert(offset, values, 0, values.length);
@@ -200,8 +201,8 @@ public class ByteArrayList implements  Cloneable {
      * at <tt>offset</tt>.  All values including and to the right of
      * <tt>offset</tt> are shifted to the right.
      *
-     * @param offset an <code>int</code> value
-     * @param values an <code>int[]</code> value
+     * @param offset an {@code int} value
+     * @param values an {@code int[]} value
      * @param valOffset the offset in the values array at which to
      * start copying.
      * @param len the number of values to copy from the values array
@@ -223,8 +224,8 @@ public class ByteArrayList implements  Cloneable {
     /**
      * Returns the value at the specified offset.
      *
-     * @param offset an <code>int</code> value
-     * @return an <code>int</code> value
+     * @param offset an {@code int} value
+     * @return an {@code int} value
      */
     public byte get(int offset) {
         if (offset >= _pos) {
@@ -237,8 +238,8 @@ public class ByteArrayList implements  Cloneable {
      * Returns the value at the specified offset without doing any
      * bounds checking.
      *
-     * @param offset an <code>int</code> value
-     * @return an <code>int</code> value
+     * @param offset an {@code int} value
+     * @return an {@code int} value
      */
     public byte getQuick(int offset) {
         return _data[offset];
@@ -247,8 +248,8 @@ public class ByteArrayList implements  Cloneable {
     /**
      * Sets the value at the specified offset.
      *
-     * @param offset an <code>int</code> value
-     * @param val an <code>int</code> value
+     * @param offset an {@code int} value
+     * @param val an {@code int} value
      */
     public void set(int offset, byte val) {
         if (offset < 0 || offset >= _pos) {
@@ -261,8 +262,8 @@ public class ByteArrayList implements  Cloneable {
      * Sets the value at the specified offset and returns the
      * previously stored value.
      *
-     * @param offset an <code>int</code> value
-     * @param val an <code>int</code> value
+     * @param offset an {@code int} value
+     * @param val an {@code int} value
      * @return the value previously stored at offset.
      */
     public byte getSet(int offset, byte val) {
@@ -316,8 +317,8 @@ public class ByteArrayList implements  Cloneable {
      * Sets the value at the specified offset without doing any bounds
      * checking.
      *
-     * @param offset an <code>int</code> value
-     * @param val an <code>int</code> value
+     * @param offset an {@code int} value
+     * @param val an {@code int} value
      */
     public void setQuick(int offset, byte val) {
         _data[offset] = val;
@@ -335,7 +336,7 @@ public class ByteArrayList implements  Cloneable {
      * Flushes the internal state of the list, setting the capacity of
      * the empty list to <tt>capacity</tt>.
      *
-     * @param capacity an <code>int</code> value
+     * @param capacity an {@code int} value
      */
     public void clear(int capacity) {
         _data = new byte[capacity];
@@ -376,7 +377,7 @@ public class ByteArrayList implements  Cloneable {
     /**
      * Removes the value at <tt>offset</tt> from the list.
      *
-     * @param offset an <code>int</code> value
+     * @param offset an {@code int} value
      * @return the value previously stored at offset.
      */
     public byte remove(int offset) {
@@ -389,8 +390,8 @@ public class ByteArrayList implements  Cloneable {
      * Removes <tt>length</tt> values from the list, starting at
      * <tt>offset</tt>
      *
-     * @param offset an <code>int</code> value
-     * @param length an <code>int</code> value
+     * @param offset an {@code int} value
+     * @param length an {@code int} value
      */
     public void remove(int offset, int length) {
         if (offset < 0 || offset >= _pos) {
@@ -444,7 +445,7 @@ public class ByteArrayList implements  Cloneable {
      * Shuffle the elements of the list using the specified random
      * number generator.
      *
-     * @param rand a <code>Random</code> value
+     * @param rand a {@code Random} value
      */
     public void shuffle(Random rand) {
         for (int i = _pos; i-- > 1;) {
@@ -487,8 +488,9 @@ public class ByteArrayList implements  Cloneable {
     /**
      * Copies the contents of the list into a native array.
      *
-     * @return an <code>int[]</code> value
+     * @return an {@code int[]} value
      */
+    @NotNull
     public byte[] toNativeArray() {
         return toNativeArray(0, _pos);
     }
@@ -498,8 +500,9 @@ public class ByteArrayList implements  Cloneable {
      *
      * @param offset the offset at which to start copying
      * @param len the number of values to copy.
-     * @return an <code>int[]</code> value
+     * @return an {@code int[]} value
      */
+    @NotNull
     public byte[] toNativeArray(int offset, int len) {
         byte[] rv = new byte[len];
         toNativeArray(rv, offset, len);
@@ -566,7 +569,7 @@ public class ByteArrayList implements  Cloneable {
      * Applies the procedure to each value in the list in ascending
      * (front to back) order.
      *
-     * @param procedure a <code>TIntProcedure</code> value
+     * @param procedure a {@code TIntProcedure} value
      * @return true if the procedure did not terminate prematurely.
      */
     public boolean forEach(TIntProcedure procedure) {
@@ -582,7 +585,7 @@ public class ByteArrayList implements  Cloneable {
      * Applies the procedure to each value in the list in descending
      * (back to front) order.
      *
-     * @param procedure a <code>TIntProcedure</code> value
+     * @param procedure a {@code TIntProcedure} value
      * @return true if the procedure did not terminate prematurely.
      */
     public boolean forEachDescending(TIntProcedure procedure) {
@@ -700,7 +703,7 @@ public class ByteArrayList implements  Cloneable {
      * Searches the list front to back for the index of
      * <tt>value</tt>.
      *
-     * @param value an <code>int</code> value
+     * @param value an {@code int} value
      * @return the first offset of the value, or -1 if it is not in
      * the list.
      * @see #binarySearch for faster searches on sorted lists
@@ -715,7 +718,7 @@ public class ByteArrayList implements  Cloneable {
      *
      * @param offset the offset at which to start the linear search
      * (inclusive)
-     * @param value an <code>int</code> value
+     * @param value an {@code int} value
      * @return the first offset of the value, or -1 if it is not in
      * the list.
      * @see #binarySearch for faster searches on sorted lists
@@ -733,7 +736,7 @@ public class ByteArrayList implements  Cloneable {
      * Searches the list back to front for the last index of
      * <tt>value</tt>.
      *
-     * @param value an <code>int</code> value
+     * @param value an {@code int} value
      * @return the last offset of the value, or -1 if it is not in
      * the list.
      * @see #binarySearch for faster searches on sorted lists
@@ -748,7 +751,7 @@ public class ByteArrayList implements  Cloneable {
      *
      * @param offset the offset at which to start the linear search
      * (exclusive)
-     * @param value an <code>int</code> value
+     * @param value an {@code int} value
      * @return the last offset of the value, or -1 if it is not in
      * the list.
      * @see #binarySearch for faster searches on sorted lists
@@ -765,7 +768,7 @@ public class ByteArrayList implements  Cloneable {
     /**
      * Searches the list for <tt>value</tt>
      *
-     * @param value an <code>int</code> value
+     * @param value an {@code int} value
      * @return true if value is in the list.
      */
     public boolean contains(byte value) {
@@ -791,7 +794,7 @@ public class ByteArrayList implements  Cloneable {
 
     /**
      * Searches the list for values which do <b>not</b> satisfy
-     * <tt>condition</tt>.  This is akin to *nix <code>grep -v</code>.
+     * <tt>condition</tt>.  This is akin to *nix {@code grep -v}.
      *
      * @param condition a condition to apply to each element in the list
      * @return a list of values which do not match the condition.
@@ -845,7 +848,7 @@ public class ByteArrayList implements  Cloneable {
     /**
      * Returns a String representation of the list, front to back.
      *
-     * @return a <code>String</code> value
+     * @return a {@code String} value
      */
     public String toString() {
         final StringBuffer buf = new StringBuffer("{");

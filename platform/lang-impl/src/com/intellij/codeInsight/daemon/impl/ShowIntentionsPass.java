@@ -49,6 +49,7 @@ import com.intellij.openapi.editor.ex.RangeHighlighterEx;
 import com.intellij.openapi.editor.impl.DocumentMarkupModel;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.progress.ProgressIndicatorProvider;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
@@ -62,6 +63,7 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil;
 import com.intellij.util.CommonProcessors;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.Processor;
 import com.intellij.util.Processors;
 import com.intellij.util.containers.ContainerUtil;
@@ -85,10 +87,23 @@ public class ShowIntentionsPass extends TextEditorHighlightingPass {
   private volatile boolean myShowBulb;
   private volatile boolean myHasToRecreate;
 
+  ShowIntentionsPass(@NotNull Project project, @NotNull Editor editor, int passId) {
+    super(project, editor.getDocument(), false);
+    myPassIdToShowIntentionsFor = passId;
+    ApplicationManager.getApplication().assertIsDispatchThread();
+
+    myEditor = editor;
+
+    PsiDocumentManager documentManager = PsiDocumentManager.getInstance(project);
+
+    myFile = documentManager.getPsiFile(myEditor.getDocument());
+    assert myFile != null : FileDocumentManager.getInstance().getFile(myEditor.getDocument());
+  }
+
   @NotNull
-  public static List<HighlightInfo.IntentionActionDescriptor> getAvailableActions(@NotNull final Editor editor,
-                                                                                  @NotNull final PsiFile file,
-                                                                                  final int passId) {
+  public static List<HighlightInfo.IntentionActionDescriptor> getAvailableFixes(@NotNull final Editor editor,
+                                                                                @NotNull final PsiFile file,
+                                                                                final int passId) {
     final int offset = ((EditorEx)editor).getExpectedCaretOffset();
     final Project project = file.getProject();
 
@@ -96,16 +111,39 @@ public class ShowIntentionsPass extends TextEditorHighlightingPass {
     DaemonCodeAnalyzerImpl.processHighlightsNearOffset(editor.getDocument(), project, HighlightSeverity.INFORMATION, offset, true,
                                                        new CommonProcessors.CollectProcessor<>(infos));
     List<HighlightInfo.IntentionActionDescriptor> result = new ArrayList<>();
-    infos.forEach(info->addAvailableActionsForGroups(info, editor, file, result, passId, offset));
+    infos.forEach(info-> addAvailableFixesForGroups(info, editor, file, result, passId, offset));
     return result;
   }
 
-  private static void addAvailableActionsForGroups(@NotNull HighlightInfo info,
-                                                   @NotNull Editor editor,
-                                                   @NotNull PsiFile file,
-                                                   @NotNull List<HighlightInfo.IntentionActionDescriptor> outList,
-                                                   int group,
-                                                   int offset) {
+  public static boolean markActionInvoked(@NotNull Project project,
+                                          @NotNull final Editor editor,
+                                          @NotNull IntentionAction action) {
+    final int offset = ((EditorEx)editor).getExpectedCaretOffset();
+
+    List<HighlightInfo> infos = new ArrayList<>();
+    DaemonCodeAnalyzerImpl.processHighlightsNearOffset(editor.getDocument(), project, HighlightSeverity.INFORMATION, offset, true,
+                                                       new CommonProcessors.CollectProcessor<>(infos));
+    boolean removed = false;
+    for (HighlightInfo info : infos) {
+      if (info.quickFixActionMarkers != null) {
+        for (Pair<HighlightInfo.IntentionActionDescriptor, RangeMarker> pair : info.quickFixActionMarkers) {
+          HighlightInfo.IntentionActionDescriptor actionInGroup = pair.first;
+          if (actionInGroup.getAction() == action) {
+            // no CME because the list is concurrent
+            removed |= info.quickFixActionMarkers.remove(pair);
+          }
+        }
+      }
+    }
+    return removed;
+  }
+
+  private static void addAvailableFixesForGroups(@NotNull HighlightInfo info,
+                                                 @NotNull Editor editor,
+                                                 @NotNull PsiFile file,
+                                                 @NotNull List<HighlightInfo.IntentionActionDescriptor> outList,
+                                                 int group,
+                                                 int offset) {
     if (info.quickFixActionMarkers == null) return;
     if (group != -1 && group != info.getGroup()) return;
     boolean fixRangeIsNotEmpty = !info.getFixTextRange().isEmpty();
@@ -157,7 +195,7 @@ public class ShowIntentionsPass extends TextEditorHighlightingPass {
     public final List<HighlightInfo.IntentionActionDescriptor> guttersToShow = ContainerUtil.createLockFreeCopyOnWriteList();
     public final List<HighlightInfo.IntentionActionDescriptor> notificationActionsToShow = ContainerUtil.createLockFreeCopyOnWriteList();
 
-    public void filterActions(@Nullable PsiFile psiFile) {
+    void filterActions(@Nullable PsiFile psiFile) {
       IntentionActionFilter[] filters = IntentionActionFilter.EXTENSION_POINT_NAME.getExtensions();
       filter(intentionsToShow, psiFile, filters);
       filter(errorFixesToShow, psiFile, filters);
@@ -181,7 +219,7 @@ public class ShowIntentionsPass extends TextEditorHighlightingPass {
     }
 
     public boolean isEmpty() {
-      return intentionsToShow.isEmpty() && errorFixesToShow.isEmpty() && inspectionFixesToShow.isEmpty() && guttersToShow.isEmpty() && 
+      return intentionsToShow.isEmpty() && errorFixesToShow.isEmpty() && inspectionFixesToShow.isEmpty() && guttersToShow.isEmpty() &&
              notificationActionsToShow.isEmpty();
     }
 
@@ -195,19 +233,6 @@ public class ShowIntentionsPass extends TextEditorHighlightingPass {
         "Gutters: " + guttersToShow +
         "Notifications: " + notificationActionsToShow;
     }
-  }
-
-  ShowIntentionsPass(@NotNull Project project, @NotNull Editor editor, int passId) {
-    super(project, editor.getDocument(), false);
-    myPassIdToShowIntentionsFor = passId;
-    ApplicationManager.getApplication().assertIsDispatchThread();
-
-    myEditor = editor;
-
-    PsiDocumentManager documentManager = PsiDocumentManager.getInstance(project);
-
-    myFile = documentManager.getPsiFile(myEditor.getDocument());
-    assert myFile != null : FileDocumentManager.getInstance().getFile(myEditor.getDocument());
   }
 
   @Override
@@ -287,7 +312,7 @@ public class ShowIntentionsPass extends TextEditorHighlightingPass {
     int offset = hostEditor.getCaretModel().getOffset();
     final Project project = hostFile.getProject();
 
-    List<HighlightInfo.IntentionActionDescriptor> fixes = getAvailableActions(hostEditor, hostFile, passIdToShowIntentionsFor);
+    List<HighlightInfo.IntentionActionDescriptor> fixes = getAvailableFixes(hostEditor, hostFile, passIdToShowIntentionsFor);
     final DaemonCodeAnalyzer codeAnalyzer = DaemonCodeAnalyzer.getInstance(project);
     final Document hostDocument = hostEditor.getDocument();
     HighlightInfo infoAtCursor = ((DaemonCodeAnalyzerImpl)codeAnalyzer).findHighlightByOffset(hostDocument, offset, true);
@@ -396,6 +421,7 @@ public class ShowIntentionsPass extends TextEditorHighlightingPass {
         PsiElement el = psiElement;
         while (el != null) {
           elements.add(el);
+          if (el instanceof PsiFile) break;
           el = el.getParent();
         }
 
@@ -431,7 +457,9 @@ public class ShowIntentionsPass extends TextEditorHighlightingPass {
           localInspectionTool.inspectionFinished(session, holder);
           return true;
         };
-        JobLauncher.getInstance().invokeConcurrentlyUnderProgress(intentionTools, new DaemonProgressIndicator(), false, processor);
+        // indicator can be null when run from EDT
+        ProgressIndicator progress = ObjectUtils.notNull(ProgressIndicatorProvider.getGlobalProgressIndicator(), new DaemonProgressIndicator());
+        JobLauncher.getInstance().invokeConcurrentlyUnderProgress(intentionTools, progress, false, processor);
       }
     }
   }

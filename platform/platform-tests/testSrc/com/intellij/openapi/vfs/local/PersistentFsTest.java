@@ -15,20 +15,30 @@
  */
 package com.intellij.openapi.vfs.local;
 
+import com.intellij.openapi.application.AccessToken;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.io.IoTestUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.*;
 import com.intellij.openapi.vfs.ex.temp.TempFileSystem;
+import com.intellij.openapi.vfs.newvfs.FileAttribute;
+import com.intellij.openapi.vfs.newvfs.ManagingFS;
 import com.intellij.openapi.vfs.newvfs.NewVirtualFile;
+import com.intellij.openapi.vfs.newvfs.persistent.FSRecords;
 import com.intellij.openapi.vfs.newvfs.persistent.PersistentFS;
 import com.intellij.testFramework.LoggedErrorProcessor;
 import com.intellij.testFramework.PlatformTestCase;
+import com.intellij.util.io.DataInputOutputUtil;
+import com.intellij.util.io.storage.HeavyProcessLatch;
 import org.apache.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.DataOutputStream;
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.jar.JarFile;
 
 public class PersistentFsTest extends PlatformTestCase {
@@ -79,14 +89,27 @@ public class PersistentFsTest extends PlatformTestCase {
   }
 
   public void testFindRootMustCreateFileWithCanonicalPath() throws Exception {
+    checkMustCreateRootWithCanonicalPath("x.jar");
+  }
+
+  private void checkMustCreateRootWithCanonicalPath(String jarName) throws IOException {
     File tmp = createTempDirectory();
-    File x = new File(tmp, "x.jar");
+    File x = new File(tmp, jarName);
     assertTrue(x.createNewFile());
 
     JarFileSystem jfs = JarFileSystem.getInstance();
     String path = x.getPath() + "/../" + x.getName() + JarFileSystem.JAR_SEPARATOR;
     NewVirtualFile root = myFs.findRoot(path, jfs);
-    assertFalse(root.getPath().contains(".."));
+    assertFalse(root.getPath(), root.getPath().contains("../"));
+    assertFalse(root.getPath(), root.getPath().contains("/.."));
+  }
+
+  public void testFindRootMustCreateFileWithStillCanonicalPath() throws Exception {
+    checkMustCreateRootWithCanonicalPath("x..jar");
+  }
+
+  public void testFindRootMustCreateFileWithYetAnotherCanonicalPath() throws Exception {
+    checkMustCreateRootWithCanonicalPath("x...jar");
   }
 
   public void testDeleteSubstRoots() throws Exception {
@@ -168,5 +191,88 @@ public class PersistentFsTest extends PlatformTestCase {
     }
 
     assertEquals(1, logCount[0]);
+  }
+
+  public void testModCountIncreases() throws IOException {
+    VirtualFile vFile = setupFile();
+    ManagingFS managingFS = ManagingFS.getInstance();
+    int inSessionModCount = managingFS.getModificationCount();
+    int globalModCount = managingFS.getFilesystemModificationCount();
+    final int parentModCount = managingFS.getModificationCount(vFile.getParent());
+
+    WriteAction.run(() -> vFile.setWritable(false));
+
+    assertEquals(globalModCount + 1, managingFS.getModificationCount(vFile));
+    assertEquals(globalModCount + 1, managingFS.getFilesystemModificationCount());
+    assertEquals(parentModCount, managingFS.getModificationCount(vFile.getParent()));
+    assertEquals(inSessionModCount + 1, managingFS.getModificationCount());
+
+    FSRecords.force();
+    assertFalse(FSRecords.isDirty());
+    ++globalModCount;
+
+    int finalGlobalModCount = globalModCount;
+
+    try (AccessToken ignore = HeavyProcessLatch.INSTANCE.processStarted("This test wants no indices flush")) {
+      WriteAction.run(() -> {
+        final long timestamp = vFile.getTimeStamp();
+        int finalInSessionModCount = managingFS.getModificationCount();
+        vFile.setWritable(true);  // 1 change
+        vFile.setBinaryContent("foo".getBytes(Charset.defaultCharset())); // content change + length change + maybe timestamp change
+
+        // we check in write action to avoid observing background thread to index stuff
+        final int changesCount = timestamp == vFile.getTimeStamp() ? 3 : 4;
+        assertEquals(finalGlobalModCount + changesCount, managingFS.getModificationCount(vFile));
+        assertEquals(finalGlobalModCount + changesCount, managingFS.getFilesystemModificationCount());
+        assertEquals(finalInSessionModCount + changesCount, managingFS.getModificationCount());
+        assertEquals(parentModCount, managingFS.getModificationCount(vFile.getParent()));
+      });
+    }
+  }
+
+  @NotNull
+  private static VirtualFile setupFile() throws IOException {
+    File file = IoTestUtil.createTestFile("file.txt");
+    VirtualFile vFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file);
+    assertNotNull(vFile);
+    return vFile;
+  }
+
+  public void testModCountNotIncreases() throws IOException {
+    VirtualFile vFile = setupFile();
+    ManagingFS managingFS = ManagingFS.getInstance();
+    final int globalModCount = managingFS.getFilesystemModificationCount();
+    final int parentModCount = managingFS.getModificationCount(vFile.getParent());
+    int inSessionModCount = managingFS.getModificationCount();
+
+    FSRecords.force();
+    assertFalse(FSRecords.isDirty());
+
+    FileAttribute attribute = new FileAttribute("test.attribute", 1, true);
+    WriteAction.run(() -> {
+      try(DataOutputStream output = attribute.writeAttribute(vFile)) {
+        DataInputOutputUtil.writeINT(output, 1);
+      }
+    });
+
+    assertEquals(globalModCount, managingFS.getModificationCount(vFile));
+    assertEquals(globalModCount, managingFS.getFilesystemModificationCount());
+    assertEquals(parentModCount, managingFS.getModificationCount(vFile.getParent()));
+    assertEquals(inSessionModCount + 1, managingFS.getModificationCount());
+
+    assertTrue(FSRecords.isDirty());
+    FSRecords.force();
+    assertFalse(FSRecords.isDirty());
+
+    //
+    int fileId = ((VirtualFileWithId)vFile).getId();
+    FSRecords.setTimestamp(fileId, FSRecords.getTimestamp(fileId));
+    FSRecords.setLength(fileId, FSRecords.getLength(fileId));
+
+    assertEquals(globalModCount, managingFS.getModificationCount(vFile));
+    assertEquals(globalModCount, managingFS.getFilesystemModificationCount());
+    assertEquals(parentModCount, managingFS.getModificationCount(vFile.getParent()));
+    assertEquals(inSessionModCount + 1, managingFS.getModificationCount());
+    assertFalse(FSRecords.isDirty());
   }
 }

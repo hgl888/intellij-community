@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,32 +38,22 @@ import java.util.NoSuchElementException;
 class VisualLineFragmentsIterator implements Iterator<VisualLineFragmentsIterator.Fragment> {
 
   static Iterable<Fragment> create(final EditorView view, final int offset, final boolean beforeSoftWrap) {
-    return new Iterable<Fragment>() {
-      @Override
-      public Iterator<Fragment> iterator() {
-        return new VisualLineFragmentsIterator(view, offset, beforeSoftWrap, null);
-      }
-    };
+    return () -> new VisualLineFragmentsIterator(view, offset, beforeSoftWrap, null);
   }
   
   /**
-   * If <code>quickEvaluationListener</code> is provided, quick approximate iteration mode becomes enabled, listener will be invoked
+   * If {@code quickEvaluationListener} is provided, quick approximate iteration mode becomes enabled, listener will be invoked
    * if approximation will in fact be used during width calculation.
    */
   static Iterable<Fragment> create(final EditorView view, @NotNull final VisualLinesIterator visualLinesIterator, 
                                    @Nullable final Runnable quickEvaluationListener) {
-    return new Iterable<Fragment>() {
-      @Override
-      public Iterator<Fragment> iterator() {
-        return new VisualLineFragmentsIterator(view, visualLinesIterator, quickEvaluationListener);
-      }
-    };
+    return () -> new VisualLineFragmentsIterator(view, visualLinesIterator, quickEvaluationListener);
   }
   
   private EditorView myView;
   private Document myDocument;
   private FoldRegion[] myRegions;
-  private Fragment myFragment = new Fragment();
+  private final Fragment myFragment = new Fragment();
   private int myVisualLineStartOffset;
   private Runnable myQuickEvaluationListener;
   
@@ -110,8 +100,8 @@ class VisualLineFragmentsIterator implements Iterator<VisualLineFragmentsIterato
          quickEvaluationListener);
   }
 
-  public VisualLineFragmentsIterator(@NotNull EditorView view, @NotNull VisualLinesIterator visualLinesIterator, 
-                                     @Nullable Runnable quickEvaluationListener) {
+  private VisualLineFragmentsIterator(@NotNull EditorView view, @NotNull VisualLinesIterator visualLinesIterator,
+                                      @Nullable Runnable quickEvaluationListener) {
     assert !visualLinesIterator.atEnd();
     init(view, 
          visualLinesIterator.getVisualLineStartOffset(), 
@@ -134,7 +124,7 @@ class VisualLineFragmentsIterator implements Iterator<VisualLineFragmentsIterato
     List<? extends SoftWrap> softWraps = softWrapModel.getRegisteredSoftWraps();
     SoftWrap currentOrPrevWrap = currentOrPrevWrapIndex < 0 || currentOrPrevWrapIndex >= softWraps.size() ? null :
                                  softWraps.get(currentOrPrevWrapIndex);
-    SoftWrap followingWrap = (currentOrPrevWrapIndex + 1) < 0 || (currentOrPrevWrapIndex + 1) >= softWraps.size() ? null :
+    SoftWrap followingWrap = currentOrPrevWrapIndex + 1 < 0 || currentOrPrevWrapIndex + 1 >= softWraps.size() ? null :
                              softWraps.get(currentOrPrevWrapIndex + 1);
 
     myVisualLineStartOffset = mySegmentStartOffset = startOffset;
@@ -161,7 +151,7 @@ class VisualLineFragmentsIterator implements Iterator<VisualLineFragmentsIterato
       boolean normalLineEnd = mySegmentEndOffset < getCurrentFoldRegionStartOffset() && mySegmentEndOffset < myNextWrapOffset;
       myInlays = myView.getEditor().getInlayModel().getInlineElementsInRange(
         mySegmentStartOffset,
-        mySegmentEndOffset - ((normalLineEnd && mySegmentEndOffset > mySegmentStartOffset) ? 0 : 1)); // including inlays at line end
+        mySegmentEndOffset - (normalLineEnd ? 0 : 1)); // including inlays at line end
       if (!myInlays.isEmpty() && myInlays.get(0).getOffset() == mySegmentStartOffset) {
         myCurrentInlayIndex = 0;
         myFragmentIterator = null;
@@ -360,7 +350,7 @@ class VisualLineFragmentsIterator implements Iterator<VisualLineFragmentsIterato
     // column is expected to be between startVisualColumn and endVisualColumn for this fragment
     int visualToLogicalColumn(int column) {
       return myDelegate != null ? myDelegate.visualToLogicalColumn(column)
-                                : myFoldRegion != null ? (column == myCurrentVisualColumn ? getEndLogicalColumn() : getStartLogicalColumn())
+                                : myFoldRegion != null ? column == myCurrentVisualColumn ? getEndLogicalColumn() : getStartLogicalColumn()
                                                        : getEndLogicalColumn();
     }
 

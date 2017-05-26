@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.intellij.codeInsight.daemon.impl;
 
 import com.intellij.codeInsight.daemon.GutterMark;
@@ -81,7 +80,7 @@ public class HighlightInfo implements Segment {
 
   final int navigationShift;
 
-  volatile RangeHighlighterEx highlighter; // modified in EDT only
+  private volatile RangeHighlighterEx highlighter;// modified in EDT only
 
   public List<Pair<IntentionActionDescriptor, TextRange>> quickFixActionRanges;
   public List<Pair<IntentionActionDescriptor, RangeMarker>> quickFixActionMarkers;
@@ -107,6 +106,7 @@ public class HighlightInfo implements Segment {
     setFlag(FROM_INJECTION_MASK, fromInjection);
   }
 
+  @Nullable
   public String getToolTip() {
     String toolTip = this.toolTip;
     String description = this.description;
@@ -158,6 +158,17 @@ public class HighlightInfo implements Segment {
   @NotNull
   public HighlightSeverity getSeverity() {
     return severity;
+  }
+
+  public RangeHighlighterEx getHighlighter() {
+    return highlighter;
+  }
+
+  /**
+   * modified in EDT only
+   */
+  public void setHighlighter(@Nullable RangeHighlighterEx highlighter) {
+    this.highlighter = highlighter;
   }
 
   public boolean isAfterEndOfLine() {
@@ -245,27 +256,28 @@ public class HighlightInfo implements Segment {
     return unescapedTooltip == null ? null : XmlStringUtil.wrapInHtml(XmlStringUtil.escapeString(unescapedTooltip));
   }
 
-  @NotNull
-  private static final HighlightInfoFilter[] FILTERS = HighlightInfoFilter.EXTENSION_POINT_NAME.getExtensions();
+  private static class Holder {
+    private static final HighlightInfoFilter[] FILTERS = HighlightInfoFilter.EXTENSION_POINT_NAME.getExtensions();
+  }
 
   boolean needUpdateOnTyping() {
     return isFlagSet(NEEDS_UPDATE_ON_TYPING_MASK);
   }
 
-  HighlightInfo(@Nullable TextAttributes forcedTextAttributes,
-                @Nullable TextAttributesKey forcedTextAttributesKey,
-                @NotNull HighlightInfoType type,
-                int startOffset,
-                int endOffset,
-                @Nullable String escapedDescription,
-                @Nullable String escapedToolTip,
-                @NotNull HighlightSeverity severity,
-                boolean afterEndOfLine,
-                @Nullable Boolean needsUpdateOnTyping,
-                boolean isFileLevelAnnotation,
-                int navigationShift,
-                ProblemGroup problemGroup,
-                GutterMark gutterIconRenderer) {
+  protected HighlightInfo(@Nullable TextAttributes forcedTextAttributes,
+                          @Nullable TextAttributesKey forcedTextAttributesKey,
+                          @NotNull HighlightInfoType type,
+                          int startOffset,
+                          int endOffset,
+                          @Nullable String escapedDescription,
+                          @Nullable String escapedToolTip,
+                          @NotNull HighlightSeverity severity,
+                          boolean afterEndOfLine,
+                          @Nullable Boolean needsUpdateOnTyping,
+                          boolean isFileLevelAnnotation,
+                          int navigationShift,
+                          ProblemGroup problemGroup,
+                          GutterMark gutterIconRenderer) {
     if (startOffset < 0 || startOffset > endOffset) {
       LOG.error("Incorrect highlightInfo bounds. description="+escapedDescription+"; startOffset="+startOffset+"; endOffset="+endOffset+";type="+type);
     }
@@ -313,7 +325,7 @@ public class HighlightInfo implements Segment {
            Comparing.strEqual(info.getDescription(), getDescription());
   }
 
-  boolean equalsByActualOffset(@NotNull HighlightInfo info) {
+  protected boolean equalsByActualOffset(@NotNull HighlightInfo info) {
     if (info == this) return true;
 
     return info.getSeverity() == getSeverity() &&
@@ -399,7 +411,7 @@ public class HighlightInfo implements Segment {
 
   private static boolean isAcceptedByFilters(@NotNull HighlightInfo info, @Nullable PsiElement psiElement) {
     PsiFile file = psiElement == null ? null : psiElement.getContainingFile();
-    for (HighlightInfoFilter filter : FILTERS) {
+    for (HighlightInfoFilter filter : Holder.FILTERS) {
       if (!filter.accept(info, file)) {
         return false;
       }
@@ -616,7 +628,7 @@ public class HighlightInfo implements Segment {
   static HighlightInfo fromAnnotation(@NotNull Annotation annotation, @Nullable TextRange fixedRange, boolean batchMode) {
     final TextAttributes forcedAttributes = annotation.getEnforcedTextAttributes();
     TextAttributesKey key = annotation.getTextAttributes();
-    final TextAttributesKey forcedAttributesKey = forcedAttributes == null ? (key == HighlighterColors.NO_HIGHLIGHTING ? null : key) : null;
+    final TextAttributesKey forcedAttributesKey = forcedAttributes == null ? key == HighlighterColors.NO_HIGHLIGHTING ? null : key : null;
 
     HighlightInfo info = new HighlightInfo(forcedAttributes, forcedAttributesKey, convertType(annotation),
                                            fixedRange != null? fixedRange.getStartOffset() : annotation.getStartOffset(),
@@ -744,7 +756,7 @@ public class HighlightInfo implements Segment {
     boolean isError() {
       return mySeverity == null || mySeverity.compareTo(HighlightSeverity.ERROR) >= 0;
     }
-    
+
     boolean canCleanup(@NotNull PsiElement element) {
       if (myCanCleanup == null) {
         InspectionProfile profile = InspectionProjectProfileManager.getInstance(element.getProject()).getCurrentProfile();
@@ -911,11 +923,6 @@ public class HighlightInfo implements Segment {
   }
 
   public void unregisterQuickFix(@NotNull Condition<IntentionAction> condition) {
-    for (Iterator<Pair<IntentionActionDescriptor, TextRange>> it = quickFixActionRanges.iterator(); it.hasNext();) {
-      Pair<IntentionActionDescriptor, TextRange> pair = it.next();
-      if (condition.value(pair.first.getAction())) {
-        it.remove();
-      }
-    }
+    quickFixActionRanges.removeIf(pair -> condition.value(pair.first.getAction()));
   }
 }

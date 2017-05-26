@@ -359,7 +359,7 @@ public class XmlTagImpl extends XmlElementImpl implements XmlTag, HintedReferenc
         }
       }
     }
-    return map == null ? Collections.<String, CachedValue<XmlNSDescriptor>>emptyMap() : map;
+    return map == null ? Collections.emptyMap() : map;
   }
 
   private Map<String, CachedValue<XmlNSDescriptor>> initializeSchema(@NotNull final String namespace,
@@ -440,6 +440,7 @@ public class XmlTagImpl extends XmlElementImpl implements XmlTag, HintedReferenc
     }
 
     final XmlFile file = XmlUtil.getContainingFile(this);
+    if (file == null) return null;
     final PsiFile psiFile = ExternalResourceManager.getInstance().getResourceLocation(fileLocation, file, version);
     if (psiFile instanceof XmlFile) {
       return (XmlFile)psiFile;
@@ -599,7 +600,7 @@ public class XmlTagImpl extends XmlElementImpl implements XmlTag, HintedReferenc
         if (element instanceof XmlAttribute) {
           XmlAttribute attribute = (XmlAttribute)element;
           result.add(attribute);
-          myHasNamespaceDeclarations = myHasNamespaceDeclarations || attribute.isNamespaceDeclaration();
+          if (!myHasNamespaceDeclarations && attribute.isNamespaceDeclaration()) myHasNamespaceDeclarations = true;
         }
         else if (element instanceof XmlToken && ((XmlToken)element).getTokenType() == XmlTokenType.XML_TAG_END) {
           return false;
@@ -749,7 +750,7 @@ public class XmlTagImpl extends XmlElementImpl implements XmlTag, HintedReferenc
     return null;
   }
 
-  protected boolean isCaseSensitive() {
+  public boolean isCaseSensitive() {
     return true;
   }
 

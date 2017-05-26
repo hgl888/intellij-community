@@ -96,5 +96,38 @@ class ThreadDumpParserTest extends TestCase {
     assert threads[0].isAwaitedBy(threads[1])
   }
 
+  void "test YourKit format"() {
+    def text = """
+Stacks at 2017-05-03 01:07:25 PM (uptime 4h 21m 28s) Threads shown: 38 of 46
+
+ApplicationImpl pooled thread 228 [WAITING]
+java.lang.Thread.run() Thread.java:745
+
+ApplicationImpl pooled thread 234 [WAITING] [DAEMON]
+java.lang.Thread.run() Thread.java:745
+
+ApplicationImpl pooled thread 6 [RUNNABLE, IN_NATIVE]
+java.net.DatagramSocket.receive(DatagramPacket) DatagramSocket.java:812
+com.intellij.a.f.a.c.a() c.java:60
+com.intellij.a.f.a.d.run() d.java:20
+java.lang.Thread.run() Thread.java:745
+"""
+    def threads = ThreadDumpParser.parse(text)
+    assert threads.collect { it.name } == ['ApplicationImpl pooled thread 228', 'ApplicationImpl pooled thread 234', 'ApplicationImpl pooled thread 6']
+    assert threads.collect { it.state } == ['WAITING', 'WAITING', 'RUNNABLE, IN_NATIVE']
+    assert threads.collect { it.daemon } == [false, true, false]
+    assert threads.collect { it.stackTrace.readLines().size() } == [2, 2, 5] // thread name is included into stack trace
+  }
+
+  void "test log is not a thread dump"() {
+    def threads = ThreadDumpParser.parse("""\
+2017-05-11 15:37:22,031 [100664612]   INFO - krasa.visualvm.VisualVMContext - saving context: VisualVMContext{appId=322303893654749} 
+2017-05-11 15:53:08,057 [101610638]   INFO - krasa.visualvm.VisualVMContext - saving context: VisualVMContext{appId=323249981117880} 
+2017-05-11 16:37:01,448 [104244029]   INFO - krasa.visualvm.VisualVMContext - saving context: VisualVMContext{appId=325883542423831} 
+2017-05-11 16:45:50,763 [104773344]   INFO - ij.compiler.impl.CompileDriver - COMPILATION STARTED (BUILD PROCESS) 
+2017-05-11 16:45:50,769 [104773350]   INFO - j.compiler.server.BuildManager - Using preloaded build process to compile /Users/ycx622/git/ropeengine 
+""")
+    assert threads.size() <= 1
+  }
 
 }

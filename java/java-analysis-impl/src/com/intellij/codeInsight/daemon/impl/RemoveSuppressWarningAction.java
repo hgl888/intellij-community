@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package com.intellij.codeInsight.daemon.impl;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.daemon.QuickFixBundle;
 import com.intellij.codeInspection.JavaSuppressionUtil;
 import com.intellij.codeInspection.LocalQuickFix;
@@ -73,8 +72,7 @@ public class RemoveSuppressWarningAction implements LocalQuickFix {
     PsiElement element = descriptor.getPsiElement();
     try {
       if (element != null) {
-        if (!FileModificationService.getInstance().prepareFileForWrite(element.getContainingFile())) return;
-        final PsiDocCommentOwner commentOwner = PsiTreeUtil.getParentOfType(element, PsiDocCommentOwner.class);
+        final PsiJavaDocumentedElement commentOwner = PsiTreeUtil.getParentOfType(element, PsiJavaDocumentedElement.class);
         if (commentOwner != null) {
           final PsiElement psiElement = JavaSuppressionUtil.getElementMemberSuppressedIn(commentOwner, myID);
           if (psiElement instanceof PsiAnnotation) {

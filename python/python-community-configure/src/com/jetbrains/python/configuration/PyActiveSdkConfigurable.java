@@ -17,6 +17,7 @@ package com.jetbrains.python.configuration;
 
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.options.UnnamedConfigurable;
@@ -31,7 +32,6 @@ import com.intellij.openapi.roots.ui.configuration.projectRoot.ProjectSdksModel;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.FixedSizeButton;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -238,7 +238,7 @@ public class PyActiveSdkConfigurable implements UnnamedConfigurable {
   }
 
   @Nullable
-  private Sdk getSdk() {
+  protected Sdk getSdk() {
     if (myModule == null) {
       return ProjectRootManager.getInstance(myProject).getProjectSdk();
     }
@@ -252,15 +252,13 @@ public class PyActiveSdkConfigurable implements UnnamedConfigurable {
     Sdk selectedSdk = getSelectedSdk();
     if (selectedSdk instanceof PyDetectedSdk) {
       final String sdkName = selectedSdk.getName();
-      VirtualFile sdkHome = ApplicationManager.getApplication().runWriteAction(new Computable<VirtualFile>() {
-        @Override
-        public VirtualFile compute() {
-          return LocalFileSystem.getInstance().refreshAndFindFileByPath(sdkName);
+      final VirtualFile sdkHome =
+        WriteAction.compute(() -> LocalFileSystem.getInstance().refreshAndFindFileByPath(sdkName));
+      if (sdkHome != null) {
+        selectedSdk = SdkConfigurationUtil.createAndAddSDK(sdkHome.getPath(), PythonSdkType.getInstance());
+        if (selectedSdk != null) {
+          myProjectSdksModel.addSdk(selectedSdk);
         }
-      });
-      selectedSdk = SdkConfigurationUtil.createAndAddSDK(sdkHome.getPath(), PythonSdkType.getInstance());
-      if (selectedSdk != null) {
-        myProjectSdksModel.addSdk(selectedSdk);
       }
     }
     else if (myInitialSdkSet.contains(selectedSdk) && selectedSdk != null) {
@@ -302,7 +300,7 @@ public class PyActiveSdkConfigurable implements UnnamedConfigurable {
     }
   }
 
-  private void setSdk(final Sdk item) {
+  protected void setSdk(final Sdk item) {
     ApplicationManager.getApplication().runWriteAction(() -> ProjectRootManager.getInstance(myProject).setProjectSdk(item));
     if (myModule != null) {
       ModuleRootModificationUtil.setModuleSdk(myModule, item);

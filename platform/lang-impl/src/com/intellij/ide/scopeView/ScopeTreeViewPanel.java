@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,17 +51,17 @@ import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ModuleRootAdapter;
 import com.intellij.openapi.roots.ModuleRootEvent;
+import com.intellij.openapi.roots.ModuleRootListener;
 import com.intellij.openapi.roots.ui.configuration.actions.ModuleDeleteProvider;
 import com.intellij.openapi.util.ActionCallback;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vcs.FileStatusListener;
 import com.intellij.openapi.vcs.FileStatusManager;
 import com.intellij.openapi.vcs.changes.*;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.packageDependencies.DefaultScopesProvider;
 import com.intellij.packageDependencies.DependencyValidationManager;
@@ -71,6 +71,7 @@ import com.intellij.psi.*;
 import com.intellij.psi.search.scope.packageSet.*;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.ui.*;
+import com.intellij.ui.popup.HintUpdateSupply;
 import com.intellij.util.EditSourceOnDoubleClickHandler;
 import com.intellij.util.Function;
 import com.intellij.util.FunctionUtil;
@@ -99,16 +100,12 @@ import java.lang.ref.WeakReference;
 import java.util.*;
 import java.util.List;
 
-/**
- * User: anna
- * Date: 25-Jan-2006
- */
 public class ScopeTreeViewPanel extends JPanel implements Disposable {
   private static final Logger LOG = Logger.getInstance("com.intellij.ide.scopeView.ScopeTreeViewPanel");
   private final IdeView myIdeView = new MyIdeView();
   private final MyPsiTreeChangeAdapter myPsiTreeChangeAdapter = new MyPsiTreeChangeAdapter();
 
-  private final DnDAwareTree myTree = new JBTreeWithHintProvider(){
+  private final DnDAwareTree myTree = new DnDAwareTree() {
     @Override
     public boolean isFileColorsEnabled() {
       return ProjectViewTree.isFileColorsEnabledFor(this);
@@ -121,7 +118,7 @@ public class ScopeTreeViewPanel extends JPanel implements Disposable {
         return null;
       }
       return ProjectViewTree.getColorForObject(((PackageDependenciesNode)node).getPsiElement(), myProject,
-                                               FunctionUtil.<PsiElement>id());
+                                               FunctionUtil.id());
     }
   };
   @NotNull
@@ -228,7 +225,9 @@ public class ScopeTreeViewPanel extends JPanel implements Disposable {
         if (node != null) {
           TreeUtil.selectPath(myTree, new TreePath(node.getPath()));
           if (requestFocus) {
-            myTree.requestFocus();
+            IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> {
+              IdeFocusManager.getGlobalInstance().requestFocus(myTree, true);
+            });
           }
         }
       }
@@ -258,6 +257,7 @@ public class ScopeTreeViewPanel extends JPanel implements Disposable {
   }
 
   private void initTree() {
+    HintUpdateSupply.installDataContextHintUpdateSupply(myTree);
     myTree.setCellRenderer(new MyTreeCellRenderer());
     myTree.setRootVisible(false);
     myTree.setShowsRootHandles(true);
@@ -321,7 +321,6 @@ public class ScopeTreeViewPanel extends JPanel implements Disposable {
     if (scope == null) { //was deleted
       scope = CustomScopesProviderEx.getAllScope();
     }
-    LOG.assertTrue(scope != null);
     final NamedScopesHolder holder = NamedScopesHolder.getHolder(myProject, scope.getName(), myDependencyValidationManager);
     final PackageSet packageSet = scope.getValue() != null ? scope.getValue() : new InvalidPackageSet("");
     final DependenciesPanel.DependencyPanelSettings settings = new DependenciesPanel.DependencyPanelSettings();
@@ -343,7 +342,7 @@ public class ScopeTreeViewPanel extends JPanel implements Disposable {
     myBuilder.setTree(myTree);
     myTree.getEmptyText().setText("Loading...");
     myActionCallback = new ActionCallback();
-    myTree.putClientProperty(TreeState.CALLBACK, new WeakReference<>(myActionCallback));
+    UIUtil.putClientProperty(myTree, TreeState.CALLBACK, new WeakReference<>(myActionCallback));
     myTree.setModel(myBuilder.build(myProject, true, () -> {
       myTree.setPaintBusy(false);
       myTree.getEmptyText().setText(UIBundle.message("message.nothingToShow"));
@@ -359,7 +358,6 @@ public class ScopeTreeViewPanel extends JPanel implements Disposable {
     if (scope == null) {
       scope = CustomScopesProviderEx.getAllScope();
     }
-    LOG.assertTrue(scope != null);
     return scope;
   }
 
@@ -500,7 +498,7 @@ public class ScopeTreeViewPanel extends JPanel implements Disposable {
     private WolfTheProblemSolver myWolfTheProblemSolver = WolfTheProblemSolver.getInstance(myProject);
 
     @Override
-    public void customizeCellRenderer(JTree tree,
+    public void customizeCellRenderer(@NotNull JTree tree,
                                       Object value,
                                       boolean selected,
                                       boolean expanded,
@@ -615,7 +613,7 @@ public class ScopeTreeViewPanel extends JPanel implements Disposable {
         if (child instanceof PsiFileSystemItem && (!(child instanceof PsiFile) || !isInjected((PsiFile)child))) {
           queueUpdate(() -> {
             final DefaultMutableTreeNode rootToReload =
-              myBuilder.removeNode(child, child instanceof PsiDirectory ? (PsiDirectory)child : (PsiDirectory)oldParent);
+              myBuilder.removeNode(child, (PsiDirectory)(child instanceof PsiDirectory ? child : oldParent));
             if (rootToReload != null) {
               reload(rootToReload);
             }
@@ -771,7 +769,7 @@ public class ScopeTreeViewPanel extends JPanel implements Disposable {
     }
   }
 
-  private class MyModuleRootListener extends ModuleRootAdapter {
+  private class MyModuleRootListener implements ModuleRootListener {
     @Override
     public void rootsChanged(ModuleRootEvent event) {
       myUpdateQueue.cancelAllUpdates();

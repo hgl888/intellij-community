@@ -3,7 +3,7 @@ package com.intellij.credentialStore
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.ide.passwordSafe.impl.PasswordSafeImpl
 import com.intellij.testFramework.ApplicationRule
-import com.intellij.testFramework.Assertions.assertThat
+import com.intellij.testFramework.assertions.Assertions.assertThat
 import com.intellij.testFramework.RuleChain
 import com.intellij.testFramework.TemporaryDirectory
 import org.junit.ClassRule
@@ -150,8 +150,7 @@ class PasswordSafeTest {
     val ps = PasswordSafeImpl(settings, KeePassCredentialStore(baseDirectory = tempDirManager.newPath()))
 
     val id = "test PasswordSafeTest.credentials with empty username"
-    val attributes = CredentialAttributes(id, null, null, true)
-
+    val attributes = CredentialAttributes(id, isPasswordMemoryOnly = true)
     try {
       val credentials = Credentials(null, "passphrase")
       ps.set(attributes, credentials)

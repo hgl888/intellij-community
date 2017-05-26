@@ -15,7 +15,6 @@
  */
 package com.intellij.vcs.log.paint;
 
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Pair;
 import com.intellij.ui.JBColor;
 import com.intellij.util.containers.ContainerUtil;
@@ -146,7 +145,7 @@ public class SimpleGraphCellPainter implements GraphCellPainter {
                          boolean isSelected) {
     g2.setColor(color);
 
-    int length = (x1 == x2) ? getRowHeight() : (int)Math.ceil(Math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2)));
+    int length = (x1 == x2) ? getRowHeight() : (int)Math.ceil(Math.hypot(x1 - x2, y1 - y2));
     setStroke(g2, isUsual || hasArrow, isSelected, length);
 
     g2.drawLine(x1, y1, x2, y2);
@@ -173,7 +172,7 @@ public class SimpleGraphCellPainter implements GraphCellPainter {
     double translateX = (x - centerX);
     double translateY = (y - centerY);
 
-    double d = Math.sqrt(translateX * translateX + translateY * translateY);
+    double d = Math.hypot(translateX, translateY);
     double scaleX = arrowLength * translateX / d;
     double scaleY = arrowLength * translateY / d;
 
@@ -239,12 +238,7 @@ public class SimpleGraphCellPainter implements GraphCellPainter {
       }
     }
 
-    List<PrintElement> selected = ContainerUtil.filter(printElements, new Condition<PrintElement>() {
-      @Override
-      public boolean value(PrintElement printElement) {
-        return printElement.isSelected();
-      }
-    });
+    List<PrintElement> selected = ContainerUtil.filter(printElements, printElement -> printElement.isSelected());
     for (PrintElement printElement : selected) {
       drawElement(g2, printElement, true);
     }

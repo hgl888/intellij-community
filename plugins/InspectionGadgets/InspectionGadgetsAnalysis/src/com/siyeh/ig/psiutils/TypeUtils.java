@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2016 Dave Griffith, Bas Leijdekkers
+ * Copyright 2003-2017 Dave Griffith, Bas Leijdekkers
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.InheritanceUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.psi.util.TypeConversionUtil;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -44,6 +45,7 @@ public class TypeUtils {
 
   private TypeUtils() {}
 
+  @Contract("_, null -> false")
   public static boolean typeEquals(@NonNls @NotNull String typeName, @Nullable PsiType targetType) {
     return targetType != null && targetType.equalsToText(typeName);
   }
@@ -76,10 +78,12 @@ public class TypeUtils {
     return sourcePrecision != null && targetPrecision != null && targetPrecision.intValue() < sourcePrecision.intValue();
   }
 
+  @Contract("null -> false")
   public static boolean isJavaLangObject(@Nullable PsiType targetType) {
     return typeEquals(CommonClassNames.JAVA_LANG_OBJECT, targetType);
   }
 
+  @Contract("null -> false")
   public static boolean isJavaLangString(@Nullable PsiType targetType) {
     return typeEquals(CommonClassNames.JAVA_LANG_STRING, targetType);
   }
@@ -88,6 +92,7 @@ public class TypeUtils {
     return isOptional(PsiUtil.resolveClassInClassTypeOnly(type));
   }
 
+  @Contract("null -> false")
   public static boolean isOptional(PsiClass aClass) {
     if (aClass == null) {
       return false;
@@ -115,6 +120,7 @@ public class TypeUtils {
     return false;
   }
 
+  @Contract("null, _ -> false")
   public static boolean expressionHasTypeOrSubtype(@Nullable PsiExpression expression, @NonNls @NotNull String typeName) {
     return expressionHasTypeOrSubtype(expression, new String[] {typeName}) != null;
   }
@@ -124,8 +130,9 @@ public class TypeUtils {
     if (expression == null) {
       return null;
     }
-    PsiType type = expression instanceof PsiFunctionalExpression ? ((PsiFunctionalExpression)expression).getFunctionalInterfaceType()
-                                                                 : expression.getType();
+    final PsiType type = expression instanceof PsiFunctionalExpression
+                         ? ((PsiFunctionalExpression)expression).getFunctionalInterfaceType()
+                         : expression.getType();
     if (type == null) {
       return null;
     }
@@ -231,7 +238,7 @@ public class TypeUtils {
     }
     final PsiClassType classType = (PsiClassType)type;
     final PsiClass aClass = classType.resolve();
-    return aClass != null && aClass instanceof PsiTypeParameter;
+    return aClass instanceof PsiTypeParameter;
   }
 
   /**

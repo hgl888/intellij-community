@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -195,7 +195,8 @@ class VariableView(override val variableName: String, private val variable: Vari
   }
 
   abstract class ObsolescentIndexedVariablesConsumer(protected val node: XCompositeNode) : IndexedVariablesConsumer() {
-    override fun isObsolete() = node.isObsolete
+    override val isObsolete: Boolean
+      get() = node.isObsolete
   }
 
   private fun computeIndexedProperties(value: ArrayValue, node: XCompositeNode, isLastChildren: Boolean): Promise<*> {
@@ -378,14 +379,22 @@ class VariableView(override val variableName: String, private val variable: Vari
     if (!watchableAsEvaluationExpression()) {
       return null
     }
+    if (context.variableName == null) return variable.name // top level watch expression, may be call etc.
 
-    val list = SmartList(variable.name)
+    val list = SmartList<String>()
+    addVarName(list, parent, variable.name)
+
     var parent: VariableContext? = context
     while (parent != null && parent.variableName != null) {
-      list.add(parent.variableName!!)
+      addVarName(list, parent.parent, parent.variableName!!)
       parent = parent.parent
     }
     return context.viewSupport.propertyNamesToString(list, false)
+  }
+
+  private fun addVarName(list: SmartList<String>, parent: VariableContext?, name: String) {
+    if (parent == null || parent.variableName != null) list.add(name)
+    else list.addAll(name.split(".").reversed())
   }
 
   private class MyFullValueEvaluator(private val value: Value) : XFullValueEvaluator(if (value is StringValue) value.length else value.valueString!!.length) {
@@ -454,16 +463,18 @@ fun getObjectValueDescription(value: ObjectValue): String {
 }
 
 internal fun trimFunctionDescription(value: Value): String {
-  val presentableValue = value.valueString ?: return ""
+  return trimFunctionDescription(value.valueString ?: return "")
+}
 
+fun trimFunctionDescription(value: String): String {
   var endIndex = 0
-  while (endIndex < presentableValue.length && !StringUtil.isLineBreak(presentableValue[endIndex])) {
+  while (endIndex < value.length && !StringUtil.isLineBreak(value[endIndex])) {
     endIndex++
   }
-  while (endIndex > 0 && Character.isWhitespace(presentableValue[endIndex - 1])) {
+  while (endIndex > 0 && Character.isWhitespace(value[endIndex - 1])) {
     endIndex--
   }
-  return presentableValue.substring(0, endIndex)
+  return value.substring(0, endIndex)
 }
 
 private fun createNumberPresentation(value: String): XValuePresentation {

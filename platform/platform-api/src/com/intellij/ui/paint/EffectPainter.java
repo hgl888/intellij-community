@@ -222,7 +222,7 @@ public enum EffectPainter implements RegionPainter<Font> {
 
       @Override
       void paintImage(Graphics2D g, int width, int height, int period) {
-        Integer round = period <= 2 && !UIUtil.isRetina(g) ? null : period;
+        Integer round = period <= 2 && !UIUtil.isJreHiDPI(g) ? null : period;
         for (int dx = 0; dx < width; dx += period + period) {
           RectanglePainter.FILL.paint(g, dx, 0, period, period, round);
         }
@@ -233,7 +233,7 @@ public enum EffectPainter implements RegionPainter<Font> {
 
       @Override
       int getPeriod(int height) {
-        return (Registry.is("ide.text.effect.new.metrics") ? height : getMaxHeight(height)) - 1;
+        return Math.max((Registry.is("ide.text.effect.new.metrics") ? height : getMaxHeight(height)) - 1, 1);
       }
 
       @Override
@@ -310,7 +310,7 @@ public enum EffectPainter implements RegionPainter<Font> {
     BufferedImage createImage(Graphics2D g, Paint paint, int height) {
       int period = getPeriod(height);
       int width = period << (paint instanceof Color ? 8 : 1);
-      BufferedImage image = UIUtil.createImageForGraphics(g, width, height, BufferedImage.TYPE_INT_ARGB);
+      BufferedImage image = UIUtil.createImage(g, width, height, BufferedImage.TYPE_INT_ARGB);
       paintImage(image.createGraphics(), paint, width, height, period);
       return image;
     }

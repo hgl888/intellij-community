@@ -23,11 +23,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
+import java.util.Map;
 import java.util.Properties;
 
-/**
- * User: spLeaner
- */
 public abstract class DelegateColorScheme implements EditorColorsScheme {
 
   private EditorColorsScheme myDelegate;
@@ -39,7 +37,7 @@ public abstract class DelegateColorScheme implements EditorColorsScheme {
   public EditorColorsScheme getDelegate() {
     return myDelegate;
   }
-
+  
   public void setDelegate(@NotNull EditorColorsScheme delegate) {
     myDelegate = delegate;
   }

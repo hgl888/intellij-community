@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,21 @@
 
 package com.intellij.execution.configurations;
 
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.ModuleUtilCore;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.WriteExternalException;
 import com.intellij.util.xmlb.annotations.Property;
+import gnu.trove.THashSet;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -68,12 +67,14 @@ public abstract class ModuleBasedConfiguration<ConfigurationModule extends RunCo
     myModule.setModule(module);
   }
 
-  protected void readModule(final Element element) throws InvalidDataException {
+  protected void readModule(final Element element) {
     myModule.readExternal(element);
   }
 
-  protected void writeModule(final Element element) throws WriteExternalException {
-    myModule.writeExternal(element);
+  protected void writeModule(@NotNull Element element) {
+    //if (myModule.getModule() != null) {
+      myModule.writeExternal(element);
+    //}
   }
 
   public Collection<Module> getAllModules() {
@@ -99,12 +100,9 @@ public abstract class ModuleBasedConfiguration<ConfigurationModule extends RunCo
       RunConfiguration configuration = getFactory().createTemplateConfiguration(getProject());
       configuration.setName(getName());
       configuration.readExternal(element);
-
       return (ModuleBasedConfiguration)configuration;
-    } catch (InvalidDataException e) {
-      LOG.error(e);
-      return null;
-    } catch (WriteExternalException e) {
+    }
+    catch (InvalidDataException | WriteExternalException e) {
       LOG.error(e);
       return null;
     }
@@ -113,24 +111,22 @@ public abstract class ModuleBasedConfiguration<ConfigurationModule extends RunCo
   @Override
   @NotNull
   public Module[] getModules() {
-    return ApplicationManager.getApplication().runReadAction(new Computable<Module[]>() {
-      @Override
-      @SuppressWarnings({"ConstantConditions"})
-      public Module[] compute() {
-        final Module module = getConfigurationModule().getModule();
-        return module == null ? Module.EMPTY_ARRAY : new Module[] {module};
-      }
-    });
+    Module module = ReadAction.compute(() -> getConfigurationModule().getModule());
+    return module == null ? Module.EMPTY_ARRAY : new Module[] {module};
   }
 
   public void restoreOriginalModule(final Module originalModule) {
-    if (originalModule == null) return;
-    final Module[] classModules = getModules();
-    final Set<Module> modules = new HashSet<>();
-    for (Module classModule : classModules) {
+    if (originalModule == null) {
+      return;
+    }
+
+    Set<Module> modules = new THashSet<>();
+    for (Module classModule : getModules()) {
       ModuleUtilCore.collectModulesDependsOn(classModule, modules);
     }
-    if (modules.contains(originalModule)) setModule(originalModule);
+    if (modules.contains(originalModule)) {
+      setModule(originalModule);
+    }
   }
 
   public void onNewConfigurationCreated() {
@@ -139,5 +135,9 @@ public abstract class ModuleBasedConfiguration<ConfigurationModule extends RunCo
       final Module[] modules = ModuleManager.getInstance(getProject()).getModules();
       configurationModule.setModule(modules.length == 1 ? modules[0] : null);
     }
+  }
+
+  public boolean isModuleDirMacroSupported() {
+    return false;
   }
 }

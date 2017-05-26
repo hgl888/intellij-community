@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,12 @@ package com.intellij.psi.util;
 import com.intellij.ide.util.FileStructureDialog;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.psi.codeStyle.AllOccurrencesMatcher;
 import com.intellij.psi.codeStyle.MinusculeMatcher;
 import com.intellij.psi.codeStyle.NameUtil;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.UsefulTestCase;
 import com.intellij.ui.SpeedSearchComparator;
-import com.intellij.util.ThrowableRunnable;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.Matcher;
 import org.jetbrains.annotations.NonNls;
@@ -679,7 +679,7 @@ public class NameUtilMatchingTest extends UsefulTestCase {
           Assert.assertFalse(matcher.toString(), matcher.matches(longName));
         }
       }
-    }).cpuBound().useLegacyScaling().assertTiming();
+    }).useLegacyScaling().assertTiming();
   }
 
   public void testOnlyUnderscoresPerformance() {
@@ -688,7 +688,7 @@ public class NameUtilMatchingTest extends UsefulTestCase {
       String big = StringUtil.repeat("_", small.length() + 1);
       assertMatches("*" + small, big);
       assertDoesntMatch("*" + big, small);
-    }).cpuBound().useLegacyScaling().assertTiming();
+    }).useLegacyScaling().assertTiming();
   }
 
   public void testRepeatedLetterPerformance() {
@@ -696,7 +696,27 @@ public class NameUtilMatchingTest extends UsefulTestCase {
       String big = StringUtil.repeat("Aaaaaa", 50);
       assertMatches("aaaaaaaaaaaaaaaaaaaaaaaa", big);
       assertDoesntMatch("aaaaaaaaaaaaaaaaaaaaaaaab", big);
-    }).cpuBound().useLegacyScaling().assertTiming();
+    }).useLegacyScaling().assertTiming();
+  }
+
+  public void testMatchingAllOccurrences() {
+    String text = "some text";
+    MinusculeMatcher matcher = new AllOccurrencesMatcher("*e", NameUtil.MatchingCaseSensitivity.NONE, "");
+    assertOrderedEquals(matcher.matchingFragments(text),
+                        new TextRange(3, 4), new TextRange(6, 7));
+  }
+
+  public void testCamelHumpWinsOverConsecutiveCaseMismatch() {
+    assertSize(3, NameUtil.buildMatcher("GEN", NameUtil.MatchingCaseSensitivity.NONE).matchingFragments("GetExtendedName"));
+
+    assertPreference("GEN", "GetName", "GetExtendedName");
+    assertPreference("*GEN", "GetName", "GetExtendedName");
+  }
+
+  public void testPrintln() {
+    assertMatches("pl", "println");
+    assertMatches("pl", "printlnFoo");
+    assertDoesntMatch("pl", "printlnx");
   }
 
 }

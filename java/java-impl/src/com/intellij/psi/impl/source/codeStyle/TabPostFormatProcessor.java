@@ -50,6 +50,7 @@ public class TabPostFormatProcessor implements PostFormatProcessor {
     return source;
   }
 
+  @NotNull
   @Override
   public TextRange processText(@NotNull PsiFile source, @NotNull TextRange rangeToReformat, @NotNull CodeStyleSettings settings) {
     return doProcess(source, rangeToReformat, settings);
@@ -81,12 +82,12 @@ public class TabPostFormatProcessor implements PostFormatProcessor {
   }
 
   @NotNull
-  static TextRange processViaPsi(@NotNull ASTNode node,
-                                 @NotNull TextRange range,
-                                 @NotNull TreeHelper treeHelper,
-                                 boolean useTabs,
-                                 boolean smartTabs,
-                                 int tabWidth)
+  public static TextRange processViaPsi(@NotNull ASTNode node,
+                                        @NotNull TextRange range,
+                                        @NotNull TreeHelper treeHelper,
+                                        boolean useTabs,
+                                        boolean smartTabs,
+                                        int tabWidth)
   {
     AstHelper helper = new AstHelper(node, treeHelper);
     do {
@@ -107,11 +108,11 @@ public class TabPostFormatProcessor implements PostFormatProcessor {
   }
   
   @NotNull
-  static TextRange processViaDocument(@NotNull Document document,
-                                      @NotNull TextRange range,
-                                      boolean useTabs,
-                                      boolean useSmartTabs,
-                                      int tabWidth)
+  public static TextRange processViaDocument(@NotNull Document document,
+                                             @NotNull TextRange range,
+                                             boolean useTabs,
+                                             boolean useSmartTabs,
+                                             int tabWidth)
   {
     TextRange result = range;
     int startLine = document.getLineNumber(Math.min(document.getTextLength(), range.getStartOffset()));
@@ -304,7 +305,7 @@ public class TabPostFormatProcessor implements PostFormatProcessor {
   interface Helper {
 
     /**
-     * @return    previous line indent space if current line is not the first one; <code>null</code> otherwise
+     * @return    previous line indent space if current line is not the first one; {@code null} otherwise
      */
     @Nullable CharSequence getPrevLineIndent();
     
@@ -493,7 +494,7 @@ public class TabPostFormatProcessor implements PostFormatProcessor {
     }
   }
 
-  interface TreeHelper {
+  public interface TreeHelper {
     @Nullable
     ASTNode prevLeaf(@NotNull ASTNode current);
 

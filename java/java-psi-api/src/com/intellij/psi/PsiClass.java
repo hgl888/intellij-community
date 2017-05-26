@@ -38,13 +38,7 @@ public interface PsiClass
    */
   @NotNull PsiClass[] EMPTY_ARRAY = new PsiClass[0];
 
-  ArrayFactory<PsiClass> ARRAY_FACTORY = new ArrayFactory<PsiClass>() {
-    @NotNull
-    @Override
-    public PsiClass[] create(final int count) {
-      return count == 0 ? EMPTY_ARRAY : new PsiClass[count];
-    }
-  };
+  ArrayFactory<PsiClass> ARRAY_FACTORY = count -> count == 0 ? EMPTY_ARRAY : new PsiClass[count];
 
   /**
    * Returns the fully qualified name of the class.
@@ -122,6 +116,7 @@ public interface PsiClass
    *
    * @return the list of interfaces.
    */
+  @NotNull
   PsiClass[] getInterfaces();
 
   /**
@@ -130,7 +125,8 @@ public interface PsiClass
    * @return the list of classes or interfaces. May return zero elements when jdk is
    *         not configured, so no java.lang.Object is found
    */
-  @NotNull PsiClass[] getSupers();
+  @NotNull
+  PsiClass[] getSupers();
 
   /**
    * Returns the list of class types for the classes and interfaces extended or

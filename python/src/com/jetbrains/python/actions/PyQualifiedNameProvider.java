@@ -15,10 +15,7 @@
  */
 package com.jetbrains.python.actions;
 
-import com.google.common.collect.Iterables;
 import com.intellij.ide.actions.QualifiedNameProvider;
-import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.editor.EditorModificationUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
@@ -32,10 +29,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Collection;
 
 
-/**
- * User: anna
- * Date: 3/29/11
- */
 public class PyQualifiedNameProvider implements QualifiedNameProvider {
   @Override
   public PsiElement adjustElementToCopy(PsiElement element) {
@@ -84,10 +77,5 @@ public class PyQualifiedNameProvider implements QualifiedNameProvider {
       }
     }
     return null;
-  }
-
-  @Override
-  public void insertQualifiedName(String fqn, PsiElement element, Editor editor, Project project) {
-    EditorModificationUtil.insertStringAtCaret(editor, fqn);
   }
 }

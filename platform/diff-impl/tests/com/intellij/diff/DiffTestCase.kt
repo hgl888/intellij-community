@@ -21,17 +21,18 @@ import com.intellij.diff.util.ThreeSide
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.progress.DumbProgressIndicator
 import com.intellij.openapi.progress.ProgressIndicator
-import com.intellij.openapi.util.Couple
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.text.StringUtil
+import com.intellij.openapi.vcs.LocalFilePath
 import com.intellij.testFramework.UsefulTestCase
 import com.intellij.util.containers.HashMap
 import com.intellij.util.text.CharSequenceSubSequence
 import junit.framework.ComparisonFailure
+import junit.framework.TestCase
 import java.util.*
 import java.util.concurrent.atomic.AtomicLong
 
-abstract class DiffTestCase : UsefulTestCase() {
+abstract class DiffTestCase : TestCase() {
   companion object {
     private val DEFAULT_CHAR_COUNT = 12
     private val DEFAULT_CHAR_TABLE: Map<Int, Char> = {
@@ -58,12 +59,18 @@ abstract class DiffTestCase : UsefulTestCase() {
     super.tearDown()
   }
 
+  fun getTestName() = UsefulTestCase.getTestName(name, true)
+
   //
   // Assertions
   //
 
   fun assertTrue(actual: Boolean, message: String = "") {
     assertTrue(message, actual)
+  }
+
+  fun assertFalse(actual: Boolean, message: String = "") {
+    assertFalse(message, actual)
   }
 
   fun assertEquals(expected: Any?, actual: Any?, message: String = "") {
@@ -74,19 +81,51 @@ abstract class DiffTestCase : UsefulTestCase() {
     if (!StringUtil.equals(expected, actual)) throw ComparisonFailure(message, expected?.toString(), actual?.toString())
   }
 
+  fun assertOrderedEquals(expected: Collection<*>, actual: Collection<*>, message: String = "") {
+    UsefulTestCase.assertOrderedEquals(message, actual, expected)
+  }
+
   fun assertEqualsCharSequences(chunk1: CharSequence, chunk2: CharSequence, ignoreSpaces: Boolean, skipLastNewline: Boolean) {
-    if (ignoreSpaces) {
-      assertTrue(StringUtil.equalsIgnoreWhitespaces(chunk1, chunk2))
-    } else {
-      if (skipLastNewline) {
-        if (StringUtil.equals(chunk1, chunk2)) return
-        if (StringUtil.equals(stripNewline(chunk1), chunk2)) return
-        if (StringUtil.equals(chunk1, stripNewline(chunk2))) return
-        assertTrue(false)
-      } else {
-        assertTrue(StringUtil.equals(chunk1, chunk2))
-      }
+    if (skipLastNewline && !ignoreSpaces) {
+      assertTrue(StringUtil.equals(chunk1, chunk2) ||
+                 StringUtil.equals(stripNewline(chunk1), chunk2) ||
+                 StringUtil.equals(chunk1, stripNewline(chunk2)))
     }
+    else {
+      assertTrue(isEqualsCharSequences(chunk1, chunk2, ignoreSpaces))
+    }
+  }
+
+  fun assertNotEqualsCharSequences(chunk1: CharSequence, chunk2: CharSequence, ignoreSpaces: Boolean, skipLastNewline: Boolean) {
+    if (skipLastNewline && !ignoreSpaces) {
+      assertTrue(!StringUtil.equals(chunk1, chunk2) ||
+                 !StringUtil.equals(stripNewline(chunk1), chunk2) ||
+                 !StringUtil.equals(chunk1, stripNewline(chunk2)))
+    }
+    else {
+      assertFalse(isEqualsCharSequences(chunk1, chunk2, ignoreSpaces))
+    }
+  }
+
+  fun isEqualsCharSequences(chunk1: CharSequence, chunk2: CharSequence, ignoreSpaces: Boolean): Boolean {
+    if (ignoreSpaces) {
+      return StringUtil.equalsIgnoreWhitespaces(chunk1, chunk2)
+    }
+    else {
+      return StringUtil.equals(chunk1, chunk2)
+    }
+  }
+
+  fun assertSetsEquals(expected: BitSet, actual: BitSet, message: String = "") {
+    val sb = StringBuilder(message)
+    sb.append(": \"")
+    for (i in 0..actual.length()) {
+      sb.append(if (actual[i]) '-' else ' ')
+    }
+    sb.append('"')
+    val fullMessage = sb.toString()
+
+    assertEquals(expected, actual, fullMessage)
   }
 
   //
@@ -114,7 +153,7 @@ abstract class DiffTestCase : UsefulTestCase() {
     return Math.max(1, document.lineCount)
   }
 
-  infix fun Int.until(a: Int): IntRange = this..a - 1
+  fun createFilePath(path: String) = LocalFilePath(path, path.endsWith('/') || path.endsWith('\\'))
 
   //
   // AutoTests
@@ -134,7 +173,8 @@ abstract class DiffTestCase : UsefulTestCase() {
 
         test(debugData)
         debugData.reset()
-      } catch (e: Throwable) {
+      }
+      catch (e: Throwable) {
         println("Seed: " + seed)
         println("Runs: " + runs)
         println("I: " + i)
@@ -168,7 +208,8 @@ abstract class DiffTestCase : UsefulTestCase() {
       seedField.isAccessible = true
       val seedFieldValue = seedField.get(RNG) as AtomicLong
       return seedFieldValue.get() xor 0x5DEECE66DL
-    } catch (e: Exception) {
+    }
+    catch (e: Exception) {
       gotSeedException = true
       System.err.println("Can't get random seed: " + e.message)
       return -1
@@ -176,13 +217,13 @@ abstract class DiffTestCase : UsefulTestCase() {
   }
 
   private fun stripNewline(text: CharSequence): CharSequence? {
-    return when (StringUtil.endsWithChar(text, '\n') ) {
+    return when (StringUtil.endsWithChar(text, '\n')) {
       true -> CharSequenceSubSequence(text, 0, text.length - 1)
       false -> null
     }
   }
 
-  class DebugData() {
+  class DebugData {
     private val data: MutableList<Pair<String, Any>> = ArrayList()
 
     fun put(key: String, value: Any) {
@@ -202,14 +243,14 @@ abstract class DiffTestCase : UsefulTestCase() {
   // Helpers
   //
 
-  open class Trio<T : Any>(val data1: T, val data2: T, val data3: T) {
+  open class Trio<out T>(val data1: T, val data2: T, val data3: T) {
     companion object {
-      fun <V : Any> from(f: (ThreeSide) -> V): Trio<V> = Trio(f(ThreeSide.LEFT), f(ThreeSide.BASE), f(ThreeSide.RIGHT))
+      fun <V> from(f: (ThreeSide) -> V): Trio<V> = Trio(f(ThreeSide.LEFT), f(ThreeSide.BASE), f(ThreeSide.RIGHT))
     }
 
-    fun <V : Any> map(f: (T) -> V): Trio<V> = Trio(f(data1), f(data2), f(data3))
+    fun <V> map(f: (T) -> V): Trio<V> = Trio(f(data1), f(data2), f(data3))
 
-    fun <V : Any> map(f: (T, ThreeSide) -> V): Trio<V> = Trio(f(data1, ThreeSide.LEFT), f(data2, ThreeSide.BASE), f(data3, ThreeSide.RIGHT))
+    fun <V> map(f: (T, ThreeSide) -> V): Trio<V> = Trio(f(data1, ThreeSide.LEFT), f(data2, ThreeSide.BASE), f(data3, ThreeSide.RIGHT))
 
     fun forEach(f: (T, ThreeSide) -> Unit): Unit {
       f(data1, ThreeSide.LEFT)
@@ -228,7 +269,11 @@ abstract class DiffTestCase : UsefulTestCase() {
     }
 
     override fun hashCode(): Int {
-      return data1.hashCode() * 37 * 37 + data2.hashCode() * 37 + data3.hashCode()
+      var h = 0
+      if (data1 != null) h = h * 31 + data1.hashCode()
+      if (data2 != null) h = h * 31 + data2.hashCode()
+      if (data3 != null) h = h * 31 + data3.hashCode()
+      return h
     }
   }
 }

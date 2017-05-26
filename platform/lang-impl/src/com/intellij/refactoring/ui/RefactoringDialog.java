@@ -15,8 +15,9 @@
  */
 package com.intellij.refactoring.ui;
 
+import com.intellij.openapi.application.TransactionGuard;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.options.ConfigurationException;
-import com.intellij.openapi.project.DumbModePermission;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
@@ -36,6 +37,7 @@ import java.util.List;
  * Author: msk
  */
 public abstract class RefactoringDialog extends DialogWrapper {
+  private static final Logger LOG = Logger.getInstance("#com.intellij.refactoring.ui.RefactoringDialog");
 
   private Action myRefactorAction;
   private Action myPreviewAction;
@@ -54,6 +56,12 @@ public abstract class RefactoringDialog extends DialogWrapper {
 
   public void setPreviewResults(boolean previewResults) {
     myCbPreviewResults = previewResults;
+  }
+
+  @Override
+  public void show() {
+    LOG.assertTrue(TransactionGuard.getInstance().getContextTransaction() != null, "Refactorings should be invoked inside transaction");
+    super.show();
   }
 
   @Override
@@ -182,11 +190,6 @@ public abstract class RefactoringDialog extends DialogWrapper {
     processor.setPrepareSuccessfulSwingThreadCallback(prepareSuccessfulCallback);
     processor.setPreviewUsages(isPreviewUsages());
     processor.run();
-  }
-
-  @Override
-  public void show() {
-    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_MODAL, () -> super.show());
   }
 
 }

@@ -15,18 +15,15 @@
  */
 package com.intellij.codeInspection.localCanBeFinal;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.daemon.GroupNames;
 import com.intellij.codeInspection.*;
 import com.intellij.codeInspection.ui.MultipleCheckboxOptionsPanel;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.WriteExternalException;
 import com.intellij.psi.*;
 import com.intellij.psi.controlFlow.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
-import com.intellij.util.IncorrectOperationException;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -39,12 +36,11 @@ import java.util.*;
  * @author max
  */
 public class LocalCanBeFinal extends BaseJavaBatchLocalInspectionTool {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInspection.localCanBeFinal.LocalCanBeFinal");
-
   public boolean REPORT_VARIABLES = true;
   public boolean REPORT_PARAMETERS = true;
   public boolean REPORT_CATCH_PARAMETERS = true;
   public boolean REPORT_FOREACH_PARAMETERS = true;
+  public boolean REPORT_IMPLICIT_FINALS = true;
 
   private final LocalQuickFix myQuickFix;
   @NonNls public static final String SHORT_NAME = "LocalCanBeFinal";
@@ -62,6 +58,9 @@ public class LocalCanBeFinal extends BaseJavaBatchLocalInspectionTool {
     }
     if (!REPORT_FOREACH_PARAMETERS) {
       node.addContent(new Element("option").setAttribute("name", "REPORT_FOREACH_PARAMETERS").setAttribute("value", "false"));
+    }
+    if (!REPORT_IMPLICIT_FINALS) {
+      node.addContent(new Element("option").setAttribute("name", "REPORT_IMPLICIT_FINALS").setAttribute("value", "false"));
     }
   }
 
@@ -286,7 +285,10 @@ public class LocalCanBeFinal extends BaseJavaBatchLocalInspectionTool {
   }
 
   private boolean shouldBeIgnored(PsiVariable psiVariable) {
-    if (psiVariable.hasModifierProperty(PsiModifier.FINAL)) return true;
+    PsiModifierList modifierList = psiVariable.getModifierList();
+    if (modifierList == null) return true;
+    if (REPORT_IMPLICIT_FINALS && modifierList.hasModifierProperty(PsiModifier.FINAL)) return true;
+    if (modifierList.hasExplicitModifier(PsiModifier.FINAL)) return true;
     if (psiVariable instanceof PsiLocalVariable) {
       return !REPORT_VARIABLES;
     }
@@ -331,18 +333,12 @@ public class LocalCanBeFinal extends BaseJavaBatchLocalInspectionTool {
 
     @Override
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor problem) {
-      if (!FileModificationService.getInstance().preparePsiElementForWrite(problem.getPsiElement())) return;
       PsiElement nameIdentifier = problem.getPsiElement();
       if (nameIdentifier == null) return;
       PsiVariable psiVariable = PsiTreeUtil.getParentOfType(nameIdentifier, PsiVariable.class, false);
       if (psiVariable == null) return;
-      try {
-        psiVariable.normalizeDeclaration();
-        PsiUtil.setModifierProperty(psiVariable, PsiModifier.FINAL, true);
-      }
-      catch (IncorrectOperationException e) {
-        LOG.error(e);
-      }
+      psiVariable.normalizeDeclaration();
+      PsiUtil.setModifierProperty(psiVariable, PsiModifier.FINAL, true);
     }
   }
 
@@ -353,6 +349,7 @@ public class LocalCanBeFinal extends BaseJavaBatchLocalInspectionTool {
     panel.addCheckbox(InspectionsBundle.message("inspection.local.can.be.final.option1"), "REPORT_PARAMETERS");
     panel.addCheckbox(InspectionsBundle.message("inspection.local.can.be.final.option2"), "REPORT_CATCH_PARAMETERS");
     panel.addCheckbox(InspectionsBundle.message("inspection.local.can.be.final.option3"), "REPORT_FOREACH_PARAMETERS");
+    panel.addCheckbox(InspectionsBundle.message("inspection.local.can.be.final.option4"), "REPORT_IMPLICIT_FINALS");
     return panel;
   }
 

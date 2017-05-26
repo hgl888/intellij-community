@@ -36,7 +36,6 @@ import com.intellij.psi.xml.XmlProlog;
 import com.intellij.ui.components.JBList;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.lang.UrlClassLoader;
 import org.jetbrains.annotations.NotNull;
 
 import javax.script.ScriptEngine;
@@ -48,12 +47,8 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.*;
 
-/**
-* User: anna
-* Date: 4/8/13
-*/
 public class JavaFxInjectPageLanguageIntention extends PsiElementBaseIntentionAction {
-  public static final Logger LOG = Logger.getInstance("#" + JavaFxInjectPageLanguageIntention.class.getName());
+  public static final Logger LOG = Logger.getInstance(JavaFxInjectPageLanguageIntention.class);
 
   public static Set<String> getAvailableLanguages(Project project) {
     final List<ScriptEngineFactory> engineFactories = new ScriptEngineManager(composeUserClassLoader(project)).getEngineFactories();

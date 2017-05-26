@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.*;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.NullableFunction;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.containers.MultiMap;
@@ -69,18 +70,8 @@ public class DfaPsiUtil {
 
   @NotNull
   public static Nullness getElementNullability(@Nullable PsiType resultType, @Nullable PsiModifierListOwner owner) {
-    if (resultType != null) {
-      for (PsiAnnotation annotation : resultType.getAnnotations()) {
-        String qualifiedName = annotation.getQualifiedName();
-        NullableNotNullManager nnn = NullableNotNullManager.getInstance(annotation.getProject());
-        if (nnn.getNullables().contains(qualifiedName)) {
-          return Nullness.NULLABLE;
-        }
-        if (nnn.getNotNulls().contains(qualifiedName)) {
-          return Nullness.NOT_NULL;
-        }
-      }
-    }
+    Nullness x = getTypeNullability(resultType);
+    if (x != Nullness.UNKNOWN) return x;
 
     if (owner == null || resultType instanceof PsiPrimitiveType) {
       return Nullness.UNKNOWN;
@@ -103,21 +94,68 @@ public class DfaPsiUtil {
     if (PsiJavaPatterns.psiParameter().withParents(PsiParameterList.class, PsiLambdaExpression.class).accepts(owner)) {
       PsiLambdaExpression lambda = (PsiLambdaExpression)owner.getParent().getParent();
       int index = lambda.getParameterList().getParameterIndex((PsiParameter)owner);
-      Nullness nullness = inferLambdaParameterNullness(lambda, index);
-      if(nullness != Nullness.UNKNOWN) {
-        return nullness;
-      }
-      PsiMethod sam = LambdaUtil.getFunctionalInterfaceMethod(lambda.getFunctionalInterfaceType());
-      if (sam != null && index < sam.getParameterList().getParametersCount()) {
-        return getElementNullability(null, sam.getParameterList().getParameters()[index]);
-      }
+      return getFunctionalParameterNullability(lambda, index);
     }
 
     return Nullness.UNKNOWN;
   }
 
   @NotNull
-  private static Nullness inferLambdaParameterNullness(PsiLambdaExpression lambda, int parameterIndex) {
+  public static Nullness getTypeNullability(@Nullable PsiType type) {
+    if (type == null) return Nullness.UNKNOWN;
+    
+    Ref<Nullness> result = Ref.create(Nullness.UNKNOWN);
+    InheritanceUtil.processSuperTypes(type, true, eachType -> {
+      result.set(getTypeOwnNullability(result, eachType));
+      return result.get() == Nullness.UNKNOWN;
+    });
+    return result.get();
+  }
+
+  @NotNull
+  private static Nullness getTypeOwnNullability(Ref<Nullness> result, PsiType eachType) {
+    for (PsiAnnotation annotation : eachType.getAnnotations()) {
+      String qualifiedName = annotation.getQualifiedName();
+      NullableNotNullManager nnn = NullableNotNullManager.getInstance(annotation.getProject());
+      if (nnn.getNullables().contains(qualifiedName)) {
+        return Nullness.NULLABLE;
+      }
+      if (nnn.getNotNulls().contains(qualifiedName)) {
+        return Nullness.NOT_NULL;
+      }
+    }
+    return Nullness.UNKNOWN;
+  }
+
+  /**
+   * Returns the nullness of functional expression parameter
+   *
+   * @param function functional expression
+   * @param index parameter index
+   * @return nullness, defined by SAM parameter annotations or known otherwise
+   */
+  @NotNull
+  public static Nullness getFunctionalParameterNullability(PsiFunctionalExpression function, int index) {
+    Nullness nullness = inferLambdaParameterNullness(function, index);
+    if(nullness != Nullness.UNKNOWN) {
+      return nullness;
+    }
+    PsiClassType type = ObjectUtils.tryCast(function.getFunctionalInterfaceType(), PsiClassType.class);
+    PsiMethod sam = LambdaUtil.getFunctionalInterfaceMethod(type);
+    if (sam != null && index < sam.getParameterList().getParametersCount()) {
+      PsiParameter parameter = sam.getParameterList().getParameters()[index];
+      nullness = getElementNullability(null, parameter);
+      if(nullness != Nullness.UNKNOWN) {
+        return nullness;
+      }
+      PsiType parameterType = type.resolveGenerics().getSubstitutor().substitute(parameter.getType());
+      return getTypeNullability(parameterType);
+    }
+    return Nullness.UNKNOWN;
+  }
+
+  @NotNull
+  private static Nullness inferLambdaParameterNullness(PsiFunctionalExpression lambda, int parameterIndex) {
     PsiElement expression = lambda;
     PsiElement expressionParent = lambda.getParent();
     while(expressionParent instanceof PsiConditionalExpression || expressionParent instanceof PsiParenthesizedExpression) {
@@ -204,12 +242,12 @@ public class DfaPsiUtil {
     if (body == null) return Collections.emptySet();
     
     return CachedValuesManager.getCachedValue(constructor, new CachedValueProvider<Set<PsiField>>() {
-      @Nullable
+      @NotNull
       @Override
       public Result<Set<PsiField>> compute() {
         final PsiCodeBlock body = constructor.getBody();
         final Map<PsiField, Boolean> map = ContainerUtil.newHashMap();
-        final StandardDataFlowRunner dfaRunner = new StandardDataFlowRunner(false, false, false) {
+        final StandardDataFlowRunner dfaRunner = new StandardDataFlowRunner(false, false) {
 
           private boolean isCallExposingNonInitializedFields(Instruction instruction) {
             if (!(instruction instanceof MethodCallInstruction) ||
@@ -298,7 +336,7 @@ public class DfaPsiUtil {
     }
 
     return CachedValuesManager.getCachedValue(psiClass, new CachedValueProvider<MultiMap<PsiField, PsiExpression>>() {
-      @Nullable
+      @NotNull
       @Override
       public Result<MultiMap<PsiField, PsiExpression>> compute() {
         final Set<String> fieldNames = ContainerUtil.newHashSet();
@@ -336,29 +374,21 @@ public class DfaPsiUtil {
   }
 
   @Nullable
-  public static PsiCodeBlock getTopmostBlockInSameClass(@NotNull PsiElement position) {
-    PsiCodeBlock block = PsiTreeUtil.getParentOfType(position, PsiCodeBlock.class, false, PsiMember.class, PsiFile.class, PsiLambdaExpression.class);
-    if (block == null) {
-      return null;
-    }
-
-    PsiCodeBlock lastBlock = block;
-    while (true) {
-      block = PsiTreeUtil.getParentOfType(block, PsiCodeBlock.class, true, PsiMember.class, PsiFile.class, PsiLambdaExpression.class);
-      if (block == null) {
-        return lastBlock;
-      }
-      lastBlock = block;
-    }
+  public static PsiElement getTopmostBlockInSameClass(@NotNull PsiElement position) {
+    return JBIterable.
+      generate(position, PsiElement::getParent).
+      takeWhile(e -> !(e instanceof PsiMember || e instanceof PsiFile || e instanceof PsiLambdaExpression)).
+      filter(e -> e instanceof PsiCodeBlock || e instanceof PsiExpression && e.getParent() instanceof PsiLambdaExpression).
+      last();
   }
 
   @NotNull
   public static Collection<PsiExpression> getVariableAssignmentsInFile(@NotNull PsiVariable psiVariable,
                                                                        final boolean literalsOnly,
                                                                        final PsiElement place) {
-    final Ref<Boolean> modificationRef = Ref.create(Boolean.FALSE);
-    final PsiCodeBlock codeBlock = place == null? null : getTopmostBlockInSameClass(place);
-    final int placeOffset = codeBlock != null? place.getTextRange().getStartOffset() : 0;
+    Ref<Boolean> modificationRef = Ref.create(Boolean.FALSE);
+    PsiElement codeBlock = place == null? null : getTopmostBlockInSameClass(place);
+    int placeOffset = codeBlock != null? place.getTextRange().getStartOffset() : 0;
     PsiFile containingFile = psiVariable.getContainingFile();
     LocalSearchScope scope = new LocalSearchScope(new PsiElement[]{containingFile}, null, true);
     Collection<PsiReference> references = ReferencesSearch.search(psiVariable, scope).findAll();

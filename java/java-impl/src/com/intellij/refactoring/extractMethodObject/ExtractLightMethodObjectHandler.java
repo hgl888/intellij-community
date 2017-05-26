@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 
 public class ExtractLightMethodObjectHandler {
-  private static final Logger LOG = Logger.getInstance("#" + ExtractLightMethodObjectHandler.class.getName());
+  private static final Logger LOG = Logger.getInstance(ExtractLightMethodObjectHandler.class);
 
   public static class ExtractedData {
     private final String myGeneratedCallText;
@@ -69,7 +69,7 @@ public class ExtractLightMethodObjectHandler {
 
   @Nullable
   public static ExtractedData extractLightMethodObject(final Project project,
-                                                       final PsiFile file,
+                                                       @Nullable PsiElement originalContext,
                                                        @NotNull final PsiCodeFragment fragment,
                                                        final String methodName) throws PrepareFailedException {
     final PsiElementFactory elementFactory = JavaPsiFacade.getElementFactory(project);
@@ -81,13 +81,14 @@ public class ExtractLightMethodObjectHandler {
       return null;
     }
 
-    final PsiFile copy = PsiFileFactory.getInstance(project)
-      .createFileFromText(file.getName(), file.getFileType(), file.getText(), file.getModificationStamp(), false);
-
-    PsiElement originalContext = fragment.getContext();
     if (originalContext == null) {
       return null;
     }
+
+    PsiFile file = originalContext.getContainingFile();
+
+    final PsiFile copy = PsiFileFactory.getInstance(project)
+      .createFileFromText(file.getName(), file.getFileType(), file.getText(), file.getModificationStamp(), false);
 
     if (originalContext instanceof PsiKeyword && PsiModifier.PRIVATE.equals(originalContext.getText())) {
       final PsiNameIdentifierOwner identifierOwner = PsiTreeUtil.getParentOfType(originalContext, PsiNameIdentifierOwner.class);
@@ -108,7 +109,7 @@ public class ExtractLightMethodObjectHandler {
       }
     }
 
-    final PsiClass containingClass = PsiTreeUtil.getParentOfType(originalAnchor, PsiClass.class);
+    final PsiClass containingClass = PsiTreeUtil.getParentOfType(originalAnchor, PsiClass.class, false);
     if (containingClass == null) {
       return null;
     }
@@ -296,12 +297,12 @@ public class ExtractLightMethodObjectHandler {
     @NotNull
     @Override
     public String getVisibility() {
-      return PsiModifier.PUBLIC;
+      return PsiModifier.PACKAGE_LOCAL;
     }
 
     @Override
     public boolean isMakeStatic() {
-      return false;
+      return myProcessor.getExtractProcessor().isCanBeStatic() && !myProcessor.getExtractProcessor().getInputVariables().hasInstanceFields();
     }
 
     @Override

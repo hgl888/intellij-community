@@ -19,7 +19,6 @@ import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.vcs.VcsDataKeys;
 import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vcs.changes.TextRevisionNumber;
@@ -32,6 +31,8 @@ import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBViewport;
 import com.intellij.ui.components.labels.LinkLabel;
 import com.intellij.ui.components.labels.LinkListener;
+import com.intellij.ui.treeStructure.actions.CollapseAllAction;
+import com.intellij.ui.treeStructure.actions.ExpandAllAction;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.ThreeStateCheckBox;
@@ -53,6 +54,8 @@ import java.beans.PropertyChangeListener;
 import java.util.*;
 import java.util.List;
 
+import static com.intellij.openapi.actionSystem.IdeActions.ACTION_COLLAPSE_ALL;
+import static com.intellij.openapi.actionSystem.IdeActions.ACTION_EXPAND_ALL;
 import static com.intellij.util.containers.ContainerUtil.emptyList;
 import static java.util.stream.Collectors.toCollection;
 
@@ -60,6 +63,7 @@ public class PushLog extends JPanel implements DataProvider {
 
   private static final String CONTEXT_MENU = "Vcs.Push.ContextMenu";
   private static final String START_EDITING = "startEditing";
+  private static final String SPLITTER_PROPORTION = "Vcs.Push.Splitter.Proportion";
   private final ChangesBrowser myChangesBrowser;
   private final CheckboxTree myTree;
   private final MyTreeCellRenderer myTreeCellRenderer;
@@ -210,22 +214,28 @@ public class PushLog extends JPanel implements DataProvider {
     myTree.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0), START_EDITING);
     //override default tree behaviour.
     myTree.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "");
+    myTree.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), "");
     MyShowCommitInfoAction showCommitInfoAction = new MyShowCommitInfoAction();
     showCommitInfoAction.registerCustomShortcutSet(quickDocAction.getShortcutSet(), myTree);
+    ExpandAllAction expandAllAction = new ExpandAllAction(myTree);
+    expandAllAction.registerCustomShortcutSet(ActionManager.getInstance().getAction(ACTION_EXPAND_ALL).getShortcutSet(), myTree);
+    CollapseAllAction collapseAll = new CollapseAllAction(myTree);
+    collapseAll.registerCustomShortcutSet(ActionManager.getInstance().getAction(ACTION_COLLAPSE_ALL).getShortcutSet(), myTree);
 
     ToolTipManager.sharedInstance().registerComponent(myTree);
     PopupHandler.installPopupHandler(myTree, VcsLogActionPlaces.POPUP_ACTION_GROUP, CONTEXT_MENU);
 
     myChangesBrowser =
-      new ChangesBrowser(project, null, Collections.<Change>emptyList(), null, false, false, null, ChangesBrowser.MyUseCase.LOCAL_CHANGES,
+      new ChangesBrowser(project, null, Collections.emptyList(), null, false, false, null, ChangesBrowser.MyUseCase.LOCAL_CHANGES,
                          null);
     myChangesBrowser.getDiffAction().registerCustomShortcutSet(myChangesBrowser.getDiffAction().getShortcutSet(), myTree);
     final EditSourceForDialogAction editSourceAction = new EditSourceForDialogAction(myChangesBrowser);
     editSourceAction.registerCustomShortcutSet(CommonShortcuts.getEditSource(), myChangesBrowser);
     myChangesBrowser.addToolbarAction(editSourceAction);
+    myChangesBrowser.setMinimumSize(new Dimension(200, myChangesBrowser.getPreferredSize().height));
     setDefaultEmptyText();
 
-    Splitter splitter = new Splitter(false, 0.7f);
+    JBSplitter splitter = new JBSplitter(SPLITTER_PROPORTION, 0.7f);
     final JComponent syncStrategyPanel = myAllowSyncStrategy ? createStrategyPanel() : null;
     myScrollPane = new JBScrollPane(myTree) {
 
@@ -254,8 +264,9 @@ public class PushLog extends JPanel implements DataProvider {
 
     setLayout(new BorderLayout());
     add(splitter);
-    myTree.setMinimumSize(new Dimension(200, myTree.getPreferredSize().height));
+    myTree.setMinimumSize(new Dimension(400, myTree.getPreferredSize().height));
     myTree.setRowHeight(0);
+    myScrollPane.setMinimumSize(new Dimension(myTree.getMinimumSize().width, myScrollPane.getPreferredSize().height));
   }
 
   private class MyShowCommitInfoAction extends DumbAwareAction {

@@ -16,9 +16,9 @@
 package com.jetbrains.python.codeInsight;
 
 import com.intellij.psi.PsiElement;
-import com.jetbrains.python.psi.*;
 import com.intellij.psi.util.QualifiedName;
-import com.jetbrains.python.psi.resolve.QualifiedNameResolver;
+import com.jetbrains.python.psi.*;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -38,16 +38,16 @@ public abstract class PyPsiPath {
     @Nullable
     @Override
     public PsiElement resolve(PsiElement context) {
-      PyPsiFacade pyPsiFacade = PyPsiFacade.getInstance(context.getProject());
-      QualifiedNameResolver visitor = pyPsiFacade.qualifiedNameResolver(myQualifiedName).fromElement(context);
-      return visitor.firstResult();
+      final PyPsiFacade facade = PyPsiFacade.getInstance(context.getProject());
+      return facade.resolveQualifiedName(myQualifiedName, facade.createResolveContextFromFoothold(context))
+        .stream().findFirst().orElse(null);
     }
   }
 
   public static class ToClassQName extends PyPsiPath {
     private final QualifiedName myQualifiedName;
 
-    public ToClassQName(String qualifiedName) {
+    public ToClassQName(@NotNull final String qualifiedName) {
       myQualifiedName = QualifiedName.fromDottedString(qualifiedName);
     }
 

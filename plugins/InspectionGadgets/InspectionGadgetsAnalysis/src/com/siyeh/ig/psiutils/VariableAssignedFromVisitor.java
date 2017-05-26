@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2015 Dave Griffith, Bas Leijdekkers
+ * Copyright 2003-2016 Dave Griffith, Bas Leijdekkers
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,12 @@
  */
 package com.siyeh.ig.psiutils;
 
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.psi.*;
 import org.jetbrains.annotations.NotNull;
 
 class VariableAssignedFromVisitor extends JavaRecursiveElementWalkingVisitor {
+  private static final Logger LOG = Logger.getInstance(VariableAssignedFromVisitor.class);
 
   private boolean assignedFrom = false;
 
@@ -31,58 +33,28 @@ class VariableAssignedFromVisitor extends JavaRecursiveElementWalkingVisitor {
   }
 
   @Override
-  public void visitElement(@NotNull PsiElement element) {
-    if (!assignedFrom) {
-      super.visitElement(element);
-    }
+  public void visitFile(PsiFile file) {
+    LOG.error("Unexpectedly visited PsiFile "+file+" when tracing variable "+variable);
+    stopWalking();
   }
 
   @Override
-  public void visitAssignmentExpression(
-    @NotNull PsiAssignmentExpression assignment) {
-    if (assignedFrom) {
-      return;
-    }
+  public void visitAssignmentExpression(@NotNull PsiAssignmentExpression assignment) {
     super.visitAssignmentExpression(assignment);
     final PsiExpression arg = assignment.getRExpression();
     if (VariableAccessUtils.mayEvaluateToVariable(arg, variable)) {
       assignedFrom = true;
-    }
-  }
-
-  @Override
-  public void visitDeclarationStatement(
-    @NotNull PsiDeclarationStatement statement) {
-    if (assignedFrom) {
-      return;
-    }
-    super.visitDeclarationStatement(statement);
-    final PsiElement[] declaredElements = statement.getDeclaredElements();
-    for (PsiElement declaredElement : declaredElements) {
-      if (declaredElement instanceof PsiVariable) {
-        final PsiVariable declaredVariable =
-          (PsiVariable)declaredElement;
-        final PsiExpression initializer =
-          declaredVariable.getInitializer();
-        if (initializer != null &&
-            VariableAccessUtils.mayEvaluateToVariable(initializer,
-                                                      variable)) {
-          assignedFrom = true;
-          return;
-        }
-      }
+      stopWalking();
     }
   }
 
   @Override
   public void visitVariable(@NotNull PsiVariable var) {
-    if (assignedFrom) {
-      return;
-    }
     super.visitVariable(var);
-    final PsiExpression arg = var.getInitializer();
-    if (VariableAccessUtils.mayEvaluateToVariable(arg, variable)) {
+    final PsiExpression initializer = var.getInitializer();
+    if (VariableAccessUtils.mayEvaluateToVariable(initializer, variable)) {
       assignedFrom = true;
+      stopWalking();
     }
   }
 

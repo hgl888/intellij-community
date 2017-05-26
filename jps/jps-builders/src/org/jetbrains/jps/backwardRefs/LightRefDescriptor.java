@@ -26,7 +26,9 @@ import java.io.IOException;
 
 import static org.jetbrains.jps.backwardRefs.LightRef.*;
 
-final class LightRefDescriptor implements KeyDescriptor<LightRef>, DifferentSerializableBytesImplyNonEqualityPolicy {
+public final class LightRefDescriptor implements KeyDescriptor<LightRef>, DifferentSerializableBytesImplyNonEqualityPolicy {
+  public static final LightRefDescriptor INSTANCE = new LightRefDescriptor();
+
   @Override
   public int getHashCode(LightRef value) {
     return value.hashCode();
@@ -48,6 +50,8 @@ final class LightRefDescriptor implements KeyDescriptor<LightRef>, DifferentSeri
     switch (type) {
       case CLASS_MARKER:
         return new JavaLightClassRef(DataInputOutputUtil.readINT(in));
+      case ANONYMOUS_CLASS_MARKER:
+        return new JavaLightAnonymousClassRef(DataInputOutputUtil.readINT(in));
       case METHOD_MARKER:
         return new JavaLightMethodRef(DataInputOutputUtil.readINT(in), DataInputOutputUtil.readINT(in), DataInputOutputUtil.readINT(in));
       case FIELD_MARKER:

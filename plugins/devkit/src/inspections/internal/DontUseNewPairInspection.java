@@ -17,9 +17,11 @@ package org.jetbrains.idea.devkit.inspections.internal;
 
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
-import org.jetbrains.annotations.Nls;
+import com.intellij.psi.util.PsiUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.idea.devkit.inspections.DevKitInspectionBase;
 import org.jetbrains.idea.devkit.inspections.quickfix.ChangeToPairCreateQuickFix;
 
 import java.util.Arrays;
@@ -27,7 +29,7 @@ import java.util.Arrays;
 /**
  * @author Konstantin Bulenkov
  */
-public class DontUseNewPairInspection extends InternalInspection {
+public class DontUseNewPairInspection extends DevKitInspectionBase {
   private static final String PAIR_FQN = "com.intellij.openapi.util.Pair";
 
   @Override
@@ -41,7 +43,7 @@ public class DontUseNewPairInspection extends InternalInspection {
             && ((PsiClassType)type).rawType().equalsToText(PAIR_FQN)
             && params != null
             && expression.getArgumentList() != null
-            //&& !PsiUtil.getLanguageLevel(expression).isAtLeast(LanguageLevel.JDK_1_7) //diamonds
+            && !PsiUtil.getLanguageLevel(expression).isAtLeast(LanguageLevel.JDK_1_7) //diamonds
         ) {
           final PsiType[] types = ((PsiClassType)type).getParameters();
           if (Arrays.equals(types, params.getExpressionTypes())) {

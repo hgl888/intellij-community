@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,12 +41,10 @@ import java.util.*;
 public final class VcsConfiguration implements PersistentStateComponent<VcsConfiguration> {
   public final static long ourMaximumFileForBaseRevisionSize = 500 * 1000;
 
-  @NonNls static final String VALUE_ATTR = "value";
-
   @NonNls public static final String PATCH = "patch";
   @NonNls public static final String DIFF = "diff";
 
-  public boolean OFFER_MOVE_TO_ANOTHER_CHANGELIST_ON_PARTIAL_COMMIT = true;
+  public boolean OFFER_MOVE_TO_ANOTHER_CHANGELIST_ON_PARTIAL_COMMIT = false;
   public boolean CHECK_CODE_SMELLS_BEFORE_PROJECT_COMMIT = !PlatformUtils.isPyCharm() && !PlatformUtils.isRubyMine();
   public boolean CHECK_CODE_CLEANUP_BEFORE_PROJECT_COMMIT = false;
   public boolean CHECK_NEW_TODO = true;
@@ -59,15 +57,17 @@ public final class VcsConfiguration implements PersistentStateComponent<VcsConfi
   public boolean PERFORM_ROLLBACK_IN_BACKGROUND = false;
   public volatile boolean CHECK_LOCALLY_CHANGED_CONFLICTS_IN_BACKGROUND = false;
   @OptionTag(tag = "confirmMoveToFailedCommit", nameAttribute = "")
-  public VcsShowConfirmationOption.Value MOVE_TO_FAILED_COMMIT_CHANGELIST = VcsShowConfirmationOption.Value.SHOW_CONFIRMATION;
+  public VcsShowConfirmationOption.Value MOVE_TO_FAILED_COMMIT_CHANGELIST = VcsShowConfirmationOption.Value.DO_NOTHING_SILENTLY;
   @OptionTag(tag = "confirmRemoveEmptyChangelist", nameAttribute = "")
   public VcsShowConfirmationOption.Value REMOVE_EMPTY_INACTIVE_CHANGELISTS = VcsShowConfirmationOption.Value.SHOW_CONFIRMATION;
   public int CHANGED_ON_SERVER_INTERVAL = 60;
   public boolean SHOW_ONLY_CHANGED_IN_SELECTION_DIFF = true;
-  public boolean CHECK_COMMIT_MESSAGE_SPELLING = true;
   public String DEFAULT_PATCH_EXTENSION = PATCH;
+  public boolean USE_CUSTOM_SHELF_PATH = false;
+  public String CUSTOM_SHELF_PATH = null;
+  public boolean MOVE_SHELVES = false;
   // asked only for non-DVCS
-  public boolean INCLUDE_TEXT_INTO_SHELF = false;
+  public boolean INCLUDE_TEXT_INTO_SHELF = true;
   public Boolean SHOW_PATCH_IN_EXPLORER = null;
   public boolean SHOW_FILE_HISTORY_DETAILS = true;
   public boolean SHOW_DIRTY_RECURSIVELY = false;
@@ -75,10 +75,10 @@ public final class VcsConfiguration implements PersistentStateComponent<VcsConfi
   public int MAXIMUM_HISTORY_ROWS = 1000;
   public String UPDATE_FILTER_SCOPE_NAME = null;
   public boolean USE_COMMIT_MESSAGE_MARGIN = true;
-  public int COMMIT_MESSAGE_MARGIN_SIZE = 72;
   public boolean WRAP_WHEN_TYPING_REACHES_RIGHT_MARGIN = false;
   public boolean SHOW_UNVERSIONED_FILES_WHILE_COMMIT = true;
   public boolean LOCAL_CHANGES_DETAILS_PREVIEW_SHOWN = false;
+  public boolean SHELVE_DETAILS_PREVIEW_SHOWN = false;
 
   @AbstractCollection(surroundWithTag = false, elementTag = "path")
   @Tag("ignored-roots")
@@ -142,10 +142,8 @@ public final class VcsConfiguration implements PersistentStateComponent<VcsConfi
   public boolean UPDATE_GROUP_BY_CHANGELIST = false;
   public boolean UPDATE_FILTER_BY_SCOPE = false;
   public boolean SHOW_FILE_HISTORY_AS_TREE = false;
-  @Deprecated
-  public float FILE_HISTORY_SPLITTER_PROPORTION = 0.6f; // to remove after 2016.3
+
   private static final int MAX_STORED_MESSAGES = 25;
-  @NonNls static final String MESSAGE_ELEMENT_NAME = "MESSAGE";
 
   private final PerformInBackgroundOption myUpdateOption = new UpdateInBackgroundOption();
   private final PerformInBackgroundOption myCommitOption = new CommitInBackgroundOption();
@@ -221,9 +219,6 @@ public final class VcsConfiguration implements PersistentStateComponent<VcsConfi
     public boolean shouldStartInBackground() {
       return PERFORM_UPDATE_IN_BACKGROUND;
     }
-
-    @Override
-    public void processSentToBackground() {}
   }
 
   private class CommitInBackgroundOption implements PerformInBackgroundOption {
@@ -231,9 +226,6 @@ public final class VcsConfiguration implements PersistentStateComponent<VcsConfi
     public boolean shouldStartInBackground() {
       return PERFORM_COMMIT_IN_BACKGROUND;
     }
-
-    @Override
-    public void processSentToBackground() {}
   }
 
   private class EditInBackgroundOption implements PerformInBackgroundOption {
@@ -303,4 +295,13 @@ public final class VcsConfiguration implements PersistentStateComponent<VcsConfi
     IGNORED_UNREGISTERED_ROOTS = unregisteredRoots;
   }
 
+  public void removeFromIgnoredUnregisteredRoots(@NotNull Collection<String> roots) {
+    List<String> unregisteredRoots = new ArrayList<>(IGNORED_UNREGISTERED_ROOTS);
+    unregisteredRoots.removeAll(roots);
+    IGNORED_UNREGISTERED_ROOTS = unregisteredRoots;
+  }
+
+  public boolean isIgnoredUnregisteredRoot(@NotNull String root) {
+    return IGNORED_UNREGISTERED_ROOTS.contains(root);
+  }
 }

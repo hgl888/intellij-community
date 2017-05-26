@@ -14,14 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: max
- * Date: May 13, 2002
- * Time: 9:51:34 PM
- * To change template for new class use
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.openapi.editor.actions;
 
 import com.intellij.openapi.actionSystem.CommonDataKeys;
@@ -32,6 +24,7 @@ import com.intellij.openapi.editor.actionSystem.EditorAction;
 import com.intellij.openapi.editor.actionSystem.EditorActionManager;
 import com.intellij.openapi.editor.actionSystem.EditorWriteActionHandler;
 import com.intellij.openapi.editor.ex.EditorEx;
+import com.intellij.openapi.editor.ex.util.EditorUIUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
@@ -70,7 +63,7 @@ public class TabAction extends EditorAction {
   }
 
   private static void insertTabAtCaret(Editor editor, @NotNull Caret caret, @Nullable Project project) {
-    MacUIUtil.hideCursor();
+    EditorUIUtil.hideCursorInEditor(editor);
     int columnNumber;
     if (caret.hasSelection()) {
       columnNumber = editor.visualToLogicalPosition(caret.getSelectionStartPosition()).column;

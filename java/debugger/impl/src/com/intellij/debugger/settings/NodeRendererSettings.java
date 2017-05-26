@@ -41,7 +41,6 @@ import com.intellij.psi.CommonClassNames;
 import com.intellij.psi.PsiElement;
 import com.intellij.util.EventDispatcher;
 import com.intellij.util.IncorrectOperationException;
-import com.intellij.util.containers.InternalIterator;
 import com.sun.jdi.Value;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
@@ -126,8 +125,14 @@ public class NodeRendererSettings implements PersistentStateComponent<Element> {
   @SuppressWarnings({"HardCodedStringLiteral"})
   public Element getState()  {
     final Element element = new Element("NodeRendererSettings");
-    JDOMExternalizerUtil.writeField(element, HEX_VIEW_ENABLED, myHexRenderer.isEnabled()? "true" : "false");
-    JDOMExternalizerUtil.writeField(element, ALTERNATIVE_COLLECTION_VIEW_ENABLED, areAlternateCollectionViewsEnabled()? "true" : "false");
+    if (myHexRenderer.isEnabled()) {
+      JDOMExternalizerUtil.writeField(element, HEX_VIEW_ENABLED, "true");
+    }
+    if (!areAlternateCollectionViewsEnabled()) {
+      JDOMExternalizerUtil
+        .writeField(element, ALTERNATIVE_COLLECTION_VIEW_ENABLED, "false");
+    }
+
     try {
       element.addContent(writeRenderer(myArrayRenderer));
       element.addContent(writeRenderer(myToStringRenderer));
@@ -158,9 +163,7 @@ public class NodeRendererSettings implements PersistentStateComponent<Element> {
       setAlternateCollectionViewsEnabled("true".equalsIgnoreCase(alternativeEnabled));
     }
 
-    final List rendererElements = root.getChildren(RENDERER_TAG);
-    for (final Object rendererElement : rendererElements) {
-      final Element elem = (Element)rendererElement;
+    for (final Element elem : root.getChildren(RENDERER_TAG)) {
       final String id = elem.getAttributeValue(RENDERER_ID);
       if (id == null) {
         continue;
@@ -236,12 +239,9 @@ public class NodeRendererSettings implements PersistentStateComponent<Element> {
     final List<NodeRenderer> allRenderers = new ArrayList<>();
 
     // user defined renderers must come first
-    myCustomRenderers.iterateRenderers(new InternalIterator<NodeRenderer>() {
-      @Override
-      public boolean visit(final NodeRenderer renderer) {
-        allRenderers.add(renderer);
-        return true;
-      }
+    myCustomRenderers.iterateRenderers(renderer -> {
+      allRenderers.add(renderer);
+      return true;
     });
 
     // plugins registered renderers come after that

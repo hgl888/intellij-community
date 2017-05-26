@@ -43,7 +43,13 @@ import java.io.IOException;
 public class JavaLanguageLevelPusher implements FilePropertyPusher<LanguageLevel> {
 
   public static void pushLanguageLevel(@NotNull final Project project) {
-    PushedFilePropertiesUpdater.getInstance(project).pushAll(new JavaLanguageLevelPusher());
+    PushedFilePropertiesUpdater instance = PushedFilePropertiesUpdater.getInstance(project);
+    FilePropertyPusher[] extensions = EP_NAME.getExtensions();
+    for (FilePropertyPusher pusher : extensions) {
+      if (pusher instanceof JavaLanguageLevelPusher) {
+        instance.pushAll(pusher);
+      }
+    }
   }
 
   @Override
@@ -106,6 +112,11 @@ public class JavaLanguageLevelPusher implements FilePropertyPusher<LanguageLevel
     final DataOutputStream oStream = PERSISTENCE.writeAttribute(fileOrDir);
     DataInputOutputUtil.writeINT(oStream, level.ordinal());
     oStream.close();
+
+    // Todo: GwtLanguageLevelPusher changes java language level for single files without firing filePropertiesChanged
+    // so code below doesn't work.
+    // Uncomment it and remove older code once the problem is fixed
+    //PushedFilePropertiesUpdater.getInstance(project).filePropertiesChanged(fileOrDir, f -> isJavaLike(f.getFileType()));
 
     for (VirtualFile child : fileOrDir.getChildren()) {
       if (!child.isDirectory() && isJavaLike(child.getFileType())) {

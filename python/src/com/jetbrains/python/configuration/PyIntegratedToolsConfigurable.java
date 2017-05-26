@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
-import com.intellij.openapi.roots.ContentIterator;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -63,9 +62,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * User: catherine
- */
 public class PyIntegratedToolsConfigurable implements SearchableConfigurable {
   private JPanel myMainPanel;
   private JComboBox myTestRunnerComboBox;
@@ -144,12 +140,6 @@ public class PyIntegratedToolsConfigurable implements SearchableConfigurable {
                                           createQuickFix(sdk, facetErrorPanel, PyNames.NOSE_TEST));
             }
           }
-          else if (PythonTestConfigurationsModel.PYTHONS_ATTEST_NAME.equals(selectedItem)) {
-            if (!VFSTestFrameworkListener.getInstance().isAtTestInstalled(sdk)) {
-              return new ValidationResult(PyBundle.message("runcfg.testing.no.test.framework", "attest"),
-                                          createQuickFix(sdk, facetErrorPanel, PyNames.AT_TEST));
-            }
-          }
         }
         return ValidationResult.OK;
       }
@@ -174,7 +164,7 @@ public class PyIntegratedToolsConfigurable implements SearchableConfigurable {
             }
           }
         });
-        ui.install(Collections.singletonList(new PyRequirement(name)), Collections.<String>emptyList());
+        ui.install(Collections.singletonList(new PyRequirement(name)), Collections.emptyList());
       }
     };
   }
@@ -237,14 +227,11 @@ public class PyIntegratedToolsConfigurable implements SearchableConfigurable {
     }
     if (analyzeDoctest.isSelected() != myDocumentationSettings.isAnalyzeDoctest()) {
       final List<VirtualFile> files = Lists.newArrayList();
-      ProjectRootManager.getInstance(myProject).getFileIndex().iterateContent(new ContentIterator() {
-        @Override
-        public boolean processFile(VirtualFile fileOrDir) {
-          if (!fileOrDir.isDirectory() && PythonFileType.INSTANCE.getDefaultExtension().equals(fileOrDir.getExtension())) {
-            files.add(fileOrDir);
-          }
-          return true;
+      ProjectRootManager.getInstance(myProject).getFileIndex().iterateContent(fileOrDir -> {
+        if (!fileOrDir.isDirectory() && PythonFileType.INSTANCE.getDefaultExtension().equals(fileOrDir.getExtension())) {
+          files.add(fileOrDir);
         }
+        return true;
       });
       FileContentUtil.reparseFiles(myProject, Lists.newArrayList(files), false);
     }
@@ -263,14 +250,11 @@ public class PyIntegratedToolsConfigurable implements SearchableConfigurable {
 
   public void reparseFiles(final List<String> extensions) {
     final List<VirtualFile> filesToReparse = Lists.newArrayList();
-    ProjectRootManager.getInstance(myProject).getFileIndex().iterateContent(new ContentIterator() {
-      @Override
-      public boolean processFile(VirtualFile fileOrDir) {
-        if (!fileOrDir.isDirectory() && extensions.contains(fileOrDir.getExtension())) {
-          filesToReparse.add(fileOrDir);
-        }
-        return true;
+    ProjectRootManager.getInstance(myProject).getFileIndex().iterateContent(fileOrDir -> {
+      if (!fileOrDir.isDirectory() && extensions.contains(fileOrDir.getExtension())) {
+        filesToReparse.add(fileOrDir);
       }
+      return true;
     });
     FileContentUtilCore.reparseFiles(filesToReparse);
 
@@ -289,10 +273,6 @@ public class PyIntegratedToolsConfigurable implements SearchableConfigurable {
     txtIsRst.setSelected(ReSTService.getInstance(myModule).txtIsRst());
     analyzeDoctest.setSelected(myDocumentationSettings.isAnalyzeDoctest());
     myRequirementsPathField.setText(getRequirementsPath());
-  }
-
-  @Override
-  public void disposeUIResources() {
   }
 
   @NotNull

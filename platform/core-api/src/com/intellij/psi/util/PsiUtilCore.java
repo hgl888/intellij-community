@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import com.intellij.lang.ASTNode;
 import com.intellij.lang.FileASTNode;
 import com.intellij.lang.Language;
 import com.intellij.navigation.ItemPresentation;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Attachment;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -29,7 +29,6 @@ import com.intellij.openapi.fileTypes.FileTypeRegistry;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.FileIndexFacade;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -515,7 +514,7 @@ public class PsiUtilCore {
       append(" length=").append(file.getLength());
     sb.append("\nproject=").append(project.getName()).
       append(" default=").append(project.isDefault()).
-      append(" open=").append(project.isOpen());;
+      append(" open=").append(project.isOpen());
     sb.append("\nfileType=").append(fileType.getName()).append("/").append(fileType.getClass().getName());
     sb.append("\nisIgnored=").append(ignored);
     sb.append(" underIgnored=").append(indexFacade.isUnderIgnored(file));
@@ -587,12 +586,7 @@ public class PsiUtilCore {
   }
 
   public static Project getProjectInReadAction(@NotNull final PsiElement element) {
-    return ApplicationManager.getApplication().runReadAction(new Computable<Project>() {
-      @Override
-      public Project compute() {
-        return element.getProject();
-      }
-    });
+    return ReadAction.compute(() -> element.getProject());
   }
 
   @Contract("null -> null;!null -> !null")

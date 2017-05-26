@@ -24,10 +24,7 @@ import com.intellij.openapi.util.VolatileNullableLazyValue;
 import com.intellij.util.containers.ContainerUtil;
 import gnu.trove.THashSet;
 import org.jdom.Element;
-import org.jetbrains.annotations.NonNls;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.TestOnly;
+import org.jetbrains.annotations.*;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
@@ -37,6 +34,7 @@ import java.util.concurrent.ConcurrentMap;
  * A type of item with a distinct highlighting in an editor or in other views.
  */
 public final class TextAttributesKey implements Comparable<TextAttributesKey> {
+  private static final String TEMP_PREFIX = "TEMP::";
   private static final Logger LOG = Logger.getInstance(TextAttributesKey.class);
   
   private static final TextAttributes NULL_ATTRIBUTES = new TextAttributes();
@@ -164,6 +162,20 @@ public final class TextAttributesKey implements Comparable<TextAttributesKey> {
     return key;
   }
 
+  /**
+   * Registers a temp text attribute key with the specified identifier and default attributes.
+   * The attribute of the temp attribute key is not serialized and not copied while TextAttributesScheme
+   * manipulations.
+   *
+   * @param externalName      the unique identifier of the key.
+   * @param defaultAttributes the default text attributes associated with the key.
+   * @return the new key instance, or an existing instance if the key with the same
+   *         identifier was already registered.
+   */
+  @NotNull
+  public static TextAttributesKey createTempTextAttributesKey(@NonNls @NotNull String externalName, TextAttributes defaultAttributes) {
+    return createTextAttributesKey(TEMP_PREFIX + externalName, defaultAttributes);
+  }
 
   /**
    * Registers a text attribute key with the specified identifier and a fallback key. If text attributes for the key are not defined in
@@ -172,7 +184,7 @@ public final class TextAttributesKey implements Comparable<TextAttributesKey> {
    * A can depend on key B which in turn can depend on key C. So if text attributes neither for A nor for B are found, they will be
    * acquired by the key C.
    * <p>Fallback keys can be used from any place including language's own definitions. Note that there is a common set of keys called
-   * <code>DefaultLanguageHighlighterColors</code> which can be used as a base. Scheme designers are supposed to set colors for these
+   * {@code DefaultLanguageHighlighterColors} which can be used as a base. Scheme designers are supposed to set colors for these
    * keys primarily and using them guarantees that most (if not all) text attributes will be shown correctly for the language
    * regardless of a color scheme.
    *
@@ -196,7 +208,7 @@ public final class TextAttributesKey implements Comparable<TextAttributesKey> {
   public void setFallbackAttributeKey(@Nullable TextAttributesKey fallbackAttributeKey) {
     myFallbackAttributeKey = fallbackAttributeKey;
     if (fallbackAttributeKey != null) {
-      checkDependencies(fallbackAttributeKey, new THashSet<TextAttributesKey>());
+      checkDependencies(fallbackAttributeKey, new THashSet<>());
     }
   }
   
@@ -205,6 +217,10 @@ public final class TextAttributesKey implements Comparable<TextAttributesKey> {
     if (ourRegistry.containsKey(externalName)) {
       ourRegistry.remove(externalName);
     }
+  }
+
+  public static boolean isTemp(@NotNull TextAttributesKey key) {
+    return key.getExternalName().startsWith(TEMP_PREFIX);
   }
 
   public interface TextAttributeKeyDefaultsProvider {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,16 +26,15 @@ import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.fileEditor.*;
-import com.intellij.openapi.fileEditor.impl.LoadTextUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.ListPopup;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.vfs.VirtualFileAdapter;
+import com.intellij.openapi.vfs.VirtualFileListener;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.openapi.vfs.VirtualFilePropertyEvent;
 import com.intellij.openapi.vfs.encoding.ChangeFileEncodingAction;
@@ -49,6 +48,7 @@ import com.intellij.openapi.wm.StatusBarWidget;
 import com.intellij.ui.ClickListener;
 import com.intellij.ui.awt.RelativePoint;
 import com.intellij.util.Alarm;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -97,15 +97,6 @@ public class EncodingPanel extends EditorBasedWidget implements StatusBarWidget.
     myComponent.setBorder(WidgetBorder.WIDE);
   }
 
-  @Nullable("returns null if charset set cannot be determined from content")
-  private static Charset cachedCharsetFromContent(final VirtualFile virtualFile) {
-    if (virtualFile == null) return null;
-    final Document document = FileDocumentManager.getInstance().getDocument(virtualFile);
-    if (document == null) return null;
-
-    return EncodingManager.getInstance().getCachedCharsetFromContent(document);
-  }
-
   @Override
   public void selectionChanged(@NotNull FileEditorManagerEvent event) {
     if (ApplicationManager.getApplication().isUnitTestMode()) return;
@@ -151,7 +142,7 @@ public class EncodingPanel extends EditorBasedWidget implements StatusBarWidget.
         updateForDocument(document);
       }
     }, this);
-    ApplicationManager.getApplication().getMessageBus().connect(this).subscribe(VirtualFileManager.VFS_CHANGES, new BulkVirtualFileListenerAdapter(new VirtualFileAdapter() {
+    ApplicationManager.getApplication().getMessageBus().connect(this).subscribe(VirtualFileManager.VFS_CHANGES, new BulkVirtualFileListenerAdapter(new VirtualFileListener() {
       @Override
       public void propertyChanged(@NotNull VirtualFilePropertyEvent event) {
         if (VirtualFile.PROP_ENCODING.equals(event.getPropertyName())) {
@@ -160,7 +151,7 @@ public class EncodingPanel extends EditorBasedWidget implements StatusBarWidget.
       }
     }));
 
-    EditorFactory.getInstance().getEventMulticaster().addDocumentListener(new DocumentAdapter() {
+    EditorFactory.getInstance().getEventMulticaster().addDocumentListener(new DocumentListener() {
       @Override
       public void documentChanged(DocumentEvent e) {
         Document document = e.getDocument();
@@ -218,52 +209,33 @@ public class EncodingPanel extends EditorBasedWidget implements StatusBarWidget.
 
       VirtualFile file = getSelectedFile();
       actionEnabled = false;
-      String charsetName = null;
-      Pair<Charset, String> check = null;
-
-      if (file != null) {
-        check = EncodingUtil.checkSomeActionEnabled(file);
-        Charset charset = null;
-
-        if (LoadTextUtil.wasCharsetDetectedFromBytes(file) != null) {
-          charset = cachedCharsetFromContent(file);
-        }
-
-        if (charset == null) {
-          charset = file.getCharset();
-        }
-
-        actionEnabled = check == null || check.second == null;
-
-        if (!actionEnabled) {
-          charset = check.first;
-        }
-
-        if (charset != null) {
-          charsetName = charset.displayName();
-        }
-      }
-
-      if (charsetName == null) {
-        charsetName = file != null ? "n/a" : "";
-      }
-
+      String charsetName;
       String toolTipText;
 
-      if (actionEnabled) {
-        toolTipText = String.format(
-          "File Encoding%n%s", charsetName);
-
-        myComponent.setForeground(UIUtil.getActiveTextColor());
-        myComponent.setTextAlignment(Component.LEFT_ALIGNMENT);
+      if (file == null) {
+        toolTipText = "";
+        charsetName = "";
       }
       else {
-        String failReason = check == null ? "" : check.second;
-        toolTipText = String.format("File encoding is disabled%n%s",
-                                    failReason);
+        Pair<Charset, String> check = EncodingUtil.checkSomeActionEnabled(file);
+        String failReason = check == null ? null : check.second;
+        actionEnabled = failReason == null;
 
-        myComponent.setForeground(UIUtil.getInactiveTextColor());
-        myComponent.setTextAlignment(Component.CENTER_ALIGNMENT);
+        Charset charset = ObjectUtils.notNull(check == null ? null : check.first, file.getCharset());
+        charsetName = ObjectUtils.notNull(charset.displayName(), "n/a");
+
+        if (failReason == null) {
+          toolTipText = "File Encoding: "+charsetName;
+
+          myComponent.setForeground(UIUtil.getActiveTextColor());
+          myComponent.setTextAlignment(Component.LEFT_ALIGNMENT);
+        }
+        else {
+          toolTipText = "File encoding is disabled because\n"+failReason;
+
+          myComponent.setForeground(UIUtil.getInactiveTextColor());
+          myComponent.setTextAlignment(Component.CENTER_ALIGNMENT);
+        }
       }
 
       myComponent.setToolTipText(toolTipText);

@@ -26,6 +26,7 @@ import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
+import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.QualifiedName;
@@ -34,10 +35,13 @@ import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.python.codeInsight.PyCodeInsightSettings;
 import com.jetbrains.python.documentation.docstrings.DocStringUtil;
+import com.jetbrains.python.documentation.doctest.PyDocstringFile;
 import com.jetbrains.python.formatter.PyBlock;
 import com.jetbrains.python.formatter.PyCodeStyleSettings;
 import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.resolve.QualifiedNameFinder;
+import com.jetbrains.python.pyi.PyiFile;
+import com.jetbrains.python.pyi.PyiUtil;
 import com.jetbrains.python.sdk.PythonSdkType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -56,7 +60,7 @@ import static com.jetbrains.python.psi.PyUtil.sure;
  * Date: Apr 24, 2009 3:17:59 AM
  */
 public class AddImportHelper {
-  private static final Logger LOG = Logger.getInstance("#" + AddImportHelper.class.getName());
+  private static final Logger LOG = Logger.getInstance(AddImportHelper.class);
 
   // normal imports go first, then "from" imports
   private static final Comparator<PyImportStatementBase> IMPORT_TYPE_COMPARATOR = (import1, import2) -> {
@@ -271,7 +275,7 @@ public class AddImportHelper {
       return UNRESOLVED_SYMBOL_PRIORITY;
     }
 
-    final PsiFileSystemItem resolvedFileOrDir;
+    PsiFileSystemItem resolvedFileOrDir;
     if (resolved instanceof PsiDirectory) {
       resolvedFileOrDir = (PsiFileSystemItem)resolved;
     }
@@ -281,6 +285,10 @@ public class AddImportHelper {
     }
     else {
       resolvedFileOrDir = resolved.getContainingFile();
+    }
+
+    if (resolvedFileOrDir instanceof PyiFile) {
+      resolvedFileOrDir = as(PyiUtil.getOriginalElement((PyiFile)resolvedFileOrDir), PsiFileSystemItem.class); 
     }
     
     if (resolvedFileOrDir == null) {
@@ -398,14 +406,24 @@ public class AddImportHelper {
                                             @Nullable PsiElement anchor) {
     try {
       final PyImportStatementBase parentImport = PsiTreeUtil.getParentOfType(anchor, PyImportStatementBase.class, false);
+      final InjectedLanguageManager manager = InjectedLanguageManager.getInstance(file.getProject());
+      final PsiLanguageInjectionHost injectionHost = manager.getInjectionHost(file);
+      final boolean insideDoctest = file instanceof PyDocstringFile &&
+                                    injectionHost != null &&
+                                    DocStringUtil.getParentDefinitionDocString(injectionHost) == injectionHost;
+
       final PsiElement insertParent;
       if (parentImport != null && parentImport.getContainingFile() == file) {
         insertParent = parentImport.getParent();
       }
+      else if (injectionHost != null && !insideDoctest) {
+        insertParent = manager.getTopLevelFile(file);
+      }
       else {
         insertParent = file;
       }
-      if (InjectedLanguageManager.getInstance(file.getProject()).isInjectedFragment(file)) {
+      
+      if (insideDoctest) {
         final PsiElement element = insertParent.addBefore(newImport, getInsertPosition(insertParent, newImport, priority));
         PsiElement whitespace = element.getNextSibling();
         if (!(whitespace instanceof PsiWhiteSpace)) {
@@ -413,13 +431,11 @@ public class AddImportHelper {
         }
         insertParent.addBefore(whitespace, element);
       }
+      else if (anchor instanceof PyImportStatementBase) {
+        insertParent.addAfter(newImport, anchor);
+      }
       else {
-        if (anchor instanceof PyImportStatementBase) {
-          insertParent.addAfter(newImport, anchor);
-        }
-        else {
-          insertParent.addBefore(newImport, getInsertPosition(insertParent, newImport, priority));
-        }
+        insertParent.addBefore(newImport, getInsertPosition(insertParent, newImport, priority));
       }
     }
     catch (IncorrectOperationException e) {
@@ -462,9 +478,11 @@ public class AddImportHelper {
           }
         }
         final PyElementGenerator generator = PyElementGenerator.getInstance(file.getProject());
-        final PyImportElement importElement = generator.createImportElement(LanguageLevel.forElement(file), name);
+        final PyImportElement importElement = generator.createImportElement(LanguageLevel.forElement(file), name, asName);
         existingImport.add(importElement);
-        return false;
+        // May need to add parentheses, trailing comma, etc.
+        CodeStyleManager.getInstance(file.getProject()).reformat(existingImport);
+        return true;
       }
     }
     addFromImportStatement(file, from, name, asName, priority, anchor);

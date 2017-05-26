@@ -52,7 +52,7 @@ public class PyConsoleProcessHandler extends PythonProcessHandler {
   }
 
   @Override
-  public void coloredTextAvailable(final String text, final Key attributes) {
+  public void coloredTextAvailable(@NotNull final String text, @NotNull final Key attributes) {
     String string = PyConsoleUtil.processPrompts(myConsoleView, StringUtil.convertLineSeparators(text));
 
     myConsoleView.print(string, attributes);
@@ -72,23 +72,20 @@ public class PyConsoleProcessHandler extends PythonProcessHandler {
   }
 
   @Override
-  protected boolean shouldKillProcessSoftly() {
+  public boolean shouldKillProcessSoftly() {
     return false;
   }
 
   private void doCloseCommunication() {
     if (myPydevConsoleCommunication != null) {
 
-      UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-        @Override
-        public void run() {
-          try {
-            myPydevConsoleCommunication.close();
-            Thread.sleep(300);
-          }
-          catch (Exception e1) {
-            // Ignore
-          }
+      UIUtil.invokeAndWaitIfNeeded((Runnable)() -> {
+        try {
+          myPydevConsoleCommunication.close();
+          Thread.sleep(300);
+        }
+        catch (Exception e1) {
+          // Ignore
         }
       });
 

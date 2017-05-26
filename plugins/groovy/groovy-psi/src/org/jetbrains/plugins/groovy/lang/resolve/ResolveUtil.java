@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.groovy.GroovyLanguage;
 import org.jetbrains.plugins.groovy.findUsages.LiteralConstructorReference;
+import org.jetbrains.plugins.groovy.lang.lexer.GroovyTokenTypes;
 import org.jetbrains.plugins.groovy.lang.psi.GrQualifiedReference;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFileBase;
@@ -46,6 +47,7 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.*;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrArgumentList;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrNamedArgument;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrBuiltinTypeClassExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression;
@@ -54,6 +56,7 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.path.GrI
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.params.GrParameter;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrAnonymousClassDefinition;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinitionBody;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrAccessorMethod;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrGdkMethod;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMember;
@@ -78,6 +81,7 @@ import org.jetbrains.plugins.groovy.lang.resolve.processors.*;
 
 import java.util.*;
 
+import static org.jetbrains.plugins.groovy.lang.psi.impl.GrAnnotationUtilKt.hasAnnotation;
 import static org.jetbrains.plugins.groovy.lang.resolve.ResolveUtilKt.initialState;
 
 /**
@@ -676,6 +680,7 @@ public class ResolveUtil {
     if (qualifier == null) return false;
     //key in 'java.util.Map.key' is not access to map, it is access to static property of field
     if (qualifier instanceof GrReferenceExpression && ((GrReferenceExpression)qualifier).resolve() instanceof PsiClass) return false;
+    if (ref.getDotTokenType() == GroovyTokenTypes.mSPREAD_DOT) return false;
 
     final PsiType type = qualifier.getType();
     if (!InheritanceUtil.isInheritor(type, CommonClassNames.JAVA_UTIL_MAP)) return false;
@@ -694,6 +699,7 @@ public class ResolveUtil {
     final GrExpression qualifier = getSelfOrWithQualifier(ref);
     if (qualifier == null) return false;
     if (qualifier instanceof GrReferenceExpression && ((GrReferenceExpression)qualifier).resolve() instanceof PsiClass) return false;
+    if (ref.getDotTokenType() == GroovyTokenTypes.mSPREAD_DOT) return false;
     return InheritanceUtil.isInheritor(qualifier.getType(), CommonClassNames.JAVA_UTIL_MAP);
   }
 
@@ -863,22 +869,22 @@ public class ResolveUtil {
   }
 
   public static boolean isScriptField(GrVariable var) {
-    GrModifierList list = var.getModifierList();
-    if (list == null) return false;
+    PsiElement parent = var.getParent();
+    return parent instanceof GrVariableDeclaration && isScriptFieldDeclaration(((GrVariableDeclaration)parent));
+  }
 
-    PsiFile containingFile = var.getContainingFile();
+  public static boolean isScriptFieldDeclaration(@NotNull GrVariableDeclaration declaration) {
+    PsiFile containingFile = declaration.getContainingFile();
     if (!(containingFile instanceof GroovyFile) || !((GroovyFile)containingFile).isScript()) return false;
 
-    GrMember member = PsiTreeUtil.getParentOfType(var, GrTypeDefinition.class, GrMethod.class);
+    GrMember member = PsiTreeUtil.getParentOfType(declaration, GrTypeDefinition.class, GrMethod.class);
     if (member != null) return false;
 
-    for (GrAnnotation annotation : list.getAnnotations()) {
-      String qualifiedName = annotation.getQualifiedName();
-      if (qualifiedName == null) continue;
-      if (qualifiedName.equals(GroovyCommonClassNames.GROOVY_TRANSFORM_FIELD)) return true;
-    }
+    return hasAnnotation(declaration.getModifierList(), GroovyCommonClassNames.GROOVY_TRANSFORM_FIELD);
+  }
 
-    return false;
+  public static boolean isFieldDeclaration(@NotNull GrVariableDeclaration declaration) {
+    return declaration.getParent() instanceof GrTypeDefinitionBody || isScriptFieldDeclaration(declaration);
   }
 
   @Nullable
@@ -1043,10 +1049,33 @@ public class ResolveUtil {
     if (!(expression instanceof GrReferenceExpression)) return false;
     GrReferenceExpression ref = (GrReferenceExpression)expression;
     GrExpression qualifier = ref.getQualifier();
-    return "class".equals(ref.getReferenceName()) &&
-           qualifier instanceof GrReferenceExpression &&
-           ((GrReferenceExpression)qualifier).resolve() instanceof PsiClass &&
-           !org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil.isThisReference(qualifier);
+    if (!"class".equals(ref.getReferenceName())) return false;
+    return qualifier != null && getClassReferenceFromExpression(qualifier) != null;
+  }
+
+
+  @Nullable
+  public static PsiType getClassReferenceFromExpression(@NotNull PsiElement expression) {
+
+    if (expression instanceof GrReferenceExpression) {
+      if (org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil.isThisReference(expression)) return null;
+
+      PsiElement resolved = ((GrReferenceExpression)expression).resolve();
+      if (resolved instanceof PsiClass) {
+        return TypesUtil.createType((PsiClass)resolved);
+      }
+    }
+
+    if (expression instanceof GrBuiltinTypeClassExpression) {
+      return ((GrBuiltinTypeClassExpression)expression).getPrimitiveType();
+    }
+
+    if (expression instanceof GrIndexProperty) {
+      if (((GrIndexProperty)expression).getArgumentList().getAllArguments().length != 0) return null;
+      PsiType arrayTypeBase = getClassReferenceFromExpression(((GrIndexProperty)expression).getInvokedExpression());
+      return arrayTypeBase == null ? null : arrayTypeBase.createArrayType();
+    }
+    return null;
   }
 
   @Nullable

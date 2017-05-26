@@ -17,6 +17,8 @@ package com.intellij.codeInsight.daemon.impl.actions;
 
 import com.intellij.codeInsight.daemon.HighlightDisplayKey;
 import com.intellij.codeInspection.JavaSuppressionUtil;
+import com.intellij.lang.java.JavaLanguage;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -32,20 +34,20 @@ public class SuppressByJavaCommentFix extends SuppressByCommentFix {
     super(key, PsiStatement.class);
   }
 
+  public SuppressByJavaCommentFix(@NotNull String toolId) {
+    super(toolId, PsiStatement.class);
+  }
+
   @Override
   @Nullable
   public PsiElement getContainer(PsiElement context) {
-    if (hasJspMethodCallAsParent(context)) return null;
-    return PsiTreeUtil.getParentOfType(context, PsiStatement.class, false);
+    PsiStatement statement = PsiTreeUtil.getParentOfType(context, PsiStatement.class, false);
+    return statement != null && JavaLanguage.INSTANCE.equals(statement.getLanguage()) ? statement : null;
   }
 
-  private static boolean hasJspMethodCallAsParent(PsiElement context) {
-    while (true) {
-      PsiMethod method = PsiTreeUtil.getParentOfType(context, PsiMethod.class);
-      if (method == null) return false;
-      if (method instanceof SyntheticElement) return true;
-      context = method;
-    }
+  @Override
+  public boolean startInWriteAction() {
+    return false;
   }
 
   @Override
@@ -54,7 +56,7 @@ public class SuppressByJavaCommentFix extends SuppressByCommentFix {
                                    @NotNull final PsiElement container) throws IncorrectOperationException {
     PsiElement declaredElement = getElementToAnnotate(element, container);
     if (declaredElement == null) {
-      suppressWithComment(project, element, container);
+      WriteCommandAction.runWriteCommandAction(project, null, null, () -> suppressWithComment(project, element, container), container.getContainingFile());
     }
     else {
       JavaSuppressionUtil.addSuppressAnnotation(project, container, (PsiVariable)declaredElement, myID);

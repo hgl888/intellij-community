@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,8 @@ import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.command.impl.UndoManagerImpl;
 import com.intellij.openapi.command.undo.UndoManager;
 import com.intellij.openapi.editor.*;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.editor.ex.DocumentEx;
 import com.intellij.openapi.editor.ex.MarkupModelEx;
 import com.intellij.openapi.editor.ex.RangeHighlighterEx;
@@ -69,26 +69,20 @@ public class RangeMarkerTest extends LightPlatformTestCase {
       return;
     }
     boolean oldVerify = RedBlackTree.VERIFY;
-    RedBlackTree.VERIFY = !isPerformanceTest();
-    final Throwable[] ex = {null};
+    RedBlackTree.VERIFY = !isStressTest();
     try {
       if (getTestName(false).contains("NoCommand")) {
         super.runTest();
         return;
       }
-      WriteCommandAction.runWriteCommandAction(getProject(), new ThrowableComputable<Void, Throwable>() {
-        @Override
-        public Void compute() throws Throwable {
-          RangeMarkerTest.super.runTest();
-          return null;
-        }
+      WriteCommandAction.runWriteCommandAction(getProject(), (ThrowableComputable<Void, Throwable>)() -> {
+        super.runTest();
+        return null;
       });
     }
     finally {
       RedBlackTree.VERIFY = oldVerify;
     }
-
-    if (ex[0] != null) throw ex[0];
   }
 
   @Override
@@ -389,7 +383,7 @@ public class RangeMarkerTest extends LightPlatformTestCase {
     synchronizer.replaceString(document, 0, document.getTextLength(), newText);
 
     final List<DocumentEvent> events = new ArrayList<>();
-    document.addDocumentListener(new DocumentAdapter() {
+    document.addDocumentListener(new DocumentListener() {
       @Override
       public void documentChanged(DocumentEvent e) {
         events.add(e);
@@ -699,7 +693,7 @@ public class RangeMarkerTest extends LightPlatformTestCase {
             y = document.getTextLength();
           }
           RangeMarkerEx r = (RangeMarkerEx)document.createRangeMarker(x, y);
-          adds.add(Pair.create((RangeMarker)r, TextRange.create(r)));
+          adds.add(Pair.create(r, TextRange.create(r)));
         }
         List<Pair<RangeMarker, TextRange>> candidates = new ArrayList<>(adds);
         while (!candidates.isEmpty()) {

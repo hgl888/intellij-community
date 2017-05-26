@@ -2,15 +2,21 @@ package org.jetbrains.plugins.ipnb.editor.panels;
 
 import com.google.common.collect.Lists;
 import com.intellij.ide.BrowserUtil;
+import com.intellij.lang.Language;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataProvider;
+import com.intellij.openapi.actionSystem.LangDataKeys;
+import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.event.DocumentAdapter;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
+import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ex.ProjectEx;
@@ -18,11 +24,15 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.ui.VerticalFlowLayout;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.KeyStrokeAdapter;
 import com.intellij.util.Alarm;
 import com.intellij.util.PlatformUtils;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.util.messages.MessageBusConnection;
+import com.intellij.util.ui.update.MergingUpdateQueue;
+import com.intellij.util.ui.update.Update;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.ipnb.IpnbUtils;
@@ -31,10 +41,12 @@ import org.jetbrains.plugins.ipnb.editor.IpnbFileEditor;
 import org.jetbrains.plugins.ipnb.editor.actions.IpnbCutCellAction;
 import org.jetbrains.plugins.ipnb.editor.actions.IpnbDeleteCellAction;
 import org.jetbrains.plugins.ipnb.editor.actions.IpnbPasteCellAction;
+import org.jetbrains.plugins.ipnb.editor.actions.IpnbToggleLineNumbersAction;
 import org.jetbrains.plugins.ipnb.editor.panels.code.IpnbCodePanel;
 import org.jetbrains.plugins.ipnb.format.IpnbFile;
 import org.jetbrains.plugins.ipnb.format.IpnbParser;
 import org.jetbrains.plugins.ipnb.format.cells.*;
+import org.jetbrains.plugins.ipnb.psi.IpnbPyLanguageDialect;
 
 import javax.swing.*;
 import java.awt.*;
@@ -47,10 +59,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static com.intellij.util.ui.update.Update.HIGH_PRIORITY;
+
 public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, Disposable {
   private static final Logger LOG = Logger.getInstance(IpnbFilePanel.class);
-  private final DocumentAdapter myDocumentListener;
+  private final DocumentListener myDocumentListener;
   private final Document myDocument;
+  private final MessageBusConnection myBusConnection;
   private IpnbFile myIpnbFile;
   private final Project myProject;
   @NotNull private final IpnbFileEditor myParent;
@@ -63,18 +78,28 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
   private IpnbEditablePanel myBufferPanel;
   private int myInitialSelection = 0;
   private boolean mySynchronize;
+  private static final String ourHelpID = "IPython_Notebook_Support";
+  private MergingUpdateQueue myQueue;
 
   public IpnbFilePanel(@NotNull final Project project, @NotNull final IpnbFileEditor parent, @NotNull final VirtualFile vFile,
                        @NotNull final IpnbFileEditor.CellSelectionListener listener) {
     super(new VerticalFlowLayout(VerticalFlowLayout.TOP, 100, 5, true, false));
+    myQueue = new MergingUpdateQueue("Jupyter", 100, true, this, this,
+                                     null, true);
     myProject = project;
     myParent = parent;
     myVirtualFile = vFile;
     myListener = listener;
     setBackground(IpnbEditorUtil.getBackground());
+    addKeyListener(new KeyStrokeAdapter() {
+      @Override
+      public void keyPressed(KeyEvent event) {
+        super.keyPressed(event);
+      }
+    });
 
     final Alarm alarm = new Alarm();
-    myDocumentListener = new DocumentAdapter() {
+    myDocumentListener = new DocumentListener() {
       public void documentChanged(final DocumentEvent e) {
         if (mySynchronize) {
           alarm.cancelAllRequests();
@@ -96,21 +121,30 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
       });
       setFocusable(true);
     }, 10, ModalityState.stateForComponent(this));
-
-    UIUtil.requestFocus(this);
-    ApplicationManager.getApplication().getMessageBus().connect().subscribe(ProjectEx.ProjectSaved.TOPIC,
-                                                                            new ProjectEx.ProjectSaved() {
-                                                                              @Override
-                                                                              public void saved(@NotNull Project project) {
-                                                                                CommandProcessor.getInstance().runUndoTransparentAction(
-                                                                                  () -> ApplicationManager.getApplication()
-                                                                                    .runWriteAction(() -> saveToFile(false)));
-                                                                              }
-                                                                            });
+    alarm.addRequest(() -> {
+      revalidate();
+      repaint();
+      myParent.loaded();
+    }, 100);
+    IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> {
+      IdeFocusManager.getGlobalInstance().requestFocus(this, true);
+    });
+    myBusConnection = ApplicationManager.getApplication().getMessageBus().connect();
+    myBusConnection.subscribe(ProjectEx.ProjectSaved.TOPIC,
+                              new ProjectEx.ProjectSaved() {
+                                @Override
+                                public void saved(@NotNull Project project) {
+                                  CommandProcessor.getInstance().runUndoTransparentAction(
+                                    () -> ApplicationManager.getApplication()
+                                      .runWriteAction(() -> saveToFile(false)));
+                                }
+                              });
   }
 
+  @Override
   public void dispose() {
     myDocument.removeDocumentListener(myDocumentListener);
+    Disposer.dispose(myBusConnection);
   }
 
   private void readFromFile(boolean showError) {
@@ -123,6 +157,7 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
         CommandProcessor.getInstance().runUndoTransparentAction(() -> ApplicationManager.getApplication().runWriteAction(() -> {
           createAndAddCell(true, IpnbCodeCell.createEmptyCodeCell());
           saveToFile(true);
+          setInitialPosition(0);
         }));
       }
     }
@@ -158,6 +193,9 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
         myParent.updateScrollPosition(mySelectedCellPanel);
       }
     });
+    IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> {
+      IdeFocusManager.getGlobalInstance().requestFocus(this, true);
+    });
   }
 
   private void addWarningIfNeeded() {
@@ -190,8 +228,7 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
     IpnbEditablePanel panel;
     if (cell instanceof IpnbCodeCell) {
       panel = new IpnbCodePanel(myProject, myParent, (IpnbCodeCell)cell);
-      add(panel);
-      myIpnbPanels.add(panel);
+      addComponent(panel);
     }
     else if (cell instanceof IpnbMarkdownCell) {
       panel = new IpnbMarkdownPanel((IpnbMarkdownCell)cell, this);
@@ -330,7 +367,7 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
     final String newCellText = selectedCellPanel.getText(position);
 
     if (oldCellText != null) {
-      final JTextArea editablePanel = selectedCellPanel.getEditablePanel();
+      final JTextArea editablePanel = selectedCellPanel.getEditableTextArea();
       if (editablePanel != null) {
         editablePanel.setText(oldCellText);
       }
@@ -391,9 +428,11 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
     myIpnbFile.removeCell(index);
     remove(index);
 
-    int indexToSelect = index < myIpnbPanels.size() ? index : index-1;
-    final IpnbEditablePanel panel = myIpnbPanels.get(indexToSelect);
-    setSelectedCell(panel, false);
+    if (!myIpnbPanels.isEmpty()) {
+      int indexToSelect = index < myIpnbPanels.size() ? index : index - 1;
+      final IpnbEditablePanel panel = myIpnbPanels.get(indexToSelect);
+      setSelectedCell(panel, false);
+    }
   }
 
   public void saveToFile(boolean synchronize) {
@@ -554,12 +593,15 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
 
   @Override
   protected void processKeyEvent(KeyEvent e) {
+    processKeyPressed(e);
+  }
+
+  public void processKeyPressed(KeyEvent e) {
     if (mySelectedCellPanel != null && e.getID() == KeyEvent.KEY_PRESSED) {
       if (e.getKeyCode() == KeyEvent.VK_ENTER) {
         mySelectedCellPanel.switchToEditing();
         repaint();
       }
-
       if (e.getKeyCode() == KeyEvent.VK_UP) {
         selectPrev(mySelectedCellPanel);
       }
@@ -569,6 +611,11 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
       else if (e.getKeyCode() == KeyEvent.VK_DELETE) {
         if (!mySelectedCellPanel.isEditing()) {
           IpnbDeleteCellAction.deleteCell(this);
+        }
+      }
+      else if (e.getKeyCode() == KeyEvent.VK_L) {
+        if (mySelectedCellPanel instanceof IpnbCodePanel && !mySelectedCellPanel.isEditing()) {
+          IpnbToggleLineNumbersAction.toggleLineNumbers((IpnbCodePanel)mySelectedCellPanel);
         }
       }
       else if (e.getModifiers() == Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()) {
@@ -620,7 +667,7 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
       createAndAddCell(true, IpnbCodeCell.createEmptyCodeCell());
       CommandProcessor.getInstance().executeCommand(getProject(),
                                                     () -> ApplicationManager.getApplication().runWriteAction(
-                                                    () -> saveToFile(false)), "Ipnb.runCell", new Object());
+                                                      () -> saveToFile(false)), "Ipnb.runCell", new Object());
     }
   }
 
@@ -653,7 +700,9 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
       IpnbEditablePanel ipnbPanel = getIpnbPanelByClick(e.getPoint());
       if (ipnbPanel != null) {
         ipnbPanel.setEditing(false);
-        ipnbPanel.requestFocus();
+        IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> {
+          IdeFocusManager.getGlobalInstance().requestFocus(this, true);
+        });
         repaint();
         setSelectedCell(ipnbPanel, true);
       }
@@ -674,16 +723,26 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
       mySelectedCellPanel.setEditing(false);
     }
     mySelectedCellPanel = ipnbPanel;
-    revalidateAndRepaint();
-    if (ipnbPanel.getBounds().getHeight() != 0) {
-      myListener.selectionChanged(ipnbPanel, mouse);
-    }
+    myQueue.queue(new Update("Jupyter.Repaint", HIGH_PRIORITY) {
+      @Override
+      public void run() {
+        revalidate();
+        repaint();
+        if (ipnbPanel.getBounds().getHeight() != 0) {
+          myListener.selectionChanged(ipnbPanel, mouse);
+        }
+      }
+    });
   }
 
   public void revalidateAndRepaint() {
-    revalidate();
-    UIUtil.requestFocus(this);
-    repaint();
+    myQueue.queue(new Update("Jupyter.Repaint", HIGH_PRIORITY) {
+      @Override
+      public void run() {
+        revalidate();
+        repaint();
+      }
+    });
   }
 
   @Nullable
@@ -693,7 +752,8 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
 
   public int getSelectedIndex() {
     final IpnbEditablePanel selectedCellPanel = getSelectedCellPanel();
-    return myIpnbPanels.indexOf(selectedCellPanel);
+    final int selectedIndex = myIpnbPanels.indexOf(selectedCellPanel);
+    return selectedIndex == -1 ? myInitialSelection : selectedIndex;
   }
 
   @Nullable
@@ -740,12 +800,25 @@ public class IpnbFilePanel extends JPanel implements Scrollable, DataProvider, D
   public Object getData(String dataId) {
     final IpnbEditablePanel selectedCellPanel = getSelectedCellPanel();
     if (OpenFileDescriptor.NAVIGATE_IN_EDITOR.is(dataId)) {
-      if (selectedCellPanel instanceof IpnbCodePanel) {
+      if (selectedCellPanel instanceof IpnbCodePanel) {  // Go to declaration
         return ((IpnbCodePanel)selectedCellPanel).getEditor();
       }
     }
     if (IpnbFileEditor.DATA_KEY.is(dataId)) {
       return myParent;
+    }
+    if (PlatformDataKeys.HELP_ID.is(dataId)) {
+      return ourHelpID;
+    }
+    if (LangDataKeys.CONTEXT_LANGUAGES.is(dataId)) { // Introduce variable
+      return new Language[]{IpnbPyLanguageDialect.getInstance()};
+    }
+    if (CommonDataKeys.PSI_ELEMENT.is(dataId) || CommonDataKeys.PSI_FILE.is(dataId)) {  // Rename and Introduce variable
+      if (selectedCellPanel instanceof IpnbCodePanel) {
+        final Editor e = ((IpnbCodePanel)selectedCellPanel).getEditor();
+        final Object o = FileEditorManager.getInstance(myProject).getData(dataId, e, e.getCaretModel().getCurrentCaret());
+        if (o != null) return o;
+      }
     }
     return null;
   }

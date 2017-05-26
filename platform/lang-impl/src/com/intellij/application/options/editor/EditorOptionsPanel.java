@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,16 +22,15 @@ import com.intellij.codeInsight.CodeInsightSettings;
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.codeInsight.daemon.impl.IdentifierHighlighterPass;
 import com.intellij.codeInsight.documentation.QuickDocOnMouseOverManager;
+import com.intellij.ide.ui.UINumericRange;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.openapi.application.ApplicationBundle;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.colors.EditorColorsScheme;
-import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.ex.EditorSettingsExternalizable;
 import com.intellij.openapi.editor.impl.softwrap.SoftWrapAppliancePlaces;
 import com.intellij.openapi.editor.richcopy.settings.RichCopySettings;
@@ -50,9 +49,7 @@ import com.intellij.openapi.vcs.impl.LineStatusTrackerSettingListener;
 import com.intellij.ui.ListCellRendererWrapper;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
-import com.intellij.xml.util.XmlStringUtil;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -61,7 +58,7 @@ import java.awt.event.ActionListener;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
 
-public class EditorOptionsPanel {
+public class EditorOptionsPanel implements SearchableConfigurable {
   private JPanel    myBehaviourPanel;
   private JCheckBox myCbHighlightBraces;
   private static final String STRIP_CHANGED = ApplicationBundle.message("combobox.strip.modified.lines");
@@ -103,15 +100,15 @@ public class EditorOptionsPanel {
   private JTextField   myQuickDocDelayTextField;
   private JComboBox    myRichCopyColorSchemeComboBox;
   private JCheckBox    myShowInlineDialogForCheckBox;
-  private JBLabel      myStripTrailingSpacesExplanationLabel;
   private JCheckBox    myCbEnableRichCopyByDefault;
   private JCheckBox    myShowLSTInGutterCheckBox;
   private JCheckBox    myShowWhitespacesModificationsInLSTGutterCheckBox;
+  private JCheckBox myCbKeepTrailingSpacesOnCaretLine;
 
   private static final String ACTIVE_COLOR_SCHEME = ApplicationBundle.message("combobox.richcopy.color.scheme.active");
+  private static final UINumericRange RECENT_FILES_RANGE = new UINumericRange(50, 1, 500);
 
   private final ErrorHighlightingPanel myErrorHighlightingPanel = new ErrorHighlightingPanel();
-  private final MyConfigurable myConfigurable;
 
 
   public EditorOptionsPanel() {
@@ -119,19 +116,16 @@ public class EditorOptionsPanel {
       myCbEnableWheelFontChange.setText(ApplicationBundle.message("checkbox.enable.ctrl.mousewheel.changes.font.size.macos"));
     }
 
-
     myStripTrailingSpacesCombo.addItem(STRIP_CHANGED);
     myStripTrailingSpacesCombo.addItem(STRIP_ALL);
     myStripTrailingSpacesCombo.addItem(STRIP_NONE);
-    ActionListener explainer = new ActionListener() {
+
+    myStripTrailingSpacesCombo.addActionListener(new ActionListener() {
       @Override
       public void actionPerformed(ActionEvent e) {
-        explainTrailingSpaces(getStripTrailingSpacesValue());
+        myCbKeepTrailingSpacesOnCaretLine.setEnabled(!STRIP_NONE.equals(myStripTrailingSpacesCombo.getSelectedItem()));
       }
-    };
-    myStripTrailingSpacesCombo.addActionListener(explainer);
-    myCbVirtualSpace.addActionListener(explainer);
-
+    });
 
 
     myHighlightSettingsPanel.setLayout(new BorderLayout());
@@ -154,13 +148,12 @@ public class EditorOptionsPanel {
       }
     });
 
-    myConfigurable = new MyConfigurable();
     initQuickDocProcessing();
     initSoftWrapsSettingsProcessing();
     initVcsSettingsProcessing();
   }
 
-
+  @Override
   public void reset() {
     EditorSettingsExternalizable editorSettings = EditorSettingsExternalizable.getInstance();
     CodeInsightSettings codeInsightSettings = CodeInsightSettings.getInstance();
@@ -191,7 +184,7 @@ public class EditorOptionsPanel {
     myCbVirtualPageAtBottom.setSelected(editorSettings.isAdditionalPageAtBottom());
 
     // Limits
-    myClipboardContentLimitTextField.setText(Integer.toString(uiSettings.MAX_CLIPBOARD_CONTENTS));
+    myClipboardContentLimitTextField.setText(Integer.toString(uiSettings.getMaxClipboardContents()));
 
     // Strip trailing spaces on save
 
@@ -205,7 +198,7 @@ public class EditorOptionsPanel {
     else if (EditorSettingsExternalizable.STRIP_TRAILING_SPACES_WHOLE.equals(stripTrailingSpaces)) {
       myStripTrailingSpacesCombo.setSelectedItem(STRIP_ALL);
     }
-    explainTrailingSpaces(stripTrailingSpaces);
+    myCbKeepTrailingSpacesOnCaretLine.setSelected(editorSettings.isKeepTrailingSpacesOnCaretLine());
 
     myCbEnsureBlankLineBeforeCheckBox.setSelected(editorSettings.isEnsureNewLineAtEOF());
     myCbShowQuickDocOnMouseMove.setSelected(editorSettings.isShowQuickDocOnMouseOverElement());
@@ -222,7 +215,7 @@ public class EditorOptionsPanel {
     myRbPreferScrolling.setSelected(!editorSettings.isRefrainFromScrolling());
 
 
-    myRecentFilesLimitField.setText(Integer.toString(uiSettings.RECENT_FILES_LIMIT));
+    myRecentFilesLimitField.setText(Integer.toString(uiSettings.getRecentFilesLimit()));
 
     myCbRenameLocalVariablesInplace.setSelected(editorSettings.isVariableInplaceRenameEnabled());
     myPreselectCheckBox.setSelected(editorSettings.isPreselectRename());
@@ -251,24 +244,7 @@ public class EditorOptionsPanel {
     }
   }
 
-  private void explainTrailingSpaces(@NotNull @EditorSettingsExternalizable.StripTrailingSpaces String stripTrailingSpaces) {
-    if(EditorSettingsExternalizable.STRIP_TRAILING_SPACES_NONE.equals(stripTrailingSpaces)) {
-      myStripTrailingSpacesExplanationLabel.setVisible(false);
-      return;
-    }
-    myStripTrailingSpacesExplanationLabel.setVisible(true);
-    boolean isVirtualSpace = myCbVirtualSpace.isSelected();
-    String text;
-    String virtSpaceText = myCbVirtualSpace.getText();
-    if (isVirtualSpace) {
-      text = "Trailing spaces will be trimmed even in the line under caret.<br>To disable trimming in that line uncheck the '<b>"+virtSpaceText+"</b>' above.";
-    }
-    else {
-      text = "Trailing spaces will <b><font color=red>NOT</font></b> be trimmed in the line under caret.<br>To enable trimming in that line too check the '<b>"+virtSpaceText+"</b>' above.";
-    }
-    myStripTrailingSpacesExplanationLabel.setText(XmlStringUtil.wrapInHtml(text));
-  }
-
+  @Override
   public void apply() throws ConfigurationException {
     EditorSettingsExternalizable editorSettings = EditorSettingsExternalizable.getInstance();
     CodeInsightSettings codeInsightSettings = CodeInsightSettings.getInstance();
@@ -303,8 +279,8 @@ public class EditorOptionsPanel {
 
     boolean uiSettingsChanged = false;
     int maxClipboardContents = getMaxClipboardContents();
-    if (uiSettings.MAX_CLIPBOARD_CONTENTS != maxClipboardContents) {
-      uiSettings.MAX_CLIPBOARD_CONTENTS = maxClipboardContents;
+    if (uiSettings.getMaxClipboardContents() != maxClipboardContents) {
+      uiSettings.setMaxClipboardContents(maxClipboardContents);
       uiSettingsChanged = true;
     }
 
@@ -323,6 +299,7 @@ public class EditorOptionsPanel {
     else {
       editorSettings.setStripTrailingSpaces(EditorSettingsExternalizable.STRIP_TRAILING_SPACES_WHOLE);
     }
+    editorSettings.setKeepTrailingSpacesOnCaretLine(myCbKeepTrailingSpacesOnCaretLine.isSelected());
 
     editorSettings.setEnsureNewLineAtEOF(myCbEnsureBlankLineBeforeCheckBox.isSelected());
 
@@ -332,8 +309,8 @@ public class EditorOptionsPanel {
       ServiceManager.getService(QuickDocOnMouseOverManager.class).setEnabled(enabled);
     }
 
-    Long quickDocDelay = getQuickDocDelayFromGui();
-    if (quickDocDelay != null) {
+    int quickDocDelay = getQuickDocDelayFromGui();
+    if (quickDocDelay != -1) {
       editorSettings.setQuickDocOnMouseOverElementDelayMillis(quickDocDelay);
     }
 
@@ -368,9 +345,9 @@ public class EditorOptionsPanel {
     String temp=myRecentFilesLimitField.getText();
     if(temp.trim().length() > 0){
       try {
-        int newRecentFilesLimit= Integer.parseInt(temp);
-        if(newRecentFilesLimit>0&&uiSettings.RECENT_FILES_LIMIT!=newRecentFilesLimit){
-          uiSettings.RECENT_FILES_LIMIT=newRecentFilesLimit;
+        int newRecentFilesLimit = Integer.parseInt(temp);
+        if (newRecentFilesLimit > 0 && uiSettings.getRecentFilesLimit() != newRecentFilesLimit) {
+          uiSettings.setRecentFilesLimit(newRecentFilesLimit);
           uiSettingsChanged = true;
         }
       }catch (NumberFormatException ignored){}
@@ -391,20 +368,12 @@ public class EditorOptionsPanel {
     restartDaemons();
   }
 
-  @Nullable
-  private Long getQuickDocDelayFromGui() {
-    String quickDocDelayAsText = myQuickDocDelayTextField.getText();
-    if (StringUtil.isEmptyOrSpaces(quickDocDelayAsText)) {
-      return null;
-    }
-
+  private int getQuickDocDelayFromGui() {
     try {
-      long delay = Long.parseLong(quickDocDelayAsText);
-      return delay > 0 ? delay : null;
+      return EditorSettingsExternalizable.QUICK_DOC_DELAY_RANGE.fit(Integer.parseInt(myQuickDocDelayTextField.getText().trim()));
     }
     catch (NumberFormatException e) {
-      // Ignore incorrect value.
-      return null;
+      return -1;
     }
   }
 
@@ -427,12 +396,10 @@ public class EditorOptionsPanel {
   }
 
   public static void reinitAllEditors() {
-    Editor[] editors = EditorFactory.getInstance().getAllEditors();
-    for (Editor editor : editors) {
-      ((EditorEx)editor).reinitSettings();
-    }
+    EditorFactory.getInstance().refreshAllEditors();
   }
 
+  @Override
   public void disposeUIResources() {
     myErrorHighlightingPanel.disposeUIResources();
   }
@@ -448,6 +415,7 @@ public class EditorOptionsPanel {
     return maxClipboardContents;
   }
 
+  @Override
   public boolean isModified() {
     EditorSettingsExternalizable editorSettings = EditorSettingsExternalizable.getInstance();
     CodeInsightSettings codeInsightSettings = CodeInsightSettings.getInstance();
@@ -474,29 +442,28 @@ public class EditorOptionsPanel {
     // Limits
 
 
-    isModified |= getMaxClipboardContents() != uiSettings.MAX_CLIPBOARD_CONTENTS;
+    isModified |= getMaxClipboardContents() != uiSettings.getMaxClipboardContents();
 
     // Paste
 
     // Strip trailing spaces, ensure EOL on EOF on save
     isModified |= !getStripTrailingSpacesValue().equals(editorSettings.getStripTrailingSpaces());
+    isModified |= isModified(myCbKeepTrailingSpacesOnCaretLine, editorSettings.isKeepTrailingSpacesOnCaretLine());
+
     isModified |= isModified(myCbEnsureBlankLineBeforeCheckBox, editorSettings.isEnsureNewLineAtEOF());
 
     isModified |= isModified(myCbShowQuickDocOnMouseMove, editorSettings.isShowQuickDocOnMouseOverElement());
-    Long quickDocDelay = getQuickDocDelayFromGui();
-    if (quickDocDelay != null && !quickDocDelay.equals(Long.valueOf(editorSettings.getQuickDocOnMouseOverElementDelayMillis()))) {
-      return true;
-    }
+    isModified |= isModified(myQuickDocDelayTextField, editorSettings.getQuickDocOnMouseOverElementDelayMillis(), EditorSettingsExternalizable.QUICK_DOC_DELAY_RANGE);
 
     // advanced mouse
     isModified |= isModified(myCbEnableDnD, editorSettings.isDndEnabled());
     isModified |= isModified(myCbEnableWheelFontChange, editorSettings.isWheelFontChangeEnabled());
     isModified |= isModified(myCbHonorCamelHumpsWhenSelectingByClicking, editorSettings.isMouseClickSelectionHonorsCamelWords());
 
-    isModified |= myRbPreferMovingCaret.isSelected() != editorSettings.isRefrainFromScrolling();
+    isModified |= isModified(myRbPreferMovingCaret,  editorSettings.isRefrainFromScrolling());
 
 
-    isModified |= isModified(myRecentFilesLimitField, UISettings.getInstance().RECENT_FILES_LIMIT);
+    isModified |= isModified(myRecentFilesLimitField, UISettings.getInstance().getRecentFilesLimit(), RECENT_FILES_RANGE);
     isModified |= isModified(myCbRenameLocalVariablesInplace, editorSettings.isVariableInplaceRenameEnabled());
     isModified |= isModified(myPreselectCheckBox, editorSettings.isPreselectRename());
     isModified |= isModified(myShowInlineDialogForCheckBox, editorSettings.isShowInlineLocalDialog());
@@ -514,20 +481,6 @@ public class EditorOptionsPanel {
     isModified |= !Comparing.equal(settings.getSchemeName(), myRichCopyColorSchemeComboBox.getSelectedItem());
 
     return isModified;
-  }
-
-  private static boolean isModified(JToggleButton checkBox, boolean value) {
-    return checkBox.isSelected() != value;
-  }
-
-  private static boolean isModified(JTextField textField, int value) {
-    try {
-      int fieldValue = Integer.parseInt(textField.getText().trim());
-      return fieldValue != value;
-    }
-    catch(NumberFormatException e) {
-      return false;
-    }
   }
 
   @NotNull
@@ -596,11 +549,6 @@ public class EditorOptionsPanel {
     });
   }
 
-  public JComponent getComponent() {
-    return myBehaviourPanel;
-  }
-
-  public class MyConfigurable implements SearchableConfigurable {
     @Override
     @NotNull
     public String getId() {
@@ -621,26 +569,4 @@ public class EditorOptionsPanel {
     public JComponent createComponent() {
       return myBehaviourPanel;
     }
-
-    @Override
-    public boolean isModified() {
-      return EditorOptionsPanel.this.isModified();
-    }
-
-    @Override
-    public void apply() throws ConfigurationException {
-      EditorOptionsPanel.this.apply();
-    }
-
-    @Override
-    public void reset() {
-      EditorOptionsPanel.this.reset();
-    }
-
-    @Override
-    public void disposeUIResources() {
-      EditorOptionsPanel.this.disposeUIResources();
-    }
-  }
-
 }

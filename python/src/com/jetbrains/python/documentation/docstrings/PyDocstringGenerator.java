@@ -23,10 +23,7 @@ import com.intellij.codeInsight.CodeInsightUtilCore;
 import com.intellij.codeInsight.template.*;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
@@ -35,6 +32,7 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiUtilBase;
 import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.python.PyNames;
 import com.jetbrains.python.codeInsight.PyCodeInsightSettings;
@@ -92,7 +90,7 @@ public class PyDocstringGenerator {
       indentation = PyIndentUtil.getElementIndent(((PyStatementListContainer)owner).getStatementList());
     }
     final String docStringText = owner.getDocStringExpression() == null ? null : owner.getDocStringExpression().getText();
-    return new PyDocstringGenerator(owner, docStringText, DocStringUtil.getConfiguredDocStringFormat(owner), indentation, owner);
+    return new PyDocstringGenerator(owner, docStringText, DocStringUtil.getConfiguredDocStringFormatOrPlain(owner), indentation, owner);
   }
   
   /**
@@ -109,7 +107,7 @@ public class PyDocstringGenerator {
   public static PyDocstringGenerator update(@NotNull PyStringLiteralExpression docString) {
     return new PyDocstringGenerator(PsiTreeUtil.getParentOfType(docString, PyDocStringOwner.class),
                                     docString.getText(), 
-                                    DocStringUtil.getConfiguredDocStringFormat(docString),
+                                    DocStringUtil.getConfiguredDocStringFormatOrPlain(docString),
                                     PyIndentUtil.getElementIndent(docString), 
                                     docString);
   }
@@ -357,9 +355,9 @@ public class PyDocstringGenerator {
     final VirtualFile virtualFile = myDocStringOwner.getContainingFile().getVirtualFile();
     if (virtualFile == null) return;
     final Project project = myDocStringOwner.getProject();
-    OpenFileDescriptor descriptor = new OpenFileDescriptor(project, virtualFile, docStringExpression.getTextOffset());
-    Editor targetEditor = FileEditorManager.getInstance(project).openTextEditor(descriptor, true);
+    final Editor targetEditor = PsiUtilBase.findEditor(myDocStringOwner);
     if (targetEditor != null) {
+      targetEditor.getCaretModel().moveToOffset(docStringExpression.getTextOffset());
       TemplateManager.getInstance(project).startTemplate(targetEditor, template);
     }
   }

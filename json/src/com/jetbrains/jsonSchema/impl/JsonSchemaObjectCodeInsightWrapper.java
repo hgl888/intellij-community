@@ -8,6 +8,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.PairConsumer;
 import com.intellij.util.Processor;
+import com.jetbrains.jsonSchema.CodeInsightProviders;
 import com.jetbrains.jsonSchema.extension.SchemaType;
 import org.jetbrains.annotations.NotNull;
 
@@ -34,9 +35,9 @@ class JsonSchemaObjectCodeInsightWrapper implements CodeInsightProviders {
     mySchemaType = type;
     mySchemaFile = schemaFile;
     mySchemaObject = schemaObject;
-    myContributor = new JsonBySchemaObjectCompletionContributor(type, schemaObject);
-    myAnnotator = new JsonBySchemaObjectAnnotator(schemaObject);
-    myDocumentationProvider = new JsonBySchemaDocumentationProvider(schemaObject);
+    myContributor = new JsonBySchemaObjectCompletionContributor(type, schemaFile, schemaObject);
+    myAnnotator = new JsonBySchemaObjectAnnotator(schemaFile, schemaObject);
+    myDocumentationProvider = new JsonBySchemaDocumentationProvider(schemaFile, schemaObject);
   }
 
   @Override
@@ -51,6 +52,7 @@ class JsonSchemaObjectCodeInsightWrapper implements CodeInsightProviders {
     return myAnnotator;
   }
 
+  @Override
   @NotNull
   public String getName() {
     return myName;
@@ -72,6 +74,7 @@ class JsonSchemaObjectCodeInsightWrapper implements CodeInsightProviders {
     consumer.consume(mySchemaFile, mySchemaObject.getId());
   }
 
+  @Override
   public boolean isUserSchema() {
     return SchemaType.userSchema.equals(mySchemaType);
   }

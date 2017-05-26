@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,13 +25,11 @@ import com.intellij.lang.ant.config.AntConfiguration;
 import com.intellij.lang.ant.config.impl.BuildFileProperty;
 import com.intellij.lang.ant.config.impl.GlobalAntConfiguration;
 import com.intellij.lang.ant.config.impl.TargetChooserDialog;
-import com.intellij.openapi.module.Module;
 import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.options.SettingsEditor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.LabeledComponent;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.JDOMExternalizable;
 import com.intellij.openapi.util.WriteExternalException;
@@ -64,12 +62,6 @@ public class AntRunConfiguration extends LocatableConfigurationBase implements R
     final AntRunConfiguration configuration = (AntRunConfiguration)super.clone();
     configuration.mySettings = mySettings.copy();
     return configuration;
-  }
-
-  @NotNull
-  @Override
-  public Module[] getModules() {
-    return Module.EMPTY_ARRAY;
   }
 
   @NotNull
@@ -229,7 +221,7 @@ public class AntRunConfiguration extends LocatableConfigurationBase implements R
     }
 
     @Override
-    protected void resetEditorFrom(RunConfiguration s) {
+    protected void resetEditorFrom(@NotNull RunConfiguration s) {
       final AntRunConfiguration config = (AntRunConfiguration)s;
       myFileUrl = config.mySettings.myFileUrl;
       myTargetName = config.mySettings.myTargetName;
@@ -238,7 +230,7 @@ public class AntRunConfiguration extends LocatableConfigurationBase implements R
     }
 
     @Override
-    protected void applyEditorTo(RunConfiguration s) throws ConfigurationException {
+    protected void applyEditorTo(@NotNull RunConfiguration s) throws ConfigurationException {
       final AntRunConfiguration config = (AntRunConfiguration)s;
       config.mySettings.myFileUrl = myFileUrl;
       config.mySettings.myTargetName = myTargetName;

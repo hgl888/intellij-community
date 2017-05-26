@@ -32,7 +32,7 @@ import java.lang.reflect.InvocationTargetException;
  * @since 9/27/11 2:52 PM
  */
 public class SequentialModalProgressTask extends Task.Modal {
-  private static final Logger LOG = Logger.getInstance("#" + SequentialModalProgressTask.class.getName());
+  private static final Logger LOG = Logger.getInstance(SequentialModalProgressTask.class);
   
   private static final long DEFAULT_MIN_ITERATION_MIN_TIME = 500;
 
@@ -120,5 +120,24 @@ public class SequentialModalProgressTask extends Task.Modal {
    */
   protected void prepare(@NotNull SequentialTask task) {
     task.prepare();
+  }
+
+  public abstract static class Adapter extends SequentialModalProgressTask implements SequentialTask {
+    public Adapter(@Nullable Project project, @NotNull String title) {
+      super(project, title);
+      setTask(this);
+    }
+
+    public Adapter(@Nullable Project project, @NotNull String title, boolean canBeCancelled) {
+      super(project, title, canBeCancelled);
+    }
+
+    @Override
+    public void prepare() {
+    }
+
+    @Override
+    public void stop() {
+    }
   }
 }

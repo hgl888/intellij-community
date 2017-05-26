@@ -15,8 +15,10 @@
  */
 package com.intellij.execution.filters;
 
+import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.colors.*;
+import com.intellij.openapi.editor.markup.HighlighterLayer;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.UIUtil;
@@ -73,6 +75,7 @@ public interface Filter {
       myResultItems = resultItems;
     }
 
+    @NotNull
     public List<ResultItem> getResultItems() {
       List<ResultItem> resultItems = myResultItems;
       if (resultItems == null) {
@@ -150,13 +153,16 @@ public interface Filter {
   class ResultItem {
     private static final Map<TextAttributesKey, TextAttributes> GRAYED_BY_NORMAL_CACHE = ContainerUtil.newConcurrentMap(2);
     static {
-      ApplicationManager.getApplication().getMessageBus().connect().subscribe(EditorColorsManager.TOPIC, new EditorColorsListener() {
-        @Override
-        public void globalSchemeChange(EditorColorsScheme scheme) {
-          // invalidate cache on Appearance Theme/Editor Scheme change
-          GRAYED_BY_NORMAL_CACHE.clear();
-        }
-      });
+      Application application = ApplicationManager.getApplication();
+      if (application != null) {
+        application.getMessageBus().connect().subscribe(EditorColorsManager.TOPIC, new EditorColorsListener() {
+          @Override
+          public void globalSchemeChange(EditorColorsScheme scheme) {
+            // invalidate cache on Appearance Theme/Editor Scheme change
+            GRAYED_BY_NORMAL_CACHE.clear();
+          }
+        });
+      }
     }
 
     /**
@@ -179,7 +185,7 @@ public interface Filter {
      */
     @Deprecated @Nullable
     public final HyperlinkInfo hyperlinkInfo;
-
+    
     private final TextAttributes myFollowedHyperlinkAttributes;
 
     @SuppressWarnings("deprecation")
@@ -242,6 +248,13 @@ public interface Filter {
     public HyperlinkInfo getHyperlinkInfo() {
       //noinspection deprecation
       return hyperlinkInfo;
+    }
+
+    /**
+     * See {@link HighlighterLayer} for available predefined layers. 
+     */
+    public int getHighlighterLayer() {
+      return getHyperlinkInfo() != null ? HighlighterLayer.HYPERLINK : HighlighterLayer.CONSOLE_FILTER; 
     }
 
     @Nullable

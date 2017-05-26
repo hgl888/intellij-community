@@ -21,10 +21,13 @@ import java.util.Iterator;
 /**
  * @author dsl
  */
-public interface Graph<Node> {
+public interface Graph<Node> extends InboundSemiGraph<Node>, OutboundSemiGraph<Node> {
+  @Override
   Collection<Node> getNodes();
 
+  @Override
   Iterator<Node> getIn(Node n);
 
+  @Override
   Iterator<Node> getOut(Node n);
 }

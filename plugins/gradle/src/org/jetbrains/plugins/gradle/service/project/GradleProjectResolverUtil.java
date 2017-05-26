@@ -25,11 +25,13 @@ import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
 import com.intellij.openapi.externalSystem.util.ExternalSystemConstants;
 import com.intellij.openapi.externalSystem.util.ExternalSystemDebugEnvironment;
 import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleGrouperKt;
 import com.intellij.openapi.module.StdModuleTypes;
 import com.intellij.openapi.roots.DependencyScope;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.PathUtilRt;
 import com.intellij.util.containers.ContainerUtil;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.tooling.model.GradleProject;
@@ -85,23 +87,23 @@ public class GradleProjectResolverUtil {
       relativePath = String.valueOf(FileUtil.pathHashCode(mainModuleConfigPath));
     }
     final String mainModuleFileDirectoryPath =
-      ideProjectPath == null ? mainModuleConfigPath : ideProjectPath + "/.idea/modules/" +
-                                                      (relativePath == null || relativePath.equals(".") ? "" : relativePath);
+      ideProjectPath == null
+      ? mainModuleConfigPath
+      : ideProjectPath + '/' + (relativePath == null || relativePath.equals(".") ? "" : relativePath);
     if (ExternalSystemDebugEnvironment.DEBUG_ORPHAN_MODULES_PROCESSING) {
       LOG.info(String.format(
         "Creating module data ('%s') with the external config path: '%s'", gradleModule.getGradleProject().getPath(), mainModuleConfigPath
       ));
     }
 
-    String gradlePath = gradleModule.getGradleProject().getPath();
-    final boolean isRootModule = StringUtil.isEmpty(gradlePath) || ":".equals(gradlePath);
-    String mainModuleId = isRootModule ? moduleName : gradlePath;
+    String mainModuleId = getModuleId(resolverCtx, gradleModule);
     final ModuleData moduleData =
       new ModuleData(mainModuleId, GradleConstants.SYSTEM_ID, StdModuleTypes.JAVA.getId(), moduleName,
                      mainModuleFileDirectoryPath, mainModuleConfigPath);
 
     ExternalProject externalProject = resolverCtx.getExtraProject(gradleModule, ExternalProject.class);
     if (externalProject != null) {
+      moduleData.setInternalName(getInternalModuleName(gradleModule, externalProject));
       moduleData.setGroup(externalProject.getGroup());
       moduleData.setVersion(externalProject.getVersion());
       moduleData.setDescription(externalProject.getDescription());
@@ -111,6 +113,36 @@ public class GradleProjectResolverUtil {
     }
 
     return projectDataNode.createChild(ProjectKeys.MODULE, moduleData);
+  }
+
+  @NotNull
+  static String getInternalModuleName(@NotNull IdeaModule gradleModule, @NotNull ExternalProject externalProject) {
+    return getInternalModuleName(gradleModule, externalProject, null);
+  }
+
+  @NotNull
+  static String getInternalModuleName(@NotNull IdeaModule gradleModule,
+                                      @NotNull ExternalProject externalProject,
+                                      @Nullable String sourceSetName) {
+    String delimiter;
+    StringBuilder moduleName = new StringBuilder();
+    if (ModuleGrouperKt.isQualifiedModuleNamesEnabled()) {
+      delimiter = ".";
+      if (StringUtil.isNotEmpty(externalProject.getGroup())) {
+        moduleName.append(externalProject.getGroup()).append(delimiter);
+      }
+      moduleName.append(externalProject.getName());
+    }
+    else {
+      delimiter = "_";
+      moduleName.append(gradleModule.getName());
+    }
+    if (sourceSetName != null) {
+      assert !sourceSetName.isEmpty();
+      moduleName.append(delimiter);
+      moduleName.append(sourceSetName);
+    }
+    return PathUtilRt.suggestFileName(moduleName.toString(), true, false);
   }
 
   @NotNull
@@ -165,14 +197,16 @@ public class GradleProjectResolverUtil {
   }
 
   @NotNull
-  public static String getModuleId(@NotNull IdeaModule gradleModule) {
+  public static String getModuleId(@NotNull ProjectResolverContext resolverCtx, @NotNull IdeaModule gradleModule) {
     GradleProject gradleProject = gradleModule.getGradleProject();
-    return getModuleId(gradleProject.getPath(), gradleProject.getName());
-  }
-
-  @NotNull
-  public static String getModuleId(@NotNull ExternalProject externalProject) {
-    return getModuleId(externalProject.getQName(), externalProject.getName());
+    String gradlePath = gradleProject.getPath();
+    String compositePrefix = "";
+    if (gradleModule.getProject() != resolverCtx.getModels().getIdeaProject()) {
+      if (!StringUtil.isEmpty(gradlePath) && !":".equals(gradlePath)) {
+        compositePrefix = gradleModule.getProject().getName();
+      }
+    }
+    return compositePrefix + getModuleId(gradlePath, gradleModule.getName());
   }
 
   @NotNull
@@ -181,8 +215,21 @@ public class GradleProjectResolverUtil {
   }
 
   @NotNull
+  public static String getModuleId(@NotNull ExternalProject externalProject) {
+    return externalProject.getId();
+  }
+
+  @NotNull
   public static String getModuleId(@NotNull ExternalProject externalProject, @NotNull ExternalSourceSet sourceSet) {
     String mainModuleId = getModuleId(externalProject);
+    return mainModuleId + ":" + sourceSet.getName();
+  }
+
+  @NotNull
+  public static String getModuleId(@NotNull ProjectResolverContext resolverCtx,
+                                   @NotNull IdeaModule gradleModule,
+                                   @NotNull ExternalSourceSet sourceSet) {
+    String mainModuleId = getModuleId(resolverCtx, gradleModule);
     return mainModuleId + ":" + sourceSet.getName();
   }
 
@@ -211,6 +258,25 @@ public class GradleProjectResolverUtil {
     if (i == -1 || externalProjectId.length() < i + 1) return null;
 
     return externalProjectId.substring(i + 1);
+  }
+
+  @Nullable
+  public static String getGradlePath(final Module module) {
+    if (!ExternalSystemApiUtil.isExternalSystemAwareModule(GradleConstants.SYSTEM_ID, module)) return null;
+    final String projectId = ExternalSystemApiUtil.getExternalProjectId(module);
+    if (projectId == null) return null;
+    final String moduleType = ExternalSystemApiUtil.getExternalModuleType(module);
+    final String gradlePath;
+    if (GradleConstants.GRADLE_SOURCE_SET_MODULE_TYPE_KEY.equals(moduleType)) {
+      int lastColonIndex = projectId.lastIndexOf(':');
+      assert lastColonIndex != -1;
+      int firstColonIndex = projectId.indexOf(':');
+      gradlePath = firstColonIndex == lastColonIndex ? ":" : projectId.substring(firstColonIndex, lastColonIndex);
+    }
+    else {
+      gradlePath = projectId.charAt(0) == ':' ? projectId : ":";
+    }
+    return gradlePath;
   }
 
   @NotNull

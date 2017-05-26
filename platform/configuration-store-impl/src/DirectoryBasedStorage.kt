@@ -15,7 +15,7 @@
  */
 package com.intellij.configurationStore
 
-import com.intellij.openapi.application.runWriteAction
+import com.intellij.openapi.application.runUndoTransparentWriteAction
 import com.intellij.openapi.components.StateSplitter
 import com.intellij.openapi.components.StateSplitterEx
 import com.intellij.openapi.components.StateStorage
@@ -32,6 +32,7 @@ import com.intellij.util.containers.SmartHashSet
 import com.intellij.util.io.systemIndependentPath
 import com.intellij.util.isEmpty
 import gnu.trove.THashMap
+import gnu.trove.THashSet
 import org.jdom.Element
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -127,16 +128,15 @@ open class DirectoryBasedStorage(private val dir: Path,
       }
       else {
         val stateAndFileNameList = storage.splitter.splitState(element!!)
+        val existingFiles = THashSet<String>(stateAndFileNameList.size)
         for (pair in stateAndFileNameList) {
           doSetState(pair.second, pair.first)
+          existingFiles.add(pair.second)
         }
 
-        outerLoop@
         for (key in originalStates.keys()) {
-          for (pair in stateAndFileNameList) {
-            if (pair.second == key) {
-              continue@outerLoop
-            }
+          if (existingFiles.contains(key)) {
+            continue
           }
 
           if (copiedStorageData == null) {
@@ -220,7 +220,7 @@ open class DirectoryBasedStorage(private val dir: Path,
     }
 
     private fun deleteFiles(dir: VirtualFile) {
-      runWriteAction {
+      runUndoTransparentWriteAction {
         for (file in dir.children) {
           val fileName = file.name
           if (fileName.endsWith(FileStorageCoreUtil.DEFAULT_EXT) && !copiedStorageData!!.containsKey(fileName)) {

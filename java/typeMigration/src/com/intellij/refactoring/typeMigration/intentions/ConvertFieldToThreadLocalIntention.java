@@ -1,7 +1,3 @@
-/*
- * User: anna
- * Date: 26-Aug-2009
- */
 package com.intellij.refactoring.typeMigration.intentions;
 
 import com.intellij.codeInsight.FileModificationService;
@@ -35,7 +31,7 @@ import java.util.Set;
 import static com.intellij.util.ObjectUtils.assertNotNull;
 
 public class ConvertFieldToThreadLocalIntention extends PsiElementBaseIntentionAction implements LowPriorityAction {
-  private static final Logger LOG = Logger.getInstance("#" + ConvertFieldToThreadLocalIntention.class.getName());
+  private static final Logger LOG = Logger.getInstance(ConvertFieldToThreadLocalIntention.class);
 
   @NotNull
   @Override

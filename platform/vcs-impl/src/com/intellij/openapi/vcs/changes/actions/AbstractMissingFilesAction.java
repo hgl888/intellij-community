@@ -14,12 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: yole
- * Date: 02.11.2006
- * Time: 22:09:59
- */
 package com.intellij.openapi.vcs.changes.actions;
 
 import com.intellij.openapi.actionSystem.AnAction;
@@ -27,8 +21,6 @@ import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbAware;
-import com.intellij.openapi.project.DumbModePermission;
-import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vcs.AbstractVcs;
 import com.intellij.openapi.vcs.AbstractVcsHelper;
@@ -57,34 +49,27 @@ public abstract class AbstractMissingFilesAction extends AnAction implements Dum
     if (files == null) return;
 
     final ProgressManager progressManager = ProgressManager.getInstance();
-    final Runnable action = new Runnable() {
-      public void run() {
-        final List<VcsException> allExceptions = new ArrayList<>();
-        ChangesUtil.processFilePathsByVcs(project, files, (vcs, items) -> {
-          final List<VcsException> exceptions = processFiles(vcs, files);
-          if (exceptions != null) {
-            allExceptions.addAll(exceptions);
-          }
-        });
+    final Runnable action = () -> {
+      final List<VcsException> allExceptions = new ArrayList<>();
+      ChangesUtil.processFilePathsByVcs(project, files, (vcs, items) -> {
+        final List<VcsException> exceptions = processFiles(vcs, files);
+        if (exceptions != null) {
+          allExceptions.addAll(exceptions);
+        }
+      });
 
-        for (FilePath file : files) {
-          VcsDirtyScopeManager.getInstance(project).fileDirty(file);
-        }
-        ChangesViewManager.getInstance(project).scheduleRefresh();
-        if (allExceptions.size() > 0) {
-          AbstractVcsHelper.getInstance(project).showErrors(allExceptions, "VCS Errors");
-        }
+      for (FilePath file : files) {
+        VcsDirtyScopeManager.getInstance(project).fileDirty(file);
+      }
+      ChangesViewManager.getInstance(project).scheduleRefresh();
+      if (allExceptions.size() > 0) {
+        AbstractVcsHelper.getInstance(project).showErrors(allExceptions, "VCS Errors");
       }
     };
     if (synchronously()) {
       action.run();
     } else {
-      progressManager.runProcessWithProgressSynchronously(new Runnable() {
-        @Override
-        public void run() {
-          DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, action);
-        }
-      }, getName(), true, project);
+      progressManager.runProcessWithProgressSynchronously(action, getName(), true, project);
     }
   }
 

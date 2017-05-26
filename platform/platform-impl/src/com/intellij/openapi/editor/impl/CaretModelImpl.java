@@ -14,14 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: max
- * Date: Jun 18, 2002
- * Time: 9:12:05 PM
- * To change template for new class use
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.openapi.editor.impl;
 
 import com.intellij.diagnostic.Dumpable;
@@ -40,6 +32,7 @@ import com.intellij.util.EventDispatcher;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
@@ -573,6 +566,13 @@ public class CaretModelImpl implements CaretModel, PrioritizedDocumentListener, 
   public void onUpdated(@NotNull Inlay inlay) {
     if (myEditor.getDocument().isInBulkUpdate()) return;
     updateVisualPosition();
+  }
+
+  @TestOnly
+  public void validateState() {
+    for (CaretImpl caret : myCarets) {
+      caret.validateState();
+    }
   }
 
   private static class VisualPositionComparator implements Comparator<VisualPosition> {

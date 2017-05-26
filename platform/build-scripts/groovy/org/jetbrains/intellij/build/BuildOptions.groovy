@@ -38,6 +38,11 @@ class BuildOptions {
   static final String OS_WINDOWS = "windows"
   static final String OS_MAC = "mac"
   static final String OS_ALL = "all"
+  /**
+   * If this value is set no distributions of the product will be produced, only {@link ProductModulesLayout#pluginModulesToPublish non-bundled plugins}
+   * will be built.
+   */
+  static final String OS_NONE = "none"
 
   /**
    * Pass comma-separated names of build steps (see below) to 'intellij.build.skip.build.steps' system property to skip them when building locally.
@@ -88,4 +93,12 @@ class BuildOptions {
    * change the output directory.
    */
   String outputRootPath = System.getProperty("intellij.build.output.root")
+
+  /**
+   * If {@code true} the build is running in 'Development mode' i.e. its artifacts aren't supposed to be used in production. In development
+   * mode build scripts won't fail if some non-mandatory dependencies are missing and will just show warnings.
+   * <p>By default 'development mode' is enabled if build is not running under continuous integration server (TeamCity).</p>
+   */
+  boolean isInDevelopmentMode = SystemProperties.getBooleanProperty("intellij.build.dev.mode",
+                                                                    System.getProperty("teamcity.buildType.id") == null)
 }

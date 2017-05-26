@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,15 +34,17 @@ import com.intellij.openapi.roots.*;
 import com.intellij.openapi.roots.impl.PushedFilePropertiesUpdater;
 import com.intellij.openapi.roots.impl.PushedFilePropertiesUpdaterImpl;
 import com.intellij.openapi.startup.StartupManager;
+import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.*;
 import com.intellij.openapi.vfs.impl.BulkVirtualFileListenerAdapter;
 import com.intellij.openapi.vfs.newvfs.BulkFileListener;
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent;
+import com.intellij.project.ProjectKt;
 import com.intellij.psi.*;
+import com.intellij.psi.impl.DebugUtil;
 import com.intellij.psi.impl.PsiManagerImpl;
 import com.intellij.psi.impl.PsiTreeChangeEventImpl;
-import com.intellij.psi.impl.smartPointers.SmartPointerManagerImpl;
 import com.intellij.util.FileContentUtilCore;
 import com.intellij.util.messages.MessageBusConnection;
 import org.jetbrains.annotations.NotNull;
@@ -51,14 +53,13 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class PsiVFSListener extends VirtualFileAdapter {
+public class PsiVFSListener implements VirtualFileListener {
   private static final Logger LOG = Logger.getInstance("#com.intellij.psi.impl.file.impl.PsiVFSListener");
 
   private final FileTypeManager myFileTypeManager;
   private final ProjectRootManager myProjectRootManager;
   private final PsiManagerImpl myManager;
   private final FileManagerImpl myFileManager;
-  private final MessageBusConnection myConnection;
   private final Project myProject;
   private boolean myReportedUnloadedPsiChange;
 
@@ -111,17 +112,16 @@ public class PsiVFSListener extends VirtualFileAdapter {
     myManager = (PsiManagerImpl) PsiManager.getInstance(project);
     myFileManager = (FileManagerImpl) myManager.getFileManager();
 
-    myConnection = project.getMessageBus().connect(project);
-
     StartupManager.getInstance(project).registerPreStartupActivity(() -> {
-      myConnection.subscribe(ProjectTopics.PROJECT_ROOTS, new MyModuleRootListener());
-      myConnection.subscribe(FileTypeManager.TOPIC, new FileTypeListener() {
+      MessageBusConnection connection = project.getMessageBus().connect(project);
+      connection.subscribe(ProjectTopics.PROJECT_ROOTS, new MyModuleRootListener());
+      connection.subscribe(FileTypeManager.TOPIC, new FileTypeListener() {
         @Override
         public void fileTypesChanged(@NotNull FileTypeEvent e) {
           myFileManager.processFileTypesChanged();
         }
       });
-      myConnection.subscribe(AppTopics.FILE_DOCUMENT_SYNC, new MyFileDocumentManagerAdapter());
+      connection.subscribe(AppTopics.FILE_DOCUMENT_SYNC, new MyFileDocumentManagerAdapter());
       myFileManager.markInitialized();
     });
   }
@@ -129,6 +129,11 @@ public class PsiVFSListener extends VirtualFileAdapter {
   @Nullable
   private PsiDirectory getCachedDirectory(VirtualFile parent) {
     return parent == null ? null : myFileManager.getCachedDirectory(parent);
+  }
+
+  @Override
+  public void fileCopied(@NotNull VirtualFileCopyEvent event) {
+    fileCreated(event);
   }
 
   @Override
@@ -216,7 +221,7 @@ public class PsiVFSListener extends VirtualFileAdapter {
 
     final PsiFile psiFile = myFileManager.getCachedPsiFileInner(vFile);
     if (psiFile != null) {
-      myFileManager.setViewProvider(vFile, null);
+      clearViewProvider(vFile, "PSI fileDeleted");
 
       if (parentDir != null) {
         ApplicationManager.getApplication().runWriteAction(new ExternalChangeAction() {
@@ -251,6 +256,16 @@ public class PsiVFSListener extends VirtualFileAdapter {
       } else if (parent != null) {
         handleVfsChangeWithoutPsi(parent);
       }
+    }
+  }
+
+  private void clearViewProvider(@NotNull VirtualFile vFile, @NotNull String why) {
+    DebugUtil.startPsiModification(why);
+    try {
+      myFileManager.setViewProvider(vFile, null);
+    }
+    finally {
+      DebugUtil.finishPsiModification();
     }
   }
 
@@ -391,7 +406,6 @@ public class PsiVFSListener extends VirtualFileAdapter {
       }
     }
 
-    ((SmartPointerManagerImpl)SmartPointerManager.getInstance(myManager.getProject())).fastenBelts(vFile);
     ApplicationManager.getApplication().runWriteAction(
       new ExternalChangeAction() {
         @Override
@@ -430,7 +444,7 @@ public class PsiVFSListener extends VirtualFileAdapter {
               final PsiFile newPsiFile = fileViewProvider.getPsi(fileViewProvider.getBaseLanguage());
               if(oldPsiFile != null) {
                 if (newPsiFile == null) {
-                  myFileManager.setViewProvider(vFile, null);
+                  clearViewProvider(vFile, "PSI renamed");
 
                   treeEvent.setChild(oldPsiFile);
                   myManager.childRemoved(treeEvent);
@@ -576,7 +590,7 @@ public class PsiVFSListener extends VirtualFileAdapter {
           }
           else {
             if (newElement == null) {
-              myFileManager.setViewProvider(vFile, null);
+              clearViewProvider(vFile, "PSI moved");
               treeEvent.setParent(oldParentDir);
               treeEvent.setChild(oldElement);
               myManager.childRemoved(treeEvent);
@@ -696,6 +710,18 @@ public class PsiVFSListener extends VirtualFileAdapter {
         handleVfsChangeWithoutPsi(file);
       }
     }
+
+    @Override
+    public void fileContentReloaded(@NotNull VirtualFile file, @NotNull Document document) {
+      PsiFile psiFile = myFileManager.getCachedPsiFileInner(file);
+      if (!file.isValid() || psiFile == null || !FileUtilRt.isTooLarge(file.getLength()) || psiFile instanceof PsiLargeFile) return;
+      ApplicationManager.getApplication().runWriteAction(new ExternalChangeAction() {
+        @Override
+        public void run() {
+          myFileManager.reloadFromDisk(psiFile, true);
+        }
+      });
+    }
   }
 
   private void handleVfsChangeWithoutPsi(@NotNull VirtualFile vFile) {
@@ -707,6 +733,10 @@ public class PsiVFSListener extends VirtualFileAdapter {
   }
 
   private boolean isInRootModel(@NotNull VirtualFile file) {
+    if (ProjectKt.getStateStore(myProject).isProjectFile(file)) {
+      return false;
+    }
+
     ProjectFileIndex index = ProjectFileIndex.SERVICE.getInstance(myProject);
     return index.isInContent(file) || index.isInLibraryClasses(file) || index.isInLibrarySource(file);
   }

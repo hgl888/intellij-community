@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import com.intellij.ui.popup.AbstractPopup;
 import com.intellij.ui.popup.MovablePopup;
 import com.intellij.util.Alarm;
 import com.intellij.util.ObjectUtils;
+import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.MouseEventAdapter;
 import com.intellij.util.ui.MouseEventHandler;
 import com.intellij.util.ui.UIUtil;
@@ -188,7 +189,7 @@ public abstract class AbstractExpandableItemsHandler<KeyType, ComponentType exte
   @NotNull
   @Override
   public Collection<KeyType> getExpandedItems() {
-    return myKey == null ? Collections.<KeyType>emptyList() : Collections.singleton(myKey);
+    return myKey == null ? Collections.emptyList() : Collections.singleton(myKey);
   }
 
   protected void updateCurrentSelection() {
@@ -360,7 +361,7 @@ public abstract class AbstractExpandableItemsHandler<KeyType, ComponentType exte
     if (width <= 0 || height <= 0) return null;
 
     Dimension size = getImageSize(width, height);
-    myImage = UIUtil.createImage(size.width, size.height, BufferedImage.TYPE_INT_RGB);
+    myImage = UIUtil.createImage(myComponent, size.width, size.height, BufferedImage.TYPE_INT_RGB);
 
     Graphics2D g = myImage.createGraphics();
     g.setClip(null);
@@ -371,9 +372,9 @@ public abstract class AbstractExpandableItemsHandler<KeyType, ComponentType exte
     CustomLineBorder border = null;
     if (borderWidth > 0) {
       border = new CustomLineBorder(getBorderColor(), borderWidth, 0, borderWidth, borderWidth);
-      location.y -= borderWidth;
-      size.width += borderWidth;
-      size.height += borderWidth + borderWidth;
+      Insets insets = border.getBorderInsets(myTipComponent);
+      location.y -= insets.top;
+      JBInsets.addTo(size, insets);
     }
 
     g.dispose();

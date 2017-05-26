@@ -14,15 +14,10 @@
  * limitations under the License.
  */
 
-/*
- * User: anna
- * Date: 28-Dec-2009
- */
 package com.intellij.refactoring.move.moveClassesOrPackages;
 
-import com.intellij.CommonBundle;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.psi.PsiDirectory;
@@ -45,7 +40,6 @@ import com.intellij.refactoring.util.RefactoringUIUtil;
 import com.intellij.usageView.UsageInfo;
 import com.intellij.usageView.UsageViewDescriptor;
 import com.intellij.usageView.UsageViewUtil;
-import com.intellij.util.Function;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.containers.MultiMap;
 import org.jetbrains.annotations.NotNull;
@@ -152,12 +146,9 @@ public class MoveDirectoryWithClassesProcessor extends BaseRefactoringProcessor 
       for (PsiFile psiFile : myFilesToMove.keySet()) {
         myFilesToMove.get(psiFile).findOrCreateTargetDirectory();
       }
-    }
-    catch (IncorrectOperationException e) {
-      Messages.showErrorDialog(myProject, e.getMessage(), CommonBundle.getErrorTitle());
-      return;
-    }
-    try {
+
+      DumbService.getInstance(myProject).completeJustSubmittedTasks();
+
       final List<PsiFile> movedFiles = new ArrayList<>();
       final Map<PsiElement, PsiElement> oldToNewElementsMapping = new HashMap<>();
       for (PsiFile psiFile : myFilesToMove.keySet()) {
@@ -188,7 +179,7 @@ public class MoveDirectoryWithClassesProcessor extends BaseRefactoringProcessor 
 
       myNonCodeUsages = CommonMoveUtil.retargetUsages(usages, oldToNewElementsMapping);
       for (MoveDirectoryWithClassesHelper helper : MoveDirectoryWithClassesHelper.findAll()) {
-        helper.postProcessUsages(usages, dir -> getResultDirectory(dir).getTargetDirectory());
+        helper.postProcessUsages(usages, dir -> getResultDirectory(dir).findOrCreateTargetDirectory());
       }
       for (PsiDirectory directory : myDirectories) {
         final TargetDirectoryWrapper wrapper = myNestedDirsToMove.get(directory);

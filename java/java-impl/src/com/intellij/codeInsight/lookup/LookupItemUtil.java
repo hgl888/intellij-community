@@ -24,41 +24,9 @@ import com.intellij.psi.*;
 import com.intellij.psi.meta.PsiMetaData;
 import com.intellij.psi.util.PsiUtilCore;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
-import java.util.Collection;
-
-/**
- * Created by IntelliJ IDEA.
- * User: ik
- * Date: 06.02.2003
- * Time: 16:05:20
- * To change this template use Options | File Templates.
- */
 public class LookupItemUtil{
   private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.lookup.LookupItemUtil");
-
-  /**
-   * @deprecated to remove in IDEA 16
-   */
-  @Nullable
-  public static LookupElement addLookupItem(Collection<LookupElement> set, @NotNull Object object) {
-    if (object instanceof PsiType) {
-      PsiType psiType = (PsiType)object;
-      for (final LookupElement lookupItem : set) {
-        Object o = lookupItem.getObject();
-        if (o.equals(psiType)) {
-          return lookupItem;
-        }
-      }
-    }
-
-    for (LookupElement lookupItem : set) {
-      if(lookupItem.getObject().equals(lookupItem)) return null;
-    }
-    LookupElement item = objectToLookupItem(object);
-    return set.add(item) ? item : null;
-  }
 
   /**
    * @deprecated

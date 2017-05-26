@@ -15,16 +15,18 @@
  */
 package org.jetbrains.plugins.groovy.codeInsight.hint
 
+import com.intellij.codeInsight.hints.HintInfo.MethodInfo
 import com.intellij.codeInsight.hints.InlayInfo
 import com.intellij.codeInsight.hints.InlayParameterHintsProvider
-import com.intellij.codeInsight.hints.MethodInfo
 import com.intellij.lang.java.JavaLanguage
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiMirrorElement
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrNamedArgument
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrCall
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrGdkMethod
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrLiteral
 import org.jetbrains.plugins.groovy.lang.psi.impl.signatures.GrClosureSignatureUtil
 import org.jetbrains.plugins.groovy.lang.psi.impl.signatures.GrClosureSignatureUtil.ArgInfo
 
@@ -32,11 +34,14 @@ class GroovyInlayParameterHintsProvider : InlayParameterHintsProvider {
 
   private companion object {
     val blackList = setOf(
-        "org.codehaus.groovy.runtime.DefaultGroovyMethods.*"
+      "org.codehaus.groovy.runtime.DefaultGroovyMethods.*"
     )
   }
 
-  override fun getParameterHints(element: PsiElement) = (element as? GrCall)?.doGetParameterHints() ?: emptyList()
+  override fun getParameterHints(element: PsiElement): List<InlayInfo> {
+    if (element.containingFile?.virtualFile?.extension == "gradle") return emptyList()
+    return (element as? GrCall)?.doGetParameterHints() ?: emptyList()
+  }
 
   private fun GrCall.doGetParameterHints(): List<InlayInfo>? {
     val signature = GrClosureSignatureUtil.createSignature(this) ?: return null
@@ -44,8 +49,9 @@ class GroovyInlayParameterHintsProvider : InlayParameterHintsProvider {
     val original = signature.parameters.zip(infos)
     val closureArgument = closureArguments.singleOrNull()
 
-    // leave only regular arguments and varargs
+    // leave only regular literal arguments and varargs which contain literals
     fun ArgInfo<PsiElement>.shouldShowHint(): Boolean {
+      if (args.none { it is GrLiteral || it is GrClosableBlock }) return false // do not show non-literals
       if (isMultiArg) return args.none { it is GrNamedArgument } //  do not show named arguments
       if (closureArgument == null) return true
       return closureArgument !in args // do not show closure argument
@@ -67,10 +73,10 @@ class GroovyInlayParameterHintsProvider : InlayParameterHintsProvider {
     }
   }
 
-  override fun getMethodInfo(element: PsiElement): MethodInfo? {
+  override fun getHintInfo(element: PsiElement): MethodInfo? {
     val call = element as? GrCall
     val resolved = call?.resolveMethod()
-    val method = (resolved as? GrGdkMethod)?.staticMethod ?: resolved
+    val method = (resolved as? PsiMirrorElement)?.prototype as? PsiMethod ?: resolved
     return method?.getMethodInfo()
   }
 
@@ -78,10 +84,10 @@ class GroovyInlayParameterHintsProvider : InlayParameterHintsProvider {
     val clazzName = containingClass?.qualifiedName ?: return null
     val fullMethodName = StringUtil.getQualifiedName(clazzName, name)
     val paramNames: List<String> = parameterList.parameters.map { it.name ?: "" }
-    return MethodInfo(fullMethodName, paramNames)
+    return MethodInfo(fullMethodName, paramNames, if (language == blackListDependencyLanguage) language else null)
   }
 
-  override val defaultBlackList: Set<String> get() = blackList
+  override fun getDefaultBlackList(): Set<String> = blackList
 
   override fun getBlackListDependencyLanguage() = JavaLanguage.INSTANCE
 }

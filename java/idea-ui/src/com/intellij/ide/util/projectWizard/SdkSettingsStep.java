@@ -38,6 +38,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.awt.GridBagConstraints;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -57,13 +58,13 @@ public class SdkSettingsStep extends ModuleWizardStep {
 
   public SdkSettingsStep(SettingsStep settingsStep, @NotNull ModuleBuilder moduleBuilder,
                          @NotNull Condition<SdkTypeId> sdkTypeIdFilter) {
-
     this(settingsStep, moduleBuilder, sdkTypeIdFilter, null);
   }
 
-  public SdkSettingsStep(SettingsStep settingsStep, @NotNull ModuleBuilder moduleBuilder,
-                           @NotNull Condition<SdkTypeId> sdkTypeIdFilter, @Nullable Condition<Sdk> sdkFilter) {
-
+  public SdkSettingsStep(SettingsStep settingsStep,
+                         @NotNull ModuleBuilder moduleBuilder,
+                         @NotNull Condition<SdkTypeId> sdkTypeIdFilter,
+                         @Nullable Condition<Sdk> sdkFilter) {
     this(settingsStep.getContext(), moduleBuilder, sdkTypeIdFilter, sdkFilter);
     if (!isEmpty()) {
       settingsStep.addSettingsField(getSdkFieldLabel(settingsStep.getContext().getProject()), myJdkPanel);
@@ -167,12 +168,12 @@ public class SdkSettingsStep extends ModuleWizardStep {
   @Override
   public void updateDataModel() {
     Project project = myWizardContext.getProject();
+    Sdk jdk = myJdkComboBox.getSelectedJdk();
     if (project == null) {
-      Sdk jdk = myJdkComboBox.getSelectedJdk();
       myWizardContext.setProjectJdk(jdk);
     }
     else {
-      myModuleBuilder.setModuleJdk(myJdkComboBox.getSelectedJdk());
+      myModuleBuilder.setModuleJdk(jdk);
     }
   }
 

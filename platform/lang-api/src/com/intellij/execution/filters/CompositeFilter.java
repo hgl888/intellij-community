@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,23 +27,33 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 @SuppressWarnings("ForLoopReplaceableByForEach")
 public class CompositeFilter implements Filter, FilterMixin {
   private static final Logger LOG = Logger.getInstance(CompositeFilter.class);
 
-  private final List<Filter> myFilters = new ArrayList<>();
+  private final List<Filter> myFilters;
   private boolean myIsAnyHeavy;
   private boolean forceUseAllFilters;
   private final DumbService myDumbService;
 
   public CompositeFilter(@NotNull Project project) {
+    this(project, new ArrayList<>());
+  }
+
+  public CompositeFilter(@NotNull Project project, @NotNull List<Filter> filters) {
     myDumbService = DumbService.getInstance(project);
+    myFilters = filters;
+    myFilters.forEach(filter -> {
+      myIsAnyHeavy |= filter instanceof FilterMixin;
+    });
   }
 
   protected CompositeFilter(DumbService dumbService) {
     myDumbService = dumbService;
+    myFilters = new ArrayList<>();
   }
 
   @Override
@@ -92,7 +102,12 @@ public class CompositeFilter implements Filter, FilterMixin {
     if (resultItems.size() == 1) {
       ResultItem resultItem = resultItems.get(0);
       return new Result(resultItem.getHighlightStartOffset(), resultItem.getHighlightEndOffset(), resultItem.getHyperlinkInfo(),
-                        resultItem.getHighlightAttributes(), resultItem.getFollowedHyperlinkAttributes());
+                        resultItem.getHighlightAttributes(), resultItem.getFollowedHyperlinkAttributes()) {
+        @Override
+        public int getHighlighterLayer() {
+          return resultItem.getHighlighterLayer();
+        }
+      };
     }
     return new Result(resultItems);
   }
@@ -199,6 +214,11 @@ public class CompositeFilter implements Filter, FilterMixin {
   public void addFilter(@NotNull Filter filter) {
     myFilters.add(filter);
     myIsAnyHeavy |= filter instanceof FilterMixin;
+  }
+
+  @NotNull
+  public List<Filter> getFilters() {
+    return Collections.unmodifiableList(myFilters);
   }
 
   public void setForceUseAllFilters(boolean forceUseAllFilters) {

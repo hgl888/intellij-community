@@ -105,8 +105,8 @@ public abstract class MvcFramework {
 
   @NotNull
   public Map<String, Runnable> createConfigureActions(final @NotNull Module module) {
-    return Collections.<String, Runnable>singletonMap("Configure " + getFrameworkName() + " SDK",
-                                                      () -> configureAsLibraryDependency(module));
+    return Collections.singletonMap("Configure " + getFrameworkName() + " SDK",
+                                    () -> configureAsLibraryDependency(module));
   }
 
   protected void configureAsLibraryDependency(@NotNull Module module) {
@@ -428,7 +428,7 @@ public abstract class MvcFramework {
   }
 
   public static GeneralCommandLine createCommandLine(@NotNull JavaParameters params) throws CantRunException {
-    return CommandLineBuilder.createFromJavaParameters(params);
+    return params.toCommandLine();
   }
 
   private void extractPlugins(Project project, @Nullable VirtualFile pluginRoot, boolean refreshPluginRoot, Map<String, VirtualFile> res) {

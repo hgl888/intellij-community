@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,11 @@
  */
 package com.intellij.openapi.wm.impl;
 
+import com.intellij.ide.DataManager;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ex.ApplicationInfoEx;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.TaskInfo;
 import com.intellij.openapi.project.Project;
@@ -49,7 +53,9 @@ import java.util.Map;
  */
 public final class TestWindowManager extends WindowManagerEx {
   private static final Key<StatusBar> STATUS_BAR = Key.create("STATUS_BAR");
+  private final DesktopLayout myLayout = new DesktopLayout();
 
+  @Override
   public final void doNotSuggestAsParent(final Window window) { }
 
   @Override
@@ -115,12 +121,12 @@ public final class TestWindowManager extends WindowManagerEx {
 
   @Override
   public final IdeFrameImpl allocateFrame(final Project project) {
-    throw new UnsupportedOperationException();
+    return new IdeFrameImpl(ApplicationInfoEx.getInstanceEx(), ActionManagerEx.getInstanceEx(), DataManager.getInstance(), ApplicationManager.getApplication());
   }
 
   @Override
   public final void releaseFrame(final IdeFrameImpl frame) {
-    throw new UnsupportedOperationException();
+    frame.dispose();
   }
 
   @Override
@@ -151,7 +157,7 @@ public final class TestWindowManager extends WindowManagerEx {
 
   @Override
   public final DesktopLayout getLayout() {
-    throw new UnsupportedOperationException();
+    return myLayout;
   }
 
   @Override
@@ -250,12 +256,7 @@ public final class TestWindowManager extends WindowManagerEx {
     public void install(IdeFrame frame) { }
 
     @Override
-    public void setInfo(@Nullable String s, @Nullable String requestor) {     }
-
-    @Override
-    public String getInfoRequestor() {
-      return null;
-    }
+    public void setInfo(@Nullable String s, @Nullable String requestor) { }
 
     @Override
     public boolean isVisible() {
@@ -351,6 +352,7 @@ public final class TestWindowManager extends WindowManagerEx {
     @Override
     public BalloonHandler notifyProgressByBalloon(@NotNull MessageType type, @NotNull String htmlBody) {
       return new BalloonHandler() {
+        @Override
         public void hide() {
         }
       };
@@ -362,6 +364,7 @@ public final class TestWindowManager extends WindowManagerEx {
                                                   @Nullable Icon icon,
                                                   @Nullable HyperlinkListener listener) {
       return new BalloonHandler() {
+        @Override
         public void hide() {
         }
       };

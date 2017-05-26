@@ -15,7 +15,6 @@
  */
 package org.intellij.lang.regexp.validation;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.editor.Editor;
@@ -57,9 +56,8 @@ class RemoveRedundantEscapeAction implements IntentionAction {
 
   @Override
   public void invoke(@NotNull Project project, Editor editor, PsiFile file) throws IncorrectOperationException {
-    if (!FileModificationService.getInstance().prepareFileForWrite(file)) return;
-    final Character v = myChar.getValue();
-    assert v != null;
+    final int v = myChar.getValue();
+    assert v != -1;
 
     final ASTNode node = myChar.getNode().getFirstChildNode();
     final ASTNode parent = node.getTreeParent();
@@ -68,13 +66,20 @@ class RemoveRedundantEscapeAction implements IntentionAction {
   }
 
   @NotNull
-  private String replacement(@NotNull Character v) {
+  private String replacement(int codePoint) {
     final PsiElement context = myChar.getContainingFile().getContext();
-    return RegExpElementImpl.isLiteralExpression(context) ?
-           StringUtil.escapeStringCharacters(v.toString()) :
-           context instanceof XmlElement ?
-           XmlStringUtil.escapeString(v.toString()) :
-           v.toString();
+    String s = Character.isSupplementaryCodePoint(codePoint)
+               ? Character.toString(Character.highSurrogate(codePoint)) + Character.toString(Character.lowSurrogate(codePoint))
+               : Character.toString((char)codePoint);
+    if (RegExpElementImpl.isLiteralExpression(context)) {
+      return StringUtil.escapeStringCharacters(s);
+    }
+    else if (context instanceof XmlElement) {
+      return XmlStringUtil.escapeString(s);
+    }
+    else {
+      return s;
+    }
   }
 
   @Override

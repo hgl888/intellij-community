@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,13 @@
 package org.jetbrains.plugins.groovy.lang.psi.util
 
 import com.intellij.psi.PsiElement
-import org.jetbrains.plugins.groovy.lang.lexer.GroovyTokenTypes.mCOLON
+import org.jetbrains.plugins.groovy.lang.lexer.GroovyTokenTypes.kIN
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariable
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaration
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.GrForClause
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.GrForInClause
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.GrTraditionalForClause
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.params.GrParameter
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.params.GrParameterList
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod
 
 /**
@@ -35,14 +36,14 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMe
  */
 fun modifierListMayBeEmpty(owner: PsiElement?): Boolean = when (owner) {
   is GrParameter -> owner.parent.let {
-    when (it) {
-      is GrForInClause -> it.declaredVariable != owner || it.delimiter.node.elementType != mCOLON
-      is GrTraditionalForClause -> it.declaredVariable != owner
-      else -> true
-    }
+    if (it is GrParameterList) return true
+    if (it is GrForClause && it.declaredVariable != owner) return true
+    if (it is GrForInClause && it.delimiter.node.elementType == kIN) return true
+    return owner.typeElementGroovy != null
   }
   is GrMethod -> owner.isConstructor || owner.returnTypeElementGroovy != null && !owner.hasTypeParameters()
   is GrVariable -> owner.typeElementGroovy != null
   is GrVariableDeclaration -> owner.typeElementGroovy != null
   else -> true
 }
+

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.vfs.CharsetToolkit;
 import com.intellij.pom.java.LanguageLevel;
 import com.intellij.structuralsearch.impl.matcher.MatcherImpl;
-import com.intellij.structuralsearch.impl.matcher.MatcherImplUtil;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,7 +37,6 @@ abstract class StructuralSearchTestCase extends LightQuickFixTestCase {
   protected void setUp() throws Exception {
     super.setUp();
 
-    StructuralSearchUtil.ourUseUniversalMatchingAlgorithm = false;
     testMatcher = new Matcher(getProject());
     options = new MatchOptions();
     options.setLooseMatching(true);
@@ -65,29 +63,13 @@ abstract class StructuralSearchTestCase extends LightQuickFixTestCase {
                                           FileType sourceFileType,
                                           String sourceExtension,
                                           boolean physicalSourceFile) {
-    return findMatches(in, pattern, filePattern, patternFileType, patternLanguage, sourceFileType, sourceExtension, physicalSourceFile, true);
-  }
-
-  protected List<MatchResult> findMatches(String in,
-                                          String pattern,
-                                          boolean filePattern,
-                                          FileType patternFileType,
-                                          Language patternLanguage,
-                                          FileType sourceFileType,
-                                          String sourceExtension,
-                                          boolean physicalSourceFile,
-                                          boolean transform) {
     options.clearVariableConstraints();
-    options.setSearchPattern(pattern);
-    if (transform) {
-      MatcherImplUtil.transform(options);
-    }
-    pattern = options.getSearchPattern();
+    options.fillSearchCriteria(pattern);
     options.setFileType(patternFileType);
     options.setDialect(patternLanguage);
 
     MatcherImpl.validate(getProject(), options);
-    return testMatcher.testFindMatches(in, pattern, options, filePattern, sourceFileType, sourceExtension, physicalSourceFile);
+    return testMatcher.testFindMatches(in, options, filePattern, sourceFileType, sourceExtension, physicalSourceFile);
   }
 
   protected List<MatchResult> findMatches(String in, String pattern, boolean filePattern, FileType patternFileType) {

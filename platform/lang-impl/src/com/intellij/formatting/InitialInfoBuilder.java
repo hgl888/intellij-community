@@ -19,7 +19,6 @@ package com.intellij.formatting;
 import com.intellij.formatting.engine.ExpandableIndent;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.util.TextRange;
-import com.intellij.openapi.util.UnfairTextRange;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
 import com.intellij.util.containers.ContainerUtil;
@@ -80,7 +79,7 @@ public class InitialInfoBuilder {
   {
     myModel = model;
     myAffectedRanges = affectedRanges;
-    myExtendedAffectedRanges = getExtendedAffectedRanges(affectedRanges);
+    myExtendedAffectedRanges = affectedRanges != null ? affectedRanges.getExtendedFormattingRanges() : null;
     myProgressCallback = progressCallback;
     myCurrentWhiteSpace = new WhiteSpace(getStartOffset(rootBlock), true);
     myOptions = options;
@@ -224,22 +223,6 @@ public class InitialInfoBuilder {
     return false;
   }
 
-  @Nullable
-  private static List<TextRange> getExtendedAffectedRanges(FormatTextRanges formatTextRanges) {
-    if (formatTextRanges == null) return null;
-
-    List<FormatTextRange> ranges = formatTextRanges.getRanges();
-    List<TextRange> extended = ContainerUtil.newArrayList();
-
-    final int extendOffset = 500;
-    for (FormatTextRange textRange : ranges) {
-      TextRange range = textRange.getTextRange();
-      extended.add(new UnfairTextRange(range.getStartOffset() - extendOffset, range.getEndOffset() + extendOffset));
-    }
-
-    return extended;
-  }
-
   private CompositeBlockWrapper buildCompositeBlock(Block rootBlock,
                                                     @Nullable CompositeBlockWrapper parent,
                                                     int index,
@@ -343,7 +326,6 @@ public class InitialInfoBuilder {
     checkInsideFormatterOffTag(rootBlock);
 
     TextRange textRange = rootBlock.getTextRange();
-    checkRange(textRange);
 
     if (myPreviousBlock != null) {
       myPreviousBlock.setNextBlock(info);

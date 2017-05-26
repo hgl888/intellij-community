@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2012 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,16 @@
 package org.jetbrains.jps.model.serialization;
 
 import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.testFramework.PlatformTestUtil;
 import org.jdom.Element;
 import org.jetbrains.jps.model.artifact.JpsArtifact;
 import org.jetbrains.jps.model.artifact.JpsArtifactService;
 import org.jetbrains.jps.model.serialization.artifact.JpsArtifactSerializer;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 
+import static com.intellij.testFramework.assertions.Assertions.assertThat;
 import static org.jetbrains.jps.model.serialization.JpsProjectSerializationTest.SAMPLE_PROJECT_PATH;
 
 /**
@@ -53,17 +52,11 @@ public class JpsArtifactSerializationTest extends JpsSerializationTestCase {
   }
 
   private void doTestSaveArtifact(JpsArtifact artifact, File expectedFile) {
-    try {
-      Element actual = new Element("component").setAttribute("name", "ArtifactManager");
-      JpsArtifactSerializer.saveArtifact(artifact, actual);
-      JpsMacroExpander
-        expander = JpsProjectLoader.createProjectMacroExpander(Collections.<String, String>emptyMap(), new File(getTestDataFileAbsolutePath(SAMPLE_PROJECT_PATH)));
-      Element expected = JpsLoaderBase.loadRootElement(expectedFile, expander);
-      PlatformTestUtil.assertElementsEqual(expected, actual);
-    }
-    catch (IOException e) {
-      throw new RuntimeException(e);
-    }
+    Element actual = new Element("component").setAttribute("name", "ArtifactManager");
+    JpsArtifactSerializer.saveArtifact(artifact, actual);
+    JpsMacroExpander
+      expander = JpsProjectLoader.createProjectMacroExpander(Collections.emptyMap(), new File(getTestDataFileAbsolutePath(SAMPLE_PROJECT_PATH)));
+    assertThat(actual).isEqualTo(JpsLoaderBase.loadRootElement(expectedFile, expander));
   }
 
   private static JpsArtifactService getService() {

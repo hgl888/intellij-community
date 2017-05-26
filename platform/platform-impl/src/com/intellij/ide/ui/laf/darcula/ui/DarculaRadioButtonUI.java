@@ -106,7 +106,7 @@ public class DarculaRadioButtonUI extends MetalRadioButtonUI {
     if (!UIUtil.isUnderDarcula() && selected) {
       final GraphicsConfig fillOvalConf = new GraphicsConfig(g);
       g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
-      g.fillOval(0, 1, w, h);
+      g.fillOval(0, JBUI.scale(1), w, h);
       fillOvalConf.restore();
     } else {
       if (focus) {
@@ -117,7 +117,7 @@ public class DarculaRadioButtonUI extends MetalRadioButtonUI {
     }
 
     if (focus) {
-      if (UIUtil.isRetina() || JBUI.isHiDPI()) {
+      if (JBUI.isPixHiDPI(c)) {
         DarculaUIUtil.paintFocusOval(g, JBUI.scale(1), JBUI.scale(1) + 1, w - JBUI.scale(2), h - JBUI.scale(2));
       } else {
         DarculaUIUtil.paintFocusOval(g, 0, JBUI.scale(1), w, h);

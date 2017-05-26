@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,9 @@ public class PyNames {
   public static final String INIT = "__init__";
   public static final String DICT = "__dict__";
   public static final String DOT_PY = ".py";
+  public static final String DOT_PYI = ".pyi";
   public static final String INIT_DOT_PY = INIT + DOT_PY;
+  public static final String INIT_DOT_PYI = INIT + DOT_PYI;
 
   public static final String SETUP_DOT_PY = "setup" + DOT_PY;
 
@@ -88,13 +90,9 @@ public class PyNames {
   public static final String TRUE = "True";
   public static final String FALSE = "False";
 
-  public static final String FAKE_OLD_BASE = "___Classobj";
-  public static final String FAKE_GENERATOR = "__generator";
-  public static final String FAKE_FUNCTION = "__function";
-  public static final String FAKE_METHOD = "__method";
-  public static final String FAKE_NAMEDTUPLE = "__namedtuple";
-  public static final String FAKE_COROUTINE = "__coroutine";
-  public static final String FAKE_ASYNC_GENERATOR = "__asyncgenerator";
+  public static final String TYPES_FUNCTION_TYPE = "types.FunctionType";
+  public static final String TYPES_METHOD_TYPE = "types.UnboundMethodType";
+  public static final String TYPES_INSTANCE_TYPE = "types.InstanceType";
 
   public static final String FUTURE_MODULE = "__future__";
   public static final String UNICODE_LITERALS = "unicode_literals";
@@ -143,6 +141,7 @@ public class PyNames {
   public static final String MUTABLE_MAPPING = "MutableMapping";
   public static final String ABC_SET = "Set";
   public static final String ABC_MUTABLE_SET = "MutableSet";
+  public static final String PATH_LIKE = "PathLike";
 
   public static final String AWAITABLE = "Awaitable";
   public static final String ASYNC_ITERABLE = "AsyncIterable";
@@ -171,8 +170,10 @@ public class PyNames {
   public static final String ANEXT = "__anext__";
   public static final String AENTER = "__aenter__";
   public static final String AEXIT = "__aexit__";
+  public static final String DUNDER_AWAIT = "__await__";
   public static final String SIZEOF = "__sizeof__";
   public static final String INIT_SUBCLASS = "__init_subclass__";
+  public static final String FSPATH = "__fspath__";
 
   public static final String NAME = "__name__";
   public static final String ENTER = "__enter__";
@@ -201,8 +202,6 @@ public class PyNames {
 
   public static final String NOSE_TEST = "nose";
   public static final String PY_TEST = "pytest";
-  public static final String AT_TEST = "Attest";
-  public static final String AT_TEST_IMPORT = "attest";
 
   public static final String TEST_CASE = "TestCase";
 
@@ -217,7 +216,7 @@ public class PyNames {
   /**
    * Contains all known predefined names of "__foo__" form.
    */
-  public static ImmutableSet<String> UnderscoredAttributes = ImmutableSet.of(
+  public static final ImmutableSet<String> UNDERSCORED_ATTRIBUTES = ImmutableSet.of(
     "__all__",
     "__annotations__",
     "__author__",
@@ -246,7 +245,7 @@ public class PyNames {
     "__version__"
   );
 
-  public static ImmutableSet<String> COMPARISON_OPERATORS = ImmutableSet.of(
+  public static final ImmutableSet<String> COMPARISON_OPERATORS = ImmutableSet.of(
     "__eq__",
     "__ne__",
     "__lt__",
@@ -257,7 +256,7 @@ public class PyNames {
     "__contains__"
   );
 
-  public static ImmutableSet<String> SUBSCRIPTION_OPERATORS = ImmutableSet.of(
+  public static final ImmutableSet<String> SUBSCRIPTION_OPERATORS = ImmutableSet.of(
     GETITEM,
     SETITEM,
     DELITEM
@@ -404,14 +403,14 @@ public class PyNames {
     .put("__xor__", _self_other_descr)
     .build();
 
-  public static ImmutableMap<String, BuiltinDescription> PY2_BUILTIN_METHODS = ImmutableMap.<String, BuiltinDescription>builder()
+  public static final ImmutableMap<String, BuiltinDescription> PY2_BUILTIN_METHODS = ImmutableMap.<String, BuiltinDescription>builder()
     .putAll(BuiltinMethods)
     .put("__nonzero__", _only_self_descr)
     .put("__div__", _self_other_descr)
     .put(NEXT, _only_self_descr)
     .build();
 
-  public static ImmutableMap<String, BuiltinDescription> PY3_BUILTIN_METHODS = ImmutableMap.<String, BuiltinDescription>builder()
+  public static final ImmutableMap<String, BuiltinDescription> PY3_BUILTIN_METHODS = ImmutableMap.<String, BuiltinDescription>builder()
     .putAll(BuiltinMethods)
     .put("__bool__", _only_self_descr)
     .put("__bytes__", _only_self_descr)
@@ -423,12 +422,12 @@ public class PyNames {
     .put(DUNDER_NEXT, _only_self_descr)
     .build();
 
-  public static ImmutableMap<String, BuiltinDescription> PY35_BUILTIN_METHODS = ImmutableMap.<String, BuiltinDescription>builder()
+  public static final ImmutableMap<String, BuiltinDescription> PY35_BUILTIN_METHODS = ImmutableMap.<String, BuiltinDescription>builder()
     .putAll(PY3_BUILTIN_METHODS)
     .put("__imatmul__", _self_other_descr)
     .put("__matmul__", _self_other_descr)
     .put("__rmatmul__", _self_other_descr)
-    .put("__await__", _only_self_descr)
+    .put(DUNDER_AWAIT, _only_self_descr)
     .put(AENTER, _only_self_descr)
     .put(AEXIT, _exit_descr)
     .put(AITER, _only_self_descr)
@@ -439,6 +438,7 @@ public class PyNames {
     .putAll(PY35_BUILTIN_METHODS)
     .put(INIT_SUBCLASS, new BuiltinDescription("(cls, **kwargs)"))
     .put("__set_name__", new BuiltinDescription("(self, owner, name)"))
+    .put("__fspath__", _only_self_descr)
     .build();
 
   public static ImmutableMap<String, BuiltinDescription> getBuiltinMethods(LanguageLevel level) {
@@ -502,7 +502,7 @@ public class PyNames {
   /**
    * Contains keywords as of CPython 2.5.
    */
-  public static ImmutableSet<String> Keywords = ImmutableSet.of(
+  public static final ImmutableSet<String> KEYWORDS = ImmutableSet.of(
     AND,
     DEL,
     FROM,
@@ -536,7 +536,7 @@ public class PyNames {
     TRY
   );
 
-  public static Set<String> BuiltinInterfaces = ImmutableSet.of(
+  public static final Set<String> BUILTIN_INTERFACES = ImmutableSet.of(
     CALLABLE, HASHABLE, ITERABLE, ITERATOR, SIZED, CONTAINER, SEQUENCE, MAPPING, ABC_COMPLEX, ABC_REAL, ABC_RATIONAL, ABC_INTEGRAL,
     ABC_NUMBER
   );
@@ -548,7 +548,7 @@ public class PyNames {
    * @return true iff the name is either a keyword or a reserved name, like None.
    */
   public static boolean isReserved(@NonNls String name) {
-    return Keywords.contains(name) || NONE.equals(name);
+    return KEYWORDS.contains(name) || NONE.equals(name);
   }
 
   // NOTE: includes unicode only good for py3k

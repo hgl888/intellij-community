@@ -54,10 +54,10 @@ import java.util.Map;
 public abstract class GotoActionBase extends AnAction {
   private static final Logger LOG = Logger.getInstance("#com.intellij.ide.actions.GotoActionBase");
 
-  protected static Class myInAction = null;
+  protected static Class myInAction;
   private static final Map<Class, Pair<String, Integer>> ourLastStrings = ContainerUtil.newHashMap();
   private static final Map<Class, List<String>> ourHistory = ContainerUtil.newHashMap();
-  private int myHistoryIndex = 0;
+  private int myHistoryIndex;
 
   @Override
   public void actionPerformed(@NotNull AnActionEvent e) {
@@ -84,8 +84,9 @@ public abstract class GotoActionBase extends AnAction {
     final Presentation presentation = event.getPresentation();
     final DataContext dataContext = event.getDataContext();
     final Project project = CommonDataKeys.PROJECT.getData(dataContext);
-    presentation.setEnabled(!getClass().equals (myInAction) && (!requiresProject() || project != null) && hasContributors(dataContext));
-    presentation.setVisible(hasContributors(dataContext));
+    boolean hasContributors = hasContributors(dataContext);
+    presentation.setEnabled(!getClass().equals (myInAction) && (!requiresProject() || project != null) && hasContributors);
+    presentation.setVisible(hasContributors);
   }
 
   protected boolean hasContributors(final DataContext dataContext) {
@@ -128,13 +129,8 @@ public abstract class GotoActionBase extends AnAction {
       return Pair.create(predefined, 0);
     }
     if (useEditorSelection) {
-      final Editor editor = e.getData(CommonDataKeys.EDITOR);
-      if (editor != null) {
-        final String selectedText = editor.getSelectionModel().getSelectedText();
-        if (selectedText != null && !selectedText.contains("\n")) {
-          return Pair.create(selectedText, 0);
-        }
-      }
+      String selectedText = getInitialTextForNavigation(e.getData(CommonDataKeys.EDITOR));
+      if (selectedText != null) return new Pair<>(selectedText, 0);
     }
 
     final String query = e.getData(SpeedSearchSupply.SPEED_SEARCH_CURRENT_QUERY);
@@ -158,6 +154,17 @@ public abstract class GotoActionBase extends AnAction {
     }
 
     return Pair.create("", 0);
+  }
+
+  @Nullable
+  static String getInitialTextForNavigation(@Nullable Editor editor) {
+    if (editor != null) {
+      final String selectedText = editor.getSelectionModel().getSelectedText();
+      if (selectedText != null && !selectedText.contains("\n")) {
+        return selectedText;
+      }
+    }
+    return null;
   }
 
   protected <T> void showNavigationPopup(AnActionEvent e, ChooseByNameModel model, final GotoActionCallback<T> callback) {

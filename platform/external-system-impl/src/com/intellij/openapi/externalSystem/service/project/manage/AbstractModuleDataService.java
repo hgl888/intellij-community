@@ -26,6 +26,7 @@ import com.intellij.openapi.externalSystem.model.project.ExternalSystemSourceTyp
 import com.intellij.openapi.externalSystem.model.project.ModuleData;
 import com.intellij.openapi.externalSystem.model.project.OrderAware;
 import com.intellij.openapi.externalSystem.model.project.ProjectData;
+import com.intellij.openapi.externalSystem.service.project.IdeModelsProvider;
 import com.intellij.openapi.externalSystem.service.project.IdeModifiableModelsProvider;
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
 import com.intellij.openapi.externalSystem.util.ExternalSystemBundle;
@@ -33,14 +34,12 @@ import com.intellij.openapi.externalSystem.util.ExternalSystemConstants;
 import com.intellij.openapi.externalSystem.util.ExternalSystemUiUtil;
 import com.intellij.openapi.module.ModifiableModuleModel;
 import com.intellij.openapi.module.Module;
-import com.intellij.openapi.module.ModuleWithNameAlreadyExists;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.*;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Pair;
-import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.pom.java.LanguageLevel;
 import com.intellij.ui.CheckBoxList;
@@ -48,7 +47,6 @@ import com.intellij.ui.IdeBorderFactory;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.Consumer;
-import com.intellij.util.Function;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.ContainerUtilRt;
@@ -57,7 +55,6 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
-import java.io.File;
 import java.util.*;
 import java.util.List;
 
@@ -83,7 +80,7 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
       return;
     }
 
-    final Collection<DataNode<E>> toCreate = filterExistingModules(toImport, modelsProvider, project);
+    final Collection<DataNode<E>> toCreate = filterExistingModules(toImport, modelsProvider);
     if (!toCreate.isEmpty()) {
       createModules(toCreate, modelsProvider, project);
     }
@@ -116,14 +113,14 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
                              @NotNull Project project) {
     for (final DataNode<E> module : toCreate) {
       ModuleData data = module.getData();
-      final Module created = modelsProvider.newModule(data.getModuleFilePath(), data.getModuleTypeId());
+      final Module created = modelsProvider.newModule(data);
       module.putUserData(MODULE_KEY, created);
       Set<String> orphanFiles = project.getUserData(ORPHAN_MODULE_FILES);
       if (orphanFiles != null) {
         orphanFiles.remove(created.getModuleFilePath());
       }
 
-      // Ensure that the dependencies are clear (used to be not clear when manually removing the module and importing it via gradle)
+      // Ensure that the dependencies are clear (used to be not clear when manually removing the module and importing it via external system)
       final ModifiableRootModel modifiableRootModel = modelsProvider.getModifiableRootModel(created);
       modifiableRootModel.inheritSdk();
 
@@ -149,28 +146,16 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
 
   @NotNull
   private Collection<DataNode<E>> filterExistingModules(@NotNull Collection<DataNode<E>> modules,
-                                                        @NotNull IdeModifiableModelsProvider modelsProvider,
-                                                        @NotNull Project project) {
+                                                        @NotNull IdeModifiableModelsProvider modelsProvider) {
     Collection<DataNode<E>> result = ContainerUtilRt.newArrayList();
     for (DataNode<E> node : modules) {
       ModuleData moduleData = node.getData();
-      Module module = modelsProvider.findIdeModule(moduleData.getInternalName());
+      Module module = modelsProvider.findIdeModule(moduleData);
       if (module == null) {
         result.add(node);
       }
       else {
-        if (!FileUtil.pathsEqual(module.getModuleFilePath(), moduleData.getModuleFilePath())) {
-          modelsProvider.getModifiableModuleModel().disposeModule(module);
-          result.add(node);
-          Set<String> orphanFiles = project.getUserData(ORPHAN_MODULE_FILES);
-          if (orphanFiles == null) {
-            project.putUserData(ORPHAN_MODULE_FILES, orphanFiles = ContainerUtil.newHashSet());
-          }
-          orphanFiles.add(module.getModuleFilePath());
-        }
-        else {
-          node.putUserData(MODULE_KEY, module);
-        }
+        node.putUserData(MODULE_KEY, module);
       }
     }
     return result;
@@ -272,7 +257,6 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
             init();
           }
 
-          @Nullable
           @Override
           protected JComponent createCenterPanel() {
             return new JBScrollPane(content);
@@ -348,7 +332,10 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
   }
 
   @Override
-  public void onSuccessImport(@NotNull Project project) {
+  public void onSuccessImport(@NotNull Collection<DataNode<E>> imported,
+                              @Nullable ProjectData projectData,
+                              @NotNull Project project,
+                              @NotNull IdeModelsProvider modelsProvider) {
     final Set<String> orphanFiles = project.getUserData(ORPHAN_MODULE_FILES);
     if (orphanFiles != null && !orphanFiles.isEmpty()) {
       ExternalSystemApiUtil.executeOnEdt(false, () -> {
@@ -396,12 +383,7 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
     }
 
     if (LOG.isDebugEnabled()) {
-      final boolean changed = !ArrayUtil.equals(orderEntries, newOrder, new Comparator<OrderEntry>() {
-        @Override
-        public int compare(OrderEntry o1, OrderEntry o2) {
-          return o1.compareTo(o2);
-        }
-      });
+      final boolean changed = !ArrayUtil.equals(orderEntries, newOrder, Comparator.naturalOrder());
       LOG.debug(String.format("rearrange status (%s): %s", modifiableRootModel.getModule(), changed ? "modified" : "not modified"));
     }
     modifiableRootModel.rearrangeOrderEntries(newOrder);
@@ -418,7 +400,7 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
         idx--;
       }
     }
-    return idx == -1 ? -1 : idx;
+    return idx;
   }
 
   private void setLanguageLevel(@NotNull ModifiableRootModel modifiableRootModel, E data) {

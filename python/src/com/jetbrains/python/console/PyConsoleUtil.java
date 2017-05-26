@@ -15,16 +15,26 @@
  */
 package com.jetbrains.python.console;
 
+import com.google.common.base.CharMatcher;
+import com.intellij.codeInsight.lookup.LookupManager;
 import com.intellij.execution.console.LanguageConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.IdeActions;
+import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.jetbrains.python.console.parsing.PythonConsoleData;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.awt.event.KeyEvent;
 
 /**
  * @author traff
@@ -35,7 +45,7 @@ public class PyConsoleUtil {
   public static final String INDENT_PROMPT = "...";
   public static final String IPYTHON_INDENT_PROMPT = "...:";
 
-  static final String HELP_PROMPT = "help>";
+  public static final String HELP_PROMPT = "help>";
   public static final String EXECUTING_PROMPT = "";
 
   private static final String IPYTHON_PAGING_PROMPT = "---Return to continue, q to quit---";
@@ -145,6 +155,42 @@ public class PyConsoleUtil {
   public static void setCurrentIndentSize(@NotNull VirtualFile file, int indentSize) {
     PythonConsoleData consoleData = getOrCreateIPythonData(file);
     consoleData.setIndentSize(indentSize);
+  }
+
+  public static AnAction createTabCompletionAction(PythonConsoleView consoleView) {
+    final AnAction runCompletions = new AnAction() {
+      @Override
+      public void actionPerformed(AnActionEvent e) {
+        Editor editor = consoleView.getConsoleEditor();
+        if (LookupManager.getActiveLookup(editor) != null) {
+          AnAction replace = ActionManager.getInstance().getAction(IdeActions.ACTION_CHOOSE_LOOKUP_ITEM_REPLACE);
+          ActionUtil.performActionDumbAware(replace, e);
+          return;
+        }
+        AnAction completionAction = ActionManager.getInstance().getAction(IdeActions.ACTION_CODE_COMPLETION);
+        if (completionAction != null) {
+          ActionUtil.performActionDumbAware(completionAction, e);
+        }
+      }
+
+      @Override
+      public void update(AnActionEvent e) {
+        Editor editor = consoleView.getConsoleEditor();
+        if (LookupManager.getActiveLookup(editor) != null) {
+          e.getPresentation().setEnabled(false);
+        }
+        int offset = editor.getCaretModel().getOffset();
+        Document document = editor.getDocument();
+        int lineStart = document.getLineStartOffset(document.getLineNumber(offset));
+        String textToCursor = document.getText(new TextRange(lineStart, offset));
+        e.getPresentation().setEnabled(!CharMatcher.WHITESPACE.matchesAllOf(textToCursor));
+      }
+    };
+
+    runCompletions
+      .registerCustomShortcutSet(KeyEvent.VK_TAB, 0, consoleView.getConsoleEditor().getComponent());
+    runCompletions.getTemplatePresentation().setVisible(false);
+    return runCompletions;
   }
 }
 

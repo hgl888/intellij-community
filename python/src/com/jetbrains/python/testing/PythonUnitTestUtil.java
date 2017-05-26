@@ -50,6 +50,35 @@ public class PythonUnitTestUtil {
   private static final Pattern TEST_MATCH_PATTERN = Pattern.compile("(?:^|[\b_\\.%s-])[Tt]est");
   private static final String TESTCASE_METHOD_PREFIX = "test";
 
+
+  public static boolean isTestFunction(PyFunction pyFunction) {
+    String name = pyFunction.getName();
+    if (name != null && name.startsWith("test")) {
+      return true;
+    }
+    return false;
+  }
+
+  public static boolean isTestClass(final PyClass pyClass, @Nullable final TypeEvalContext context) {
+    final TypeEvalContext contextToUse = (context != null ? context : TypeEvalContext.codeInsightFallback(pyClass.getProject()));
+    for (PyClassLikeType type : pyClass.getAncestorTypes(contextToUse)) {
+      if (type != null && PYTHON_TEST_QUALIFIED_CLASSES.contains(type.getClassQName())) {
+        return true;
+      }
+    }
+    final String className = pyClass.getName();
+    if (className == null) return false;
+    final String name = className.toLowerCase();
+    if (name.startsWith("test")) {
+      for (PyFunction cls : pyClass.getMethods()) {
+        if (isTestFunction(cls)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   private PythonUnitTestUtil() {
   }
 
@@ -118,8 +147,10 @@ public class PythonUnitTestUtil {
 
   public static boolean isTestCaseFunction(PyFunction function, boolean checkAssert) {
     final String name = function.getName();
-    if (name == null || !TEST_MATCH_PATTERN.matcher(name).find()) {
-      return false;
+    if (name != null && TEST_MATCH_PATTERN.matcher(name).find()) {
+      // Since there are a lot of ways to launch assert in modern frameworks,
+      // we assume any function with "test" word in name is test
+      return true;
     }
     if (function.getContainingClass() != null) {
       if (isTestCaseClass(function.getContainingClass(), null)) return true;
@@ -161,18 +192,18 @@ public class PythonUnitTestUtil {
         if (testQualifiedNames.contains(type.getClassQName())) {
           return true;
         }
-        String clsName = cls.getQualifiedName();
-        String[] names = new String[0];
-        if (clsName != null) {
-          names = clsName.split("\\.");
-        }
-        if (names.length == 0) return false;
-
-        clsName = names[names.length - 1];
-        if (TEST_MATCH_PATTERN.matcher(clsName).find()) {
-          return true;
-        }
       }
+    }
+    String clsName = cls.getQualifiedName();
+    String[] names = new String[0];
+    if (clsName != null) {
+      names = clsName.split("\\.");
+    }
+    if (names.length == 0) return false;
+
+    clsName = names[names.length - 1];
+    if (TEST_MATCH_PATTERN.matcher(clsName).find()) {
+      return true;
     }
     return false;
   }

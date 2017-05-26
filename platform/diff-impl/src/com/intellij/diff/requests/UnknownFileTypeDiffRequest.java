@@ -22,8 +22,6 @@ import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeManager;
 import com.intellij.openapi.fileTypes.UnknownFileType;
 import com.intellij.openapi.fileTypes.ex.FileTypeChooser;
-import com.intellij.openapi.project.DumbModePermission;
-import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.vcs.changes.issueLinks.LinkMouseListenerBase;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.SimpleColoredComponent;
@@ -57,14 +55,9 @@ public class UnknownFileTypeDiffRequest extends ComponentDiffRequest {
     label.append("Can't show diff for unknown file type. ",
                  new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, UIUtil.getInactiveTextColor()));
     if (myFileName != null) {
-      label.append("Associate", SimpleTextAttributes.LINK_ATTRIBUTES, new Runnable() {
-        @Override
-        public void run() {
-          DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, () -> {
-            FileType type = FileTypeChooser.associateFileType(myFileName);
-            if (type != null) onSuccess(context);
-          });
-        }
+      label.append("Associate", SimpleTextAttributes.LINK_ATTRIBUTES, (Runnable)() -> {
+        FileType type = FileTypeChooser.associateFileType(myFileName);
+        if (type != null) onSuccess(context);
       });
       LinkMouseListenerBase.installSingleTagOn(label);
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import com.intellij.ide.ui.UISettings;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.impl.actionholder.ActionRef;
+import com.intellij.openapi.application.impl.LaterInvocator;
 import com.intellij.openapi.ui.JBPopupMenu;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.IconLoader;
@@ -224,8 +225,8 @@ public final class ActionMenu extends JBMenu {
   }
 
   private void updateIcon() {
-    UISettings settings = UISettings.getInstance();
-    if (settings != null && settings.SHOW_ICONS_IN_MENUS) {
+    UISettings settings = UISettings.getInstanceOrNull();
+    if (settings != null && settings.getShowIconsInMenus()) {
       final Presentation presentation = myPresentation;
       final Icon icon = presentation.getIcon();
       setIcon(icon);
@@ -322,7 +323,7 @@ public final class ActionMenu extends JBMenu {
       mayContextBeInvalid = true;
     }
 
-    Utils.fillMenu(myGroup.getAction(), this, myMnemonicEnabled, myPresentationFactory, context, myPlace, true, mayContextBeInvalid);
+    Utils.fillMenu(myGroup.getAction(), this, myMnemonicEnabled, myPresentationFactory, context, myPlace, true, mayContextBeInvalid, LaterInvocator.isInModalContext());
   }
 
   private class MenuItemSynchronizer implements PropertyChangeListener {
@@ -396,7 +397,7 @@ public final class ActionMenu extends JBMenu {
         ComponentEvent componentEvent = (ComponentEvent)event;
         Component component = componentEvent.getComponent();
         JPopupMenu popup = UIUtil.getParentOfType(JPopupMenu.class, component);
-        if (popup != null && popup.getInvoker() == myComponent) {
+        if (popup != null && popup.getInvoker() == myComponent && popup.isShowing()) {
           Rectangle bounds = popup.getBounds();
           if (bounds.isEmpty()) return;
           bounds.setLocation(popup.getLocationOnScreen());
@@ -413,7 +414,7 @@ public final class ActionMenu extends JBMenu {
     }
 
     @Override
-    public boolean dispatch(AWTEvent e) {
+    public boolean dispatch(@NotNull AWTEvent e) {
       if (e instanceof MouseEvent && myUpperTargetPoint != null && myLowerTargetPoint != null && myCallbackAlarm != null) {
         if (e.getID() == MouseEvent.MOUSE_PRESSED || e.getID() == MouseEvent.MOUSE_RELEASED || e.getID() == MouseEvent.MOUSE_CLICKED) {
           return false;

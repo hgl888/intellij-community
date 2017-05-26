@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,9 @@ import com.intellij.openapi.fileChooser.ex.LocalFsFinder;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.registry.Registry;
+import com.intellij.ui.mac.MacFileSaverDialog;
 import com.intellij.ui.mac.MacPathChooserDialog;
+import com.intellij.ui.win.WinPathChooserDialog;
 import com.intellij.util.SystemProperties;
 import gnu.trove.THashMap;
 import org.jetbrains.annotations.NotNull;
@@ -62,7 +64,9 @@ public class FileChooserFactoryImpl extends FileChooserFactory {
     if (useNativeMacChooser(descriptor)) {
       return new MacPathChooserDialog(descriptor, parent, project);
     }
-    else if (parent != null) {
+    else if (useNativeWinChooser()) {
+      return new WinPathChooserDialog(descriptor, parent, project);
+    }else if (parent != null) {
       return new FileChooserDialogImpl(descriptor, parent, project);
     }
     else {
@@ -70,11 +74,17 @@ public class FileChooserFactoryImpl extends FileChooserFactory {
     }
   }
 
+  private static boolean useNativeWinChooser () {
+    return SystemInfo.isWindows &&
+           Registry.is("ide.win.file.chooser.native");
+  }
+
   private static boolean useNativeMacChooser(final FileChooserDescriptor descriptor) {
     return SystemInfo.isMac &&
+           !descriptor.isForcedToUseIdeaFileChooser() &&
            SystemProperties.getBooleanProperty("native.mac.file.chooser.enabled", true) &&
            Registry.is("ide.mac.file.chooser.native") &&
-           SystemInfo.isJetbrainsJvm;
+           SystemInfo.isJetBrainsJvm;
   }
 
   @NotNull
@@ -107,12 +117,12 @@ public class FileChooserFactoryImpl extends FileChooserFactory {
   @NotNull
   @Override
   public FileSaverDialog createSaveFileDialog(@NotNull FileSaverDescriptor descriptor, @Nullable Project project) {
-    return new FileSaverDialogImpl(descriptor, project);
+    return (SystemInfo.isMac && Registry.is("ide.mac.native.save.dialog")) ? new MacFileSaverDialog(descriptor, project) : new FileSaverDialogImpl(descriptor, project);
   }
 
   @NotNull
   @Override
   public FileSaverDialog createSaveFileDialog(@NotNull FileSaverDescriptor descriptor, @NotNull Component parent) {
-    return new FileSaverDialogImpl(descriptor, parent);
+    return (SystemInfo.isMac && Registry.is("ide.mac.native.save.dialog"))? new MacFileSaverDialog (descriptor, parent) : new FileSaverDialogImpl(descriptor, parent);
   }
 }

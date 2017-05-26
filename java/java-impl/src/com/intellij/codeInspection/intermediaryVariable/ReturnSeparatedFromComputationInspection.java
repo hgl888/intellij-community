@@ -15,7 +15,6 @@
  */
 package com.intellij.codeInspection.intermediaryVariable;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInspection.*;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -23,6 +22,7 @@ import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.controlFlow.*;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.refactoring.util.RefactoringUtil;
 import com.siyeh.ig.psiutils.ExpressionUtils;
 import gnu.trove.THashMap;
@@ -60,7 +60,7 @@ public class ReturnSeparatedFromComputationInspection extends BaseJavaBatchLocal
       final PsiCodeBlock returnScope = (PsiCodeBlock)returnParent;
       final PsiStatement[] statements = returnScope.getStatements();
       if (statements.length != 0 && statements[statements.length - 1] == returnStatement) {
-        final PsiType returnType = getReturnType(returnScope);
+        final PsiType returnType = PsiTypesUtil.getMethodReturnType(returnStatement);
         if (returnType != null) {
           PsiStatement refactoredStatement = getPrevNonEmptyStatement(returnStatement, null);
           if (refactoredStatement != null) {
@@ -78,18 +78,6 @@ public class ReturnSeparatedFromComputationInspection extends BaseJavaBatchLocal
           }
         }
       }
-    }
-    return null;
-  }
-
-  @Nullable
-  private static PsiType getReturnType(PsiCodeBlock returnScope) {
-    NavigatablePsiElement returnFrom = PsiTreeUtil.getNonStrictParentOfType(returnScope, PsiMethod.class, PsiLambdaExpression.class);
-    if (returnFrom instanceof PsiMethod) {
-      return ((PsiMethod)returnFrom).getReturnType();
-    }
-    if (returnFrom instanceof PsiLambdaExpression) {
-      return LambdaUtil.getFunctionalInterfaceReturnType((PsiLambdaExpression)returnFrom);
     }
     return null;
   }
@@ -201,7 +189,7 @@ public class ReturnSeparatedFromComputationInspection extends BaseJavaBatchLocal
       if (flow != null) {
         Mover mover = new Mover(flow, context.refactoredStatement, context.returnedVariable, context.returnType, false);
         boolean removeReturn = mover.moveTo(context.refactoredStatement, true);
-        if (!mover.isEmpty() && FileModificationService.getInstance().preparePsiElementForWrite(returnStatement)) {
+        if (!mover.isEmpty()) {
           applyChanges(mover, context, removeReturn);
         }
       }
@@ -249,8 +237,6 @@ public class ReturnSeparatedFromComputationInspection extends BaseJavaBatchLocal
       returnStatement = (PsiReturnStatement)returnStatement.copy();
       PsiElement lastReturnChild = returnStatement.getLastChild();
       Project project = returnStatement.getProject();
-      PsiParserFacade parserFacade = PsiParserFacade.SERVICE.getInstance(project);
-      PsiElementFactory elementFactory = JavaPsiFacade.getInstance(project).getElementFactory();
       for (PsiComment comment : keptComments) {
         lastReturnChild = returnStatement.addAfter(comment, lastReturnChild);
       }

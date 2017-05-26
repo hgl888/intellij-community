@@ -34,6 +34,7 @@ import com.intellij.vcs.log.VcsFullCommitDetails;
 import com.intellij.vcs.log.impl.FatalErrorHandler;
 import com.intellij.vcs.log.impl.VcsChangesLazilyParsedDetails;
 import com.intellij.vcs.log.util.PersistentUtil;
+import com.intellij.vcsUtil.VcsUtil;
 import gnu.trove.THashMap;
 import gnu.trove.TIntHashSet;
 import org.jetbrains.annotations.NotNull;
@@ -45,78 +46,46 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.ObjIntConsumer;
 
 import static com.intellij.util.containers.ContainerUtil.newTroveSet;
+import static com.intellij.vcs.log.data.index.VcsLogPersistentIndex.getVersion;
 
 public class VcsLogPathsIndex extends VcsLogFullDetailsIndex<Integer> {
   private static final Logger LOG = Logger.getInstance(VcsLogPathsIndex.class);
-  private static final String NAME = "paths";
-  private static final int VALUE = 239;
+  public static final String PATHS = "paths";
+  public static final String INDEX_PATHS_IDS = "paths-ids";
 
-  @NotNull private final PersistentHashMap<Integer, Integer> myEmptyCommits;
   @NotNull private final PathsIndexer myPathsIndexer;
 
   public VcsLogPathsIndex(@NotNull String logId,
                           @NotNull Set<VirtualFile> roots,
                           @NotNull FatalErrorHandler fatalErrorHandler,
                           @NotNull Disposable disposableParent) throws IOException {
-    super(logId, NAME, VcsLogPersistentIndex.getVersion(), new PathsIndexer(createPathsEnumerator(logId), roots),
-          new NullableIntKeyDescriptor(), disposableParent);
+    super(logId, PATHS, getVersion(), new PathsIndexer(createPathsEnumerator(logId), roots),
+          new NullableIntKeyDescriptor(), fatalErrorHandler, disposableParent);
 
-    myEmptyCommits = PersistentUtil.createPersistentHashMap(EnumeratorIntegerDescriptor.INSTANCE, "index-no-" + NAME, logId,
-                                                            VcsLogPersistentIndex.getVersion());
     myPathsIndexer = (PathsIndexer)myIndexer;
-    myPathsIndexer.setFatalErrorConsumer(e -> {
-      fatalErrorHandler.consume(this, e);
-      markCorrupted();
-    });
+    myPathsIndexer.setFatalErrorConsumer(e -> fatalErrorHandler.consume(this, e));
   }
 
   @NotNull
   private static PersistentEnumeratorBase<String> createPathsEnumerator(@NotNull String logId) throws IOException {
-    int version = VcsLogPersistentIndex.getVersion();
-    final File storageFile = PersistentUtil.getStorageFile("index-paths-ids", logId, version);
-
-    PersistentBTreeEnumerator<String> enumerator = IOUtil.openCleanOrResetBroken(
-      () -> new PersistentBTreeEnumerator<>(storageFile, SystemInfo.isFileSystemCaseSensitive ? EnumeratorStringDescriptor.INSTANCE
-                                                                                              : new ToLowerCaseStringDescriptor(),
-                                            Page.PAGE_SIZE, null, version),
-      () -> {
-        IOUtil.deleteAllFilesStartingWith(getStorageFile(INDEX + NAME, logId, version));
-        IOUtil.deleteAllFilesStartingWith(getStorageFile(INDEX_INPUTS + NAME, logId, version));
-        IOUtil.deleteAllFilesStartingWith(storageFile);
-      });
-    if (enumerator == null) throw new IOException("Can not create enumerator " + NAME + " for " + logId);
-    return enumerator;
-  }
-
-  @Override
-  protected void onNotIndexableCommit(int commit) throws StorageException {
-    try {
-      myEmptyCommits.put(commit, VALUE);
-    }
-    catch (IOException e) {
-      throw new StorageException(e);
-    }
-  }
-
-  @Override
-  public boolean isIndexed(int commit) throws IOException {
-    return super.isIndexed(commit) || myEmptyCommits.containsMapping(commit);
+    File storageFile = PersistentUtil.getStorageFile(INDEX, INDEX_PATHS_IDS, logId, getVersion(), true);
+    return new PersistentBTreeEnumerator<>(storageFile, SystemInfo.isFileSystemCaseSensitive ? EnumeratorStringDescriptor.INSTANCE
+                                                                                             : new ToLowerCaseStringDescriptor(),
+                                           Page.PAGE_SIZE, null, getVersion());
   }
 
   @Override
   public void flush() throws StorageException {
     super.flush();
-    myEmptyCommits.force();
     myPathsIndexer.getPathsEnumerator().force();
   }
 
+  @NotNull
   public TIntHashSet getCommitsForPaths(@NotNull Collection<FilePath> paths) throws IOException, StorageException {
-    Set<Integer> allPathIds = ContainerUtil.newHashSet();
-    for (FilePath path : paths) {
-      allPathIds.add(myPathsIndexer.myPathsEnumerator.enumerate(path.getPath()));
-    }
+    Set<Integer> allPathIds = getPathIds(paths);
 
     TIntHashSet result = new TIntHashSet();
     Set<Integer> renames = allPathIds;
@@ -126,6 +95,85 @@ public class VcsLogPathsIndex extends VcsLogFullDetailsIndex<Integer> {
     }
 
     return result;
+  }
+
+  @NotNull
+  private Set<Integer> getPathIds(@NotNull Collection<FilePath> paths) throws IOException {
+    Set<Integer> allPathIds = ContainerUtil.newHashSet();
+    for (FilePath path : paths) {
+      allPathIds.add(myPathsIndexer.myPathsEnumerator.enumerate(path.getPath()));
+    }
+    return allPathIds;
+  }
+
+  @NotNull
+  public Set<FilePath> getFileNames(@NotNull FilePath path, int commit) throws IOException, StorageException {
+    int startId = myPathsIndexer.myPathsEnumerator.enumerate(path.getPath());
+
+    Set<Integer> startIds = ContainerUtil.newHashSet();
+    startIds.add(startId);
+    Set<Integer> allIds = ContainerUtil.newHashSet(startIds);
+    Set<Integer> newIds = ContainerUtil.newHashSet();
+
+    Set<Integer> resultIds = ContainerUtil.newHashSet();
+
+    outer:
+    while (!startIds.isEmpty()) {
+      for (int currentPathId : startIds) {
+        boolean foundCommit = !iterateCommitIdsAndValues(currentPathId, (renamedPathId, commitId) -> {
+          if (commitId == commit) {
+            resultIds.add(currentPathId);
+            if (renamedPathId != null) resultIds.add(renamedPathId);
+            return false;
+          }
+          if (renamedPathId != null && !allIds.contains(renamedPathId)) {
+            newIds.add(renamedPathId);
+          }
+          return true;
+        });
+        if (foundCommit) break outer;
+      }
+      startIds = ContainerUtil.newHashSet(newIds);
+      allIds.addAll(startIds);
+      newIds.clear();
+    }
+
+    Set<FilePath> result = ContainerUtil.newHashSet();
+    for (Integer id : resultIds) {
+      result.add(VcsUtil.getFilePath(myPathsIndexer.myPathsEnumerator.valueOf(id)));
+    }
+    return result;
+  }
+
+  public void iterateCommits(@NotNull Collection<FilePath> paths, @NotNull ObjIntConsumer<Couple<FilePath>> consumer)
+    throws IOException, StorageException {
+
+    Set<Integer> startIds = getPathIds(paths);
+    Set<Integer> allIds = ContainerUtil.newHashSet(startIds);
+    Set<Integer> newIds = ContainerUtil.newHashSet();
+    while (!startIds.isEmpty()) {
+      for (int currentPathId : startIds) {
+        FilePath currentPath = VcsUtil.getFilePath(myPathsIndexer.myPathsEnumerator.valueOf(currentPathId));
+        iterateCommitIdsAndValues(currentPathId, (renamedPathId, commitId) -> {
+          FilePath renamedPath = null;
+          if (renamedPathId != null) {
+            if (!allIds.contains(renamedPathId)) {
+              newIds.add(renamedPathId);
+            }
+            try {
+              renamedPath = VcsUtil.getFilePath(myPathsIndexer.myPathsEnumerator.valueOf(renamedPathId));
+            }
+            catch (IOException e) {
+              LOG.error(e);
+            }
+          }
+          consumer.accept(Couple.of(currentPath, renamedPath), commitId);
+        });
+      }
+      startIds = ContainerUtil.newHashSet(newIds);
+      allIds.addAll(startIds);
+      newIds.clear();
+    }
   }
 
   @NotNull
@@ -149,37 +197,11 @@ public class VcsLogPathsIndex extends VcsLogFullDetailsIndex<Integer> {
   public void dispose() {
     super.dispose();
     try {
-      myEmptyCommits.close();
-    }
-    catch (IOException e) {
-      LOG.warn(e);
-    }
-    try {
       myPathsIndexer.getPathsEnumerator().close();
     }
     catch (IOException e) {
       LOG.warn(e);
     }
-  }
-
-  @Override
-  public void markCorrupted() {
-    super.markCorrupted();
-    myEmptyCommits.markCorrupted();
-  }
-
-  @NotNull
-  public String getPathInfo(int commit) throws IOException {
-    if (myEmptyCommits.containsMapping(commit)) {
-      return "No paths";
-    }
-    Collection<Integer> keys = getKeysForCommit(commit);
-    assert keys != null;
-    StringBuilder builder = new StringBuilder();
-    for (int key : keys) {
-      builder.append(myPathsIndexer.getPathsEnumerator().valueOf(key)).append("\n");
-    }
-    return builder.toString();
   }
 
   private static class PathsIndexer implements DataIndexer<Integer, Integer, VcsFullCommitDetails> {

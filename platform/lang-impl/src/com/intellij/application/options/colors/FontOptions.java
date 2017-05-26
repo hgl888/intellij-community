@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,339 +16,144 @@
 
 package com.intellij.application.options.colors;
 
-import com.intellij.application.options.EditorFontsConstants;
-import com.intellij.icons.AllIcons;
-import com.intellij.ide.IdeTooltipManager;
-import com.intellij.ide.ui.AntialiasingType;
-import com.intellij.ide.ui.UISettings;
-import com.intellij.openapi.application.ApplicationBundle;
-import com.intellij.openapi.application.ApplicationNamesInfo;
-import com.intellij.openapi.editor.colors.EditorColorsManager;
+import com.intellij.application.options.editor.fonts.AppEditorFontConfigurable;
+import com.intellij.ide.DataManager;
+import com.intellij.openapi.editor.colors.DelegatingFontPreferences;
 import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.editor.colors.FontPreferences;
-import com.intellij.openapi.ui.MessageType;
-import com.intellij.openapi.util.SystemInfo;
-import com.intellij.ui.*;
-import com.intellij.ui.components.JBCheckBox;
-import com.intellij.util.EventDispatcher;
-import com.intellij.util.ui.JBUI;
-import net.miginfocom.swing.MigLayout;
+import com.intellij.openapi.options.Configurable;
+import com.intellij.openapi.options.ex.Settings;
+import com.intellij.ui.HoverHyperlinkLabel;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import javax.swing.event.DocumentEvent;
+import javax.swing.event.HyperlinkEvent;
+import javax.swing.event.HyperlinkListener;
 import java.awt.*;
+import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.awt.event.ItemListener;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
 
-public class FontOptions extends JPanel implements OptionsPanel{
-  private static final FontInfoRenderer RENDERER = new FontInfoRenderer() {
-    @Override
-    protected AntialiasingType getAntialiasingType() {
-      return UISettings.getShadowInstance().EDITOR_AA_TYPE;
-    }
-  };
-
-  private final EventDispatcher<ColorAndFontSettingsListener> myDispatcher = EventDispatcher.create(ColorAndFontSettingsListener.class);
+public class FontOptions extends AbstractFontOptionsPanel {
 
   @NotNull private final ColorAndFontOptions myOptions;
 
-  @NotNull private final JTextField myEditorFontSizeField = new JTextField(4);
-  @NotNull private final JTextField myLineSpacingField    = new JTextField(4);
-  private final FontComboBox myPrimaryCombo = new FontComboBox();
-  private final JCheckBox myUseSecondaryFontCheckbox = new JCheckBox(ApplicationBundle.message("secondary.font"));
-  private final JCheckBox myEnableLigaturesCheckbox = new JCheckBox(ApplicationBundle.message("use.ligatures"));
-  private final FontComboBox mySecondaryCombo = new FontComboBox();
+  private @Nullable JCheckBox myInheritFontCheckbox;
 
-  @NotNull private final JBCheckBox myOnlyMonospacedCheckBox =
-    new JBCheckBox(ApplicationBundle.message("checkbox.show.only.monospaced.fonts"));
-
-  private boolean myIsInSchemeChange;
-
-
-  public FontOptions(ColorAndFontOptions options) {
-    this(options, ApplicationBundle.message("group.editor.font"));
-  }
-
-  protected FontOptions(@NotNull ColorAndFontOptions options, final String title) {
-    setLayout(new MigLayout("ins 0, gap 5, flowx"));
-    Insets borderInsets = new Insets(IdeBorderFactory.TITLED_BORDER_TOP_INSET,
-                                     IdeBorderFactory.TITLED_BORDER_LEFT_INSET,
-                                     0,
-                                     IdeBorderFactory.TITLED_BORDER_RIGHT_INSET);
-    setBorder(IdeBorderFactory.createTitledBorder(title, false, borderInsets));
+  public FontOptions(@NotNull ColorAndFontOptions options) {
     myOptions = options;
-    add(myOnlyMonospacedCheckBox, "sgx b, sx 2");
+  }
 
-    add(new JLabel(ApplicationBundle.message("primary.font")), "newline, ax right");
-    add(myPrimaryCombo, "sgx b");
-    add(new JLabel(ApplicationBundle.message("editbox.font.size")), "gapleft 20");
-    add(myEditorFontSizeField);
-    add(new JLabel(ApplicationBundle.message("editbox.line.spacing")), "gapleft 20");
-    add(myLineSpacingField);
+  @Nullable
+  protected String getInheritFontTitle() {
+    return "default font";
+  }
 
-    add(new JLabel(ApplicationBundle.message("label.fallback.fonts.list.description"),
-                   MessageType.INFO.getDefaultIcon(),
-                   SwingConstants.LEFT), "newline, sx 5");
-    add(myUseSecondaryFontCheckbox, "newline, ax right");
-    add(mySecondaryCombo, "sgx b");
-    JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
-    myEnableLigaturesCheckbox.setBorder(null);
-    panel.add(myEnableLigaturesCheckbox);
-    JLabel warningIcon = new JLabel(AllIcons.General.BalloonWarning);
-    IdeTooltipManager.getInstance().setCustomTooltip(
-      warningIcon,
-      new TooltipWithClickableLinks.ForBrowser(warningIcon,
-                                               ApplicationBundle.message("ligatures.jre.warning",
-                                                                         ApplicationNamesInfo.getInstance().getFullProductName())));
-    warningIcon.setBorder(JBUI.Borders.emptyLeft(5));
-    updateWarningIconVisibility(warningIcon);
-    panel.add(warningIcon);
-    add(panel, "newline, sx 2");
+  @Override
+  protected void initControls() {
+    createInheritCheckBox();
+    super.initControls();
+  }
 
-    myOnlyMonospacedCheckBox.setBorder(null);
-    myUseSecondaryFontCheckbox.setBorder(null);
-    mySecondaryCombo.setEnabled(false);
+  private void createInheritCheckBox() {
+    if (getInheritFontTitle() != null) {
+      JPanel inheritPanel = new JPanel(new FlowLayout(FlowLayout.LEADING, 0,0 ));
+      inheritPanel.setBorder(BorderFactory.createEmptyBorder());
+      myInheritFontCheckbox = new JCheckBox();
+      myInheritFontCheckbox.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 5));
+      myInheritFontCheckbox.addActionListener(new ActionListener() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+          setDelegatingPreferences(myInheritFontCheckbox.isSelected());
+        }
+      });
+      inheritPanel.add(myInheritFontCheckbox);
+      inheritPanel.add(new JLabel("Use "));
+      inheritPanel.add(createHyperlinkLabel());
 
-    myOnlyMonospacedCheckBox.setSelected(EditorColorsManager.getInstance().isUseOnlyMonospacedFonts());
-    myOnlyMonospacedCheckBox.addActionListener(e -> {
-      EditorColorsManager.getInstance().setUseOnlyMonospacedFonts(myOnlyMonospacedCheckBox.isSelected());
-      myPrimaryCombo.setMonospacedOnly(myOnlyMonospacedCheckBox.isSelected());
-      mySecondaryCombo.setMonospacedOnly(myOnlyMonospacedCheckBox.isSelected());
-    });
-    myPrimaryCombo.setMonospacedOnly(myOnlyMonospacedCheckBox.isSelected());
-    myPrimaryCombo.setRenderer(RENDERER);
+      add(inheritPanel, "newline, span");
+      add(new JSeparator(), "newline, growx, span");
+    }
+  }
 
-    mySecondaryCombo.setMonospacedOnly(myOnlyMonospacedCheckBox.isSelected());
-    mySecondaryCombo.setRenderer(RENDERER);
-
-    myUseSecondaryFontCheckbox.addActionListener(e -> {
-      mySecondaryCombo.setEnabled(myUseSecondaryFontCheckbox.isSelected());
-      syncFontFamilies();
-    });
-    ItemListener itemListener = this::syncFontFamilies;
-    myPrimaryCombo.addItemListener(itemListener);
-    mySecondaryCombo.addItemListener(itemListener);
-
-    ActionListener actionListener = this::syncFontFamilies;
-    myPrimaryCombo.addActionListener(actionListener);
-    mySecondaryCombo.addActionListener(actionListener);
-
-    myEditorFontSizeField.getDocument().addDocumentListener(new DocumentAdapter() {
+  @NotNull
+  private JLabel createHyperlinkLabel() {
+    HoverHyperlinkLabel label = new HoverHyperlinkLabel(getInheritFontTitle());
+    label.addHyperlinkListener(new HyperlinkListener() {
       @Override
-      public void textChanged(DocumentEvent event) {
-        if (myIsInSchemeChange || !SwingUtilities.isEventDispatchThread()) return;
-        String selectedFont = myPrimaryCombo.getFontName();
-        if (selectedFont != null) {
-          setFontSize(getFontSizeFromField());
-        }
-        updateDescription(true);
-      }
-    });
-    myEditorFontSizeField.addKeyListener(new KeyAdapter() {
-      @Override
-      public void keyPressed(KeyEvent e) {
-        if (e.getKeyCode() != KeyEvent.VK_UP && e.getKeyCode() != KeyEvent.VK_DOWN) return;
-        boolean up = e.getKeyCode() == KeyEvent.VK_UP;
-        try {
-          int value = Integer.parseInt(myEditorFontSizeField.getText());
-          value += (up ? 1 : -1);
-          value = Math.min(EditorFontsConstants.getMaxEditorFontSize(), Math.max(EditorFontsConstants.getMinEditorFontSize(), value));
-          myEditorFontSizeField.setText(String.valueOf(value));
-        }
-        catch (NumberFormatException ignored) {
+      public void hyperlinkUpdate(HyperlinkEvent e) {
+        if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED) {
+          navigateToParentFontConfigurable();
         }
       }
     });
-
-    myLineSpacingField.getDocument().addDocumentListener(new DocumentAdapter() {
-      @Override
-      public void textChanged(DocumentEvent event) {
-        if (myIsInSchemeChange) return;
-        float lineSpacing = getLineSpacingFromField();
-        if (getLineSpacing() != lineSpacing) {
-          setCurrentLineSpacing(lineSpacing);
-        }
-        updateDescription(true);
-      }
-    });
-    myLineSpacingField.addKeyListener(new KeyAdapter() {
-      @Override
-      public void keyPressed(KeyEvent e) {
-        if (e.getKeyCode() != KeyEvent.VK_UP && e.getKeyCode() != KeyEvent.VK_DOWN) return;
-        boolean up = e.getKeyCode() == KeyEvent.VK_UP;
-        try {
-          float value = Float.parseFloat(myLineSpacingField.getText());
-          value += (up ? 1 : -1) * .1F;
-          value = Math.min(EditorFontsConstants.getMaxEditorLineSpacing(), Math.max(EditorFontsConstants.getMinEditorLineSpacing(), value));
-          myLineSpacingField.setText(String.format(Locale.ENGLISH, "%.1f", value));
-        }
-        catch (NumberFormatException ignored) {
-        }
-      }
-    });
-    myEnableLigaturesCheckbox.addActionListener(e -> {
-      getFontPreferences().setUseLigatures(myEnableLigaturesCheckbox.isSelected());
-      updateWarningIconVisibility(warningIcon);
-      updateDescription(true);
-    });
+    return label;
   }
 
-  private void updateWarningIconVisibility(JLabel warningIcon) {
-    warningIcon.setVisible(!SystemInfo.isJetbrainsJvm && getFontPreferences().useLigatures());
-  }
-
-  private int getFontSizeFromField() {
-    try {
-      return Math.min(EditorFontsConstants.getMaxEditorFontSize(),
-                      Math.max(EditorFontsConstants.getMinEditorFontSize(), Integer.parseInt(myEditorFontSizeField.getText())));
-    }
-    catch (NumberFormatException e) {
-      return EditorFontsConstants.getDefaultEditorFontSize();
-    }
-  }
-
-  private float getLineSpacingFromField() {
-    try {
-       return Math.min(EditorFontsConstants.getMaxEditorLineSpacing(), Math.max(EditorFontsConstants.getMinEditorLineSpacing(), Float.parseFloat(myLineSpacingField.getText())));
-    } catch (NumberFormatException e){
-      return EditorFontsConstants.getDefaultEditorLineSpacing();
-    }
-  }
-
-  /**
-   * Processes an event from {@code FontComboBox}
-   * if it is enabled and its item is selected.
-   *
-   * @param event the event to process
-   */
-  private void syncFontFamilies(AWTEvent event) {
-    Object source = event.getSource();
-    if (source instanceof FontComboBox) {
-      FontComboBox combo = (FontComboBox)source;
-      if (combo.isEnabled() && combo.isShowing() && combo.getSelectedItem() != null) {
-        syncFontFamilies();
+  protected void navigateToParentFontConfigurable() {
+    Settings allSettings = Settings.KEY.getData(DataManager.getInstance().getDataContext(getPanel()));
+    if (allSettings != null) {
+      final Configurable fontConfigurable = allSettings.find(AppEditorFontConfigurable.ID);
+      if (fontConfigurable != null) {
+        allSettings.select(fontConfigurable);
       }
     }
   }
 
-  private void syncFontFamilies() {
-    if (myIsInSchemeChange) {
-      return;
+  protected void setDelegatingPreferences(boolean isDelegating) {
+    FontPreferences currPrefs = getCurrentScheme().getFontPreferences();
+    if (currPrefs instanceof DelegatingFontPreferences == isDelegating) return;
+    if (isDelegating) {
+      getCurrentScheme().setUseAppFontPreferencesInEditor();
     }
-    FontPreferences fontPreferences = getFontPreferences();
-    fontPreferences.clearFonts();
-    String primaryFontFamily = myPrimaryCombo.getFontName();
-    String secondaryFontFamily = mySecondaryCombo.isEnabled() ? mySecondaryCombo.getFontName() : null;
-    int fontSize = getFontSizeFromField();
-    if (primaryFontFamily != null ) {
-      if (!FontPreferences.DEFAULT_FONT_NAME.equals(primaryFontFamily)) {
-        fontPreferences.addFontFamily(primaryFontFamily);
-      }
-      fontPreferences.register(primaryFontFamily, fontSize);
+    else {
+      getCurrentScheme().setFontPreferences(getFontPreferences());
     }
-    if (secondaryFontFamily != null) {
-      if (!FontPreferences.DEFAULT_FONT_NAME.equals(secondaryFontFamily)){
-        fontPreferences.addFontFamily(secondaryFontFamily);
-      }
-      fontPreferences.register(secondaryFontFamily, fontSize);
-    }
+    updateOptionsList();
     updateDescription(true);
   }
 
   @Override
-  public void updateOptionsList() {
-    myIsInSchemeChange = true;
+  protected boolean isReadOnly() {
+    return ColorAndFontOptions.isReadOnly(myOptions.getSelectedScheme());
+  }
 
-    myLineSpacingField.setText(Float.toString(getLineSpacing()));
-    FontPreferences fontPreferences = getFontPreferences();
-    List<String> fontFamilies = fontPreferences.getEffectiveFontFamilies();
-    myPrimaryCombo.setFontName(fontPreferences.getFontFamily());
-    boolean isThereSecondaryFont = fontFamilies.size() > 1;
-    myUseSecondaryFontCheckbox.setSelected(isThereSecondaryFont);
-    mySecondaryCombo.setFontName(isThereSecondaryFont ? fontFamilies.get(1) : null);
-    myEditorFontSizeField.setText(String.valueOf(fontPreferences.getSize(fontPreferences.getFontFamily())));
-
-    boolean readOnly = ColorAndFontOptions.isReadOnly(myOptions.getSelectedScheme());
-    myPrimaryCombo.setEnabled(!readOnly);
-    mySecondaryCombo.setEnabled(isThereSecondaryFont && !readOnly);
-    myOnlyMonospacedCheckBox.setEnabled(!readOnly);
-    myLineSpacingField.setEnabled(!readOnly);
-    myEditorFontSizeField.setEnabled(!readOnly);
-    myUseSecondaryFontCheckbox.setEnabled(!readOnly);
-
-    myEnableLigaturesCheckbox.setEnabled(!readOnly);
-    myEnableLigaturesCheckbox.setSelected(fontPreferences.useLigatures());
-
-    myIsInSchemeChange = false;
+  @Override
+  protected boolean isDelegating() {
+    return getFontPreferences() instanceof DelegatingFontPreferences;
   }
 
   @NotNull
+  @Override
   protected FontPreferences getFontPreferences() {
     return getCurrentScheme().getFontPreferences();
   }
 
+  @Override
   protected void setFontSize(int fontSize) {
     getCurrentScheme().setEditorFontSize(fontSize);
   }
 
+  @Override
   protected float getLineSpacing() {
     return getCurrentScheme().getLineSpacing();
   }
 
+  @Override
   protected void setCurrentLineSpacing(float lineSpacing) {
     getCurrentScheme().setLineSpacing(lineSpacing);
-  }
-
-  @Override
-  @Nullable
-  public Runnable showOption(final String option) {
-    return null;
-  }
-
-  @Override
-  public void applyChangesToScheme() {
-  }
-
-  @Override
-  public void selectOption(final String typeToSelect) {
   }
 
   protected EditorColorsScheme getCurrentScheme() {
     return myOptions.getSelectedScheme();
   }
 
-  public boolean updateDescription(boolean modified) {
-    EditorColorsScheme scheme = myOptions.getSelectedScheme();
-
-    if (modified && ColorAndFontOptions.isReadOnly(scheme)) {
-      return false;
+  @Override
+  protected void updateCustomOptions() {
+    if (myInheritFontCheckbox != null) {
+      myInheritFontCheckbox.setEnabled(!isReadOnly());
+      myInheritFontCheckbox.setSelected(isDelegating());
     }
-
-    myDispatcher.getMulticaster().fontChanged();
-
-    return true;
   }
 
-  @Override
-  public void addListener(ColorAndFontSettingsListener listener) {
-    myDispatcher.addListener(listener);
-  }
-
-  @Override
-  public JPanel getPanel() {
-    return this;
-  }
-
-  @Override
-  public Set<String> processListOptions() {
-    return new HashSet<>();
-  }
 }

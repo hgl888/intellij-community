@@ -85,7 +85,7 @@ class LibraryLicensesListGenerator {
       LibraryLicense lib = it.key
       String moduleName = it.value
       def name = lib.url != null ? "[$lib.name|$lib.url]" : lib.name
-      def license = lib.libraryLicenseUrl != null ? "[$lib.license|$lib.licenseUrl]" : lib.license
+      def license = lib.libraryLicenseUrl != null ? "[$lib.license|$lib.libraryLicenseUrl]" : lib.license
       projectBuilder.info(" $lib.name (in module $moduleName)")
       lines << "|$name| ${lib.version ?: ""}|$license|".toString()
     }
@@ -112,7 +112,7 @@ class LibraryLicensesListGenerator {
   void checkLibLicenses() {
     def libraries = new HashSet<JpsLibrary>()
     def lib2Module = new HashMap<JpsLibrary, JpsModule>();
-    Set<String> nonPublicModules = ["buildScripts", "build"] as Set
+    Set<String> nonPublicModules = ["buildScripts", "build", "buildSrc"] as Set
     project.modules.findAll { !nonPublicModules.contains(it.name) }.each { JpsModule module ->
       JpsJavaExtensionService.dependencies(module).includedIn(JpsJavaClasspathKind.PRODUCTION_RUNTIME).getLibraries().each {
         lib2Module[it] = module

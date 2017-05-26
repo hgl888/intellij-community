@@ -30,6 +30,7 @@ import com.siyeh.InspectionGadgetsBundle;
 import com.siyeh.ig.BaseInspection;
 import com.siyeh.ig.BaseInspectionVisitor;
 import com.siyeh.ig.InspectionGadgetsFix;
+import com.siyeh.ig.psiutils.ImportUtils;
 import com.siyeh.ig.testFrameworks.AssertHint;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
@@ -109,13 +110,29 @@ public class JUnit5AssertionsConverterInspection extends BaseInspection {
               String methodName = psiMethod.getName();
               registerMethodCallError(expression, name,
                                       getNewAssertClassName(methodName),
-                                      "fail".equals(methodName) && psiMethod.getParameterList().getParametersCount() == 0);
+                                      absentInJUnit5(psiMethod, methodName));
               break;
             }
           }
         }
 
       }
+    }
+
+    private boolean absentInJUnit5(PsiMethod psiMethod, String methodName) {
+      if ("fail".equals(methodName)) {
+        return psiMethod.getParameterList().getParametersCount() == 0;
+      }
+      if ("assertNotEquals".equals(methodName)) {
+        PsiParameter[] parameters = psiMethod.getParameterList().getParameters();
+        if (parameters.length > 0) {
+          int lastParamIdx = parameters[0].getType().equalsToText(CommonClassNames.JAVA_LANG_STRING) ? 3 : 2;
+          if (parameters.length > lastParamIdx && parameters[lastParamIdx].getType() instanceof PsiPrimitiveType) {
+            return true;
+          }
+        }
+      }
+      return false;
     }
   }
 
@@ -165,10 +182,17 @@ public class JUnit5AssertionsConverterInspection extends BaseInspection {
       if (newAssertClass == null) {
         return;
       }
+      String qualifiedName = newAssertClass.getQualifiedName();
+      if (qualifiedName == null) {
+        return;
+      }
 
       PsiReferenceExpression methodExpression = methodCallExpression.getMethodExpression();
-      methodExpression.setQualifierExpression(JavaPsiFacade.getElementFactory(project).createReferenceExpression(newAssertClass));
-      JavaCodeStyleManager.getInstance(project).shortenClassReferences(methodExpression);
+      final PsiExpression qualifier = methodExpression.getQualifierExpression();
+      if (qualifier != null || !ImportUtils.addStaticImport(qualifiedName, methodName, methodExpression)) {
+        methodExpression.setQualifierExpression(JavaPsiFacade.getElementFactory(project).createReferenceExpression(newAssertClass));
+        JavaCodeStyleManager.getInstance(project).shortenClassReferences(methodExpression);
+      }
     }
 
     @Nls

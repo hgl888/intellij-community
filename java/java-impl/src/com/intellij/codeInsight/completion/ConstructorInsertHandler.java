@@ -17,12 +17,14 @@ import com.intellij.codeInsight.template.impl.TemplateState;
 import com.intellij.featureStatistics.FeatureUsageTracker;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.Result;
+import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.command.UndoConfirmationPolicy;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.RangeMarker;
 import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
@@ -30,6 +32,7 @@ import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.impl.source.PostprocessReformattingAspect;
 import com.intellij.psi.infos.CandidateInfo;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.Contract;
@@ -169,7 +172,7 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
         public void templateFinished(Template template, boolean brokenOff) {
           if (!brokenOff) {
             context.getEditor().getCaretModel().moveToOffset(context.getOffset(insideBraces));
-            createOverrideRunnable(context.getEditor(), context.getFile(), context.getProject()).run();
+            TransactionGuard.getInstance().submitTransactionAndWait(createOverrideRunnable(context.getEditor(), context.getFile(), context.getProject()));
           }
         }
       });
@@ -242,7 +245,16 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
     assert place != null;
     boolean hasParams = constructor != null ? constructor.getParameterList().getParametersCount() > 0 : hasConstructorParameters(psiClass, place);
 
+    RangeMarker refEnd = context.getDocument().createRangeMarker(context.getTailOffset(), context.getTailOffset());
+    
     JavaCompletionUtil.insertParentheses(context, delegate, false, hasParams, forAnonymous);
+
+    if (constructor != null) {
+      PsiCallExpression call = JavaMethodCallElement.findCallAtOffset(context, refEnd.getStartOffset());
+      if (call != null) {
+        CompletionMemory.registerChosenMethod(constructor, call);
+      }
+    }
 
     return true;
   }
@@ -292,7 +304,8 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
 
     final PsiReferenceParameterList parameterList = parent.getBaseClassReference().getParameterList();
     final PsiTypeElement[] parameters = parameterList != null ? parameterList.getTypeParameterElements() : null;
-    if (shouldStartTypeTemplate(parameters)) {
+    final PsiElement newExpr = parent.getParent();
+    if (newExpr != null && PsiTypesUtil.getExpectedTypeByParent(newExpr) == null && shouldStartTypeTemplate(parameters)) {
       startTemplate(parent, editor, createOverrideRunnable(editor, file, project), parameters);
       return null;
     }

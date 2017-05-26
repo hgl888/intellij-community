@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,7 +75,7 @@ public class BuildoutFacet extends LibraryContributingFacet<BuildoutFacetConfigu
                        @NotNull final BuildoutFacetConfiguration configuration, Facet underlyingFacet) {
     super(facetType, module, name, configuration, underlyingFacet);
 
-    VirtualFileManager.getInstance().addVirtualFileListener(new VirtualFileAdapter() {
+    VirtualFileManager.getInstance().addVirtualFileListener(new VirtualFileListener() {
       @Override
       public void contentsChanged(@NotNull VirtualFileEvent event) {
         if (Comparing.equal(event.getFile(), getScript())) {
@@ -99,7 +99,7 @@ public class BuildoutFacet extends LibraryContributingFacet<BuildoutFacetConfigu
             bin.refresh(false, false);
           }
           final String exe;
-          if (SystemInfo.isWindows || SystemInfo.isOS2) {
+          if (SystemInfo.isWindows) {
             exe = "buildout.exe";
           }
           else {
@@ -138,7 +138,7 @@ public class BuildoutFacet extends LibraryContributingFacet<BuildoutFacetConfigu
   }
 
   /**
-   * Generates a <code>sys.path[0:0] = [...]</code> with paths that buildout script wants.
+   * Generates a {@code sys.path[0:0] = [...]} with paths that buildout script wants.
    *
    * @param additionalPythonPath
    * @param module to get a buildout facet from

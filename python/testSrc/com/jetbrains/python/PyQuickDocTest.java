@@ -263,7 +263,7 @@ public class PyQuickDocTest extends LightMarkedTestCase {
 
   // PY-17705
   public void testOptionalParameterType() {
-    checkHTMLOnly();
+    runWithLanguageLevel(LanguageLevel.PYTHON35, this::checkHTMLOnly);
   }
 
   public void testHomogeneousTuple() {
@@ -276,5 +276,21 @@ public class PyQuickDocTest extends LightMarkedTestCase {
 
   public void testUnknownTuple() {
     runWithLanguageLevel(LanguageLevel.PYTHON35, this::checkHTMLOnly);
+  }
+
+  public void testTypeVars() {
+    myFixture.copyDirectoryToProject("typing", "");
+    runWithLanguageLevel(LanguageLevel.PYTHON35, this::checkHTMLOnly);
+  }
+  
+  // PY-22730
+  public void testOptionalAndUnionTypesContainingTypeVars() {
+    myFixture.copyDirectoryToProject("typing", "");
+    runWithLanguageLevel(LanguageLevel.PYTHON36, this::checkHTMLOnly);
+  }
+
+  // PY-22685
+  public void testBuiltinLen() {
+    checkHTMLOnly();
   }
 }

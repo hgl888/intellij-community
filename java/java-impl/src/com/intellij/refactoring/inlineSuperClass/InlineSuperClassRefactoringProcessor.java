@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * User: anna
- * Date: 27-Aug-2008
- */
 package com.intellij.refactoring.inlineSuperClass;
 
 import com.intellij.openapi.diagnostic.Logger;
@@ -54,7 +50,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 
 public class InlineSuperClassRefactoringProcessor extends FixableUsagesRefactoringProcessor {
-  public static final Logger LOG = Logger.getInstance("#" + InlineSuperClassRefactoringProcessor.class.getName());
+  public static final Logger LOG = Logger.getInstance(InlineSuperClassRefactoringProcessor.class);
 
   private final PsiClass myCurrentInheritor;
   private final PsiClass mySuperClass;

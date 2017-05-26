@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,24 +24,12 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
 import com.intellij.psi.PsiElement;
 import com.intellij.util.Consumer;
-import com.intellij.util.xmlb.annotations.Transient;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-/**
- * User: anna
- * Date: Dec 7, 2004
- */
 public interface InspectionProfile extends Comparable {
-  @Transient
-  boolean isProjectLevel();
-
-  void setProjectLevel(boolean isProjectLevel);
-
-  void setName(@NotNull String name);
-
   @NotNull
   String getName();
 
@@ -62,10 +50,7 @@ public interface InspectionProfile extends Comparable {
   InspectionProfileEntry getUnwrappedTool(@NotNull String shortName, @NotNull PsiElement element);
 
   /** Returns (unwrapped) inspection */
-  <T extends InspectionProfileEntry>
-  T getUnwrappedTool(@NotNull Key<T> shortNameKey, @NotNull PsiElement element);
-
-  void modifyProfile(@NotNull Consumer<ModifiableModel> modelConsumer);
+  <T extends InspectionProfileEntry> T getUnwrappedTool(@NotNull Key<T> shortNameKey, @NotNull PsiElement element);
 
   /**
    * Allows a plugin to modify the settings of the inspection tool with the specified ID programmatically, without going through
@@ -86,22 +71,16 @@ public interface InspectionProfile extends Comparable {
   @NotNull
   InspectionToolWrapper[] getInspectionTools(@Nullable PsiElement element);
 
-  void cleanup(@NotNull Project project);
+  boolean isToolEnabled(@Nullable HighlightDisplayKey key, @Nullable PsiElement element);
+
+  default boolean isToolEnabled(@Nullable HighlightDisplayKey key) {
+    return isToolEnabled(key, null);
+  }
+
+  boolean isExecutable(@Nullable Project project);
 
   /**
-   * @see #modifyProfile(com.intellij.util.Consumer)
-   */
-  @NotNull
-  ModifiableModel getModifiableModel();
-
-  boolean isToolEnabled(@Nullable HighlightDisplayKey key, PsiElement element);
-
-  boolean isToolEnabled(@Nullable HighlightDisplayKey key);
-
-  boolean isExecutable(Project project);
-
-  /**
-   * @see {@link ModifiableModel#setSingleTool(String)}
+   * @see {@link InspectionProfileImpl#setSingleTool(String)}
    *
    * @return tool short name when inspection profile corresponds to synthetic profile for single inspection run
    */
@@ -110,8 +89,6 @@ public interface InspectionProfile extends Comparable {
 
   @NotNull
   String getDisplayName();
-
-  void scopesChanged();
 
   @NotNull
   List<Tools> getAllEnabledInspectionTools(Project project);

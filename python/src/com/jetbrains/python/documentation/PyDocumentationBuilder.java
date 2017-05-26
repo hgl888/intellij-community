@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ import com.jetbrains.python.psi.resolve.QualifiedResolveResult;
 import com.jetbrains.python.psi.resolve.RootVisitor;
 import com.jetbrains.python.psi.resolve.RootVisitorHost;
 import com.jetbrains.python.psi.types.*;
+import com.jetbrains.python.pyi.PyiUtil;
 import com.jetbrains.python.toolbox.ChainIterable;
 import com.jetbrains.python.toolbox.Maybe;
 import org.jetbrains.annotations.NotNull;
@@ -104,7 +105,7 @@ public class PyDocumentationBuilder {
     }
     else if (elementDefinition != null && outerElement instanceof PyReferenceExpression) {
       myBody.addItem(combUp("\nInferred type: "));
-      PythonDocumentationProvider.describeExpressionTypeWithLinks(myBody, (PyReferenceExpression)outerElement, context);
+      PythonDocumentationProvider.describeTypeWithLinks(context.getType((PyReferenceExpression)outerElement), context, outerElement, myBody);
     }
 
     if (elementDefinition != null) {
@@ -189,7 +190,7 @@ public class PyDocumentationBuilder {
         }
         if (typeString != null) {
           myBody.addItem(combUp(typeString));
-          PythonDocumentationProvider.describeTypeWithLinks(myBody, elementDefinition, type, context);
+          PythonDocumentationProvider.describeTypeWithLinks(type, context, elementDefinition, myBody);
         }
       }
     }
@@ -232,7 +233,7 @@ public class PyDocumentationBuilder {
       final PyCallable getter = property.getGetter().valueOrNull();
       if (getter != null && getter != myElement && getter instanceof PyFunction) {
         // not in getter, getter's doc comment may be useful
-        final PyStringLiteralExpression docstring = ((PyFunction)getter).getDocStringExpression();
+        final PyStringLiteralExpression docstring = getEffectiveDocStringExpression((PyFunction)getter);
         if (docstring != null) {
           myProlog
             .addItem(BR).addWith(TagItalic, $("Copied from getter:")).addItem(BR)
@@ -275,7 +276,7 @@ public class PyDocumentationBuilder {
 
   private void buildFromDocstring(@NotNull final PsiElement elementDefinition, boolean isProperty) {
     PyClass pyClass = null;
-    final PyStringLiteralExpression docStringExpression = ((PyDocStringOwner)elementDefinition).getDocStringExpression();
+    final PyStringLiteralExpression docStringExpression = getEffectiveDocStringExpression((PyDocStringOwner)elementDefinition);
 
     if (elementDefinition instanceof PyClass) {
       pyClass = (PyClass)elementDefinition;
@@ -363,7 +364,7 @@ public class PyDocumentationBuilder {
       PyStringLiteralExpression docstringElement = null;
       PyFunction inherited = null;
       boolean isFromClass = false;
-      if (isConstructor) docstringElement = pyClass.getDocStringExpression();
+      if (isConstructor) docstringElement = getEffectiveDocStringExpression(pyClass);
       if (docstringElement != null) {
         isFromClass = true;
       }
@@ -371,7 +372,7 @@ public class PyDocumentationBuilder {
         inherited = ancestor.findMethodByName(methodName, false, null);
       }
       if (inherited != null) {
-        docstringElement = inherited.getDocStringExpression();
+        docstringElement = getEffectiveDocStringExpression(inherited);
       }
       if (docstringElement != null) {
         final String inheritedDoc = docstringElement.getStringValue();
@@ -402,7 +403,7 @@ public class PyDocumentationBuilder {
       // above could have not worked because inheritance is not searched down to 'object'.
       // for well-known methods, copy built-in doc string.
       // TODO: also handle predefined __xxx__ that are not part of 'object'.
-      if (PyNames.UnderscoredAttributes.contains(methodName)) {
+      if (PyNames.UNDERSCORED_ATTRIBUTES.contains(methodName)) {
         addPredefinedMethodDoc(pyFunction, methodName);
       }
     }
@@ -414,7 +415,7 @@ public class PyDocumentationBuilder {
       final PyClass objectClass = objectType.getPyClass();
       final PyFunction predefinedMethod = objectClass.findMethodByName(mothodName, false, null);
       if (predefinedMethod != null) {
-        final PyStringLiteralExpression predefinedDocstring = predefinedMethod.getDocStringExpression();
+        final PyStringLiteralExpression predefinedDocstring = getEffectiveDocStringExpression(predefinedMethod);
         final String predefinedDoc = predefinedDocstring != null ? predefinedDocstring.getStringValue() : null;
         if (predefinedDoc != null && predefinedDoc.length() > 1) { // only a real-looking doc string counts
           addFormattedDocString(fun, predefinedDoc, myBody, myBody);
@@ -472,7 +473,7 @@ public class PyDocumentationBuilder {
   private boolean addTypeAndDescriptionFromDocstring(@NotNull final PyNamedParameter parameter) {
     final PyFunction function = PsiTreeUtil.getParentOfType(parameter, PyFunction.class);
     if (function != null) {
-      final String docString = PyPsiUtils.strValue(function.getDocStringExpression());
+      final String docString = PyPsiUtils.strValue(getEffectiveDocStringExpression(function));
       final Pair<String, String> typeAndDescr = getTypeAndDescription(docString, parameter);
 
       final String type = typeAndDescr.first;
@@ -518,7 +519,7 @@ public class PyDocumentationBuilder {
       .addItem(type).addWith(TagBold, $().addWith(TagCode, $(((PyTargetExpression)myElement).getName())))
       .addItem(" of class ").addWith(PythonDocumentationProvider.LinkMyClass, $().addWith(TagCode, $(cls.getName()))).addItem(BR);
 
-    final String docString = ((PyTargetExpression)myElement).getDocStringValue();
+    final String docString = PyPsiUtils.strValue(getEffectiveDocStringExpression((PyTargetExpression)myElement));
     if (docString != null) {
       addFormattedDocString(myElement, docString, myBody, myEpilog);
     }
@@ -581,6 +582,17 @@ public class PyDocumentationBuilder {
         myProlog.addWith(TagSmall, $(path));
       }
     }
+  }
+
+  @Nullable
+  static PyStringLiteralExpression getEffectiveDocStringExpression(@NotNull PyDocStringOwner owner) {
+    final PyStringLiteralExpression expression = owner.getDocStringExpression();
+    if (expression != null && StringUtil.isNotEmpty(PyPsiUtils.strValue(expression))) {
+      return expression;
+    }
+    final PsiElement original = PyiUtil.getOriginalElement(owner);
+    final PyDocStringOwner originalOwner = PyUtil.as(original, PyDocStringOwner.class);
+    return originalOwner != null ? originalOwner.getDocStringExpression() : null;
   }
 
   private static class RootFinder implements RootVisitor {

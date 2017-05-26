@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,22 @@
 package com.intellij.codeInsight.template.impl;
 
 import com.intellij.openapi.options.CompoundScheme;
-import com.intellij.openapi.util.Condition;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public class TemplateGroup extends CompoundScheme<TemplateImpl> {
   private final String myReplace;
+
+  private boolean isModified = true;
+
+  public boolean isModified() {
+    return isModified;
+  }
+
+  public void setModified(boolean modified) {
+    isModified = modified;
+  }
 
   public TemplateGroup(final String name) {
     this(name, null);

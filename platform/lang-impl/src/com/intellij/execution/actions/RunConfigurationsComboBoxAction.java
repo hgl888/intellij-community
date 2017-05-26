@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,14 +29,12 @@ import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.registry.Registry;
-import com.intellij.openapi.wm.ex.WindowManagerEx;
-import com.intellij.openapi.wm.impl.IdeFrameImpl;
 import com.intellij.ui.IdeBorderFactory;
 import com.intellij.ui.SizedIcon;
 import com.intellij.ui.components.panels.NonOpaquePanel;
 import com.intellij.util.IconUtil;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.EmptyIcon;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NotNull;
@@ -44,7 +42,6 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -55,18 +52,6 @@ public class RunConfigurationsComboBoxAction extends ComboBoxAction implements D
   public static final Icon EMPTY_ICON = EmptyIcon.ICON_16;
 
   @Override
-  public void actionPerformed(AnActionEvent e) {
-    if (e.getPresentation().getClientProperty(CUSTOM_COMPONENT_PROPERTY) == null) {
-      Project project = e.getProject();
-      IdeFrameImpl frame = project != null ? WindowManagerEx.getInstanceEx().getFrame(project) : null;
-      if (frame != null) {
-        e.getPresentation().putClientProperty(CUSTOM_COMPONENT_PROPERTY, frame.getComponent());
-      }
-    }
-    super.actionPerformed(e);
-  }
-
-  @Override
   public void update(AnActionEvent e) {
     Presentation presentation = e.getPresentation();
     Project project = e.getData(CommonDataKeys.PROJECT);
@@ -74,13 +59,13 @@ public class RunConfigurationsComboBoxAction extends ComboBoxAction implements D
       presentation.setDescription(ExecutionBundle.message("choose.run.configuration.action.description"));
     }
     try {
-      if (project == null || project.isDisposed() || !project.isInitialized()) {
+      if (project == null || project.isDisposed() || !project.isOpen()) {
         updatePresentation(null, null, null, presentation);
         presentation.setEnabled(false);
       }
       else {
         updatePresentation(ExecutionTargetManager.getActiveTarget(project),
-                           RunManagerEx.getInstanceEx(project).getSelectedConfiguration(),
+                           RunManager.getInstance(project).getSelectedConfiguration(),
                            project,
                            presentation);
         presentation.setEnabled(true);
@@ -154,7 +139,6 @@ public class RunConfigurationsComboBoxAction extends ComboBoxAction implements D
     final DefaultActionGroup allActionsGroup = new DefaultActionGroup();
     final Project project = CommonDataKeys.PROJECT.getData(DataManager.getInstance().getDataContext(button));
     if (project != null) {
-      final RunManagerEx runManager = RunManagerEx.getInstanceEx(project);
 
       allActionsGroup.add(ActionManager.getInstance().getAction(IdeActions.ACTION_EDIT_RUN_CONFIGURATIONS));
       allActionsGroup.add(new SaveTemporaryAction());
@@ -169,8 +153,8 @@ public class RunConfigurationsComboBoxAction extends ComboBoxAction implements D
         allActionsGroup.addSeparator();
       }
 
-      final ConfigurationType[] types = runManager.getConfigurationFactories();
-      for (ConfigurationType type : types) {
+      final RunManagerEx runManager = RunManagerEx.getInstanceEx(project);
+      for (ConfigurationType type : runManager.getConfigurationFactories()) {
         final DefaultActionGroup actionGroup = new DefaultActionGroup();
         Map<String,List<RunnerAndConfigurationSettings>> structure = runManager.getStructure(type);
         for (Map.Entry<String, List<RunnerAndConfigurationSettings>> entry : structure.entrySet()) {
@@ -195,7 +179,7 @@ public class RunConfigurationsComboBoxAction extends ComboBoxAction implements D
 
     public SaveTemporaryAction() {
       Presentation presentation = getTemplatePresentation();
-      presentation.setIcon(AllIcons.Actions.Menu_saveall);
+      presentation.setIcon(AllIcons.RunConfigurations.SaveTempConfig);
     }
 
     @Override
@@ -241,8 +225,7 @@ public class RunConfigurationsComboBoxAction extends ComboBoxAction implements D
       if (selectedConfiguration != null && selectedConfiguration.isTemporary()) {
         return selectedConfiguration;
       }
-      Iterator<RunnerAndConfigurationSettings> iterator = RunManager.getInstance(project).getTempConfigurationsList().iterator();
-      return iterator.hasNext() ? iterator.next() : null;
+      return ContainerUtil.getFirstItem(RunManager.getInstance(project).getTempConfigurationsList());
     }
   }
 
@@ -267,7 +250,7 @@ public class RunConfigurationsComboBoxAction extends ComboBoxAction implements D
     public void actionPerformed(AnActionEvent e) {
       ExecutionTargetManager.setActiveTarget(myProject, myTarget);
       updatePresentation(ExecutionTargetManager.getActiveTarget(myProject),
-                         RunManagerEx.getInstanceEx(myProject).getSelectedConfiguration(),
+                         RunManager.getInstance(myProject).getSelectedConfiguration(),
                          myProject,
                          e.getPresentation());
     }
@@ -286,15 +269,12 @@ public class RunConfigurationsComboBoxAction extends ComboBoxAction implements D
       myConfiguration = configuration;
       myProject = project;
       String name = configuration.getName();
-      if (name == null || name.length() == 0) {
+      if (name.isEmpty()) {
         name = " ";
       }
       final Presentation presentation = getTemplatePresentation();
       presentation.setText(name, false);
-      final ConfigurationType type = configuration.getType();
-      if (type != null) {
-        presentation.setDescription("Select " + type.getConfigurationTypeDescription() + " '" + name + "'");
-      }
+      presentation.setDescription("Select " + configuration.getType().getConfigurationTypeDescription() + " '" + name + "'");
       updateIcon(presentation);
     }
 

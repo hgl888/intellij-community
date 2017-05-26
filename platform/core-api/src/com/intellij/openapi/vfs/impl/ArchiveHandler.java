@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,25 @@ package com.intellij.openapi.vfs.impl;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.io.BufferExposingByteArrayInputStream;
 import com.intellij.openapi.util.io.FileAttributes;
 import com.intellij.openapi.util.io.FileSystemUtil;
 import com.intellij.reference.SoftReference;
 import com.intellij.util.ArrayUtil;
+import com.intellij.util.SmartList;
 import com.intellij.util.text.ByteArrayCharSequence;
-import gnu.trove.THashSet;
+import gnu.trove.THashMap;
+import gnu.trove.TObjectObjectProcedure;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.ref.Reference;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 public abstract class ArchiveHandler {
   public static final long DEFAULT_LENGTH = 0L;
@@ -44,11 +48,6 @@ public abstract class ArchiveHandler {
     public final long length;
     public final long timestamp;
 
-    /** @deprecated use {@link EntryInfo#EntryInfo(CharSequence, boolean, long, long, EntryInfo)} instead (to be removed in IDEA 16) */
-    public EntryInfo(EntryInfo parent, @NotNull String shortName, boolean isDirectory, long length, long timestamp) {
-      this(shortName, isDirectory, length, timestamp, parent);
-    }
-
     public EntryInfo(@NotNull CharSequence shortName, boolean isDirectory, long length, long timestamp, @Nullable EntryInfo parent) {
       this.parent = parent;
       this.shortName = shortName;
@@ -60,7 +59,8 @@ public abstract class ArchiveHandler {
 
   private final File myPath;
   private final Object myLock = new Object();
-  private volatile Reference<Map<String, EntryInfo>> myEntries = new SoftReference<Map<String, EntryInfo>>(null);
+  private volatile Reference<Map<String, EntryInfo>> myEntries = new SoftReference<>(null);
+  private volatile Reference<AddonlyKeylessHash<EntryInfo, Object>> myChildrenEntries = new SoftReference<>(null);
   private boolean myCorrupted;
 
   protected ArchiveHandler(@NotNull String path) {
@@ -89,17 +89,84 @@ public abstract class ArchiveHandler {
     EntryInfo entry = getEntryInfo(relativePath);
     if (entry == null || !entry.isDirectory) return ArrayUtil.EMPTY_STRING_ARRAY;
 
-    Set<String> names = new THashSet<String>();
-    for (EntryInfo info : getEntriesMap().values()) {
-      if (info.parent == entry) {
-        names.add(info.shortName.toString());
+    AddonlyKeylessHash<EntryInfo, Object> result = getParentChildrenMap();
+
+    Object o = result.get(entry);
+    if (o == null) {
+      return ArrayUtil.EMPTY_STRING_ARRAY; // directories without children
+    }
+    if (o instanceof EntryInfo) {
+      return new String[] {((EntryInfo)o).shortName.toString()};
+    }
+    EntryInfo[] infos = (EntryInfo[])o;
+
+    String[] names = new String[infos.length];
+    for (int i = 0; i < infos.length; ++i) {
+      names[i] = infos[i].shortName.toString();
+    }
+    return names;
+  }
+
+  @NotNull
+  private AddonlyKeylessHash<EntryInfo, Object> getParentChildrenMap() {
+    AddonlyKeylessHash<EntryInfo, Object> map = SoftReference.dereference(myChildrenEntries);
+    if (map == null) {
+      synchronized (myLock) {
+        map = SoftReference.dereference(myChildrenEntries);
+
+        if (map == null) {
+          if (myCorrupted) {
+            map = new AddonlyKeylessHash<>(ourKeyValueMapper);
+          }
+          else {
+            try {
+              map = createParentChildrenMap();
+            }
+            catch (Exception e) {
+              myCorrupted = true;
+              Logger.getInstance(getClass()).warn(e.getMessage() + ": " + myPath, e);
+              map = new AddonlyKeylessHash<>(ourKeyValueMapper);
+            }
+          }
+
+          myChildrenEntries = new SoftReference<>(map);
+        }
       }
     }
-    return ArrayUtil.toStringArray(names);
+    return map;
+  }
+
+  private AddonlyKeylessHash<EntryInfo, Object> createParentChildrenMap() {
+    THashMap<EntryInfo, List<EntryInfo>> map = new THashMap<>();
+    for (EntryInfo info : getEntriesMap().values()) {
+      if (info.isDirectory && !map.containsKey(info)) map.put(info, new SmartList<>());
+      if (info.parent != null) {
+        List<EntryInfo> parentChildren = map.get(info.parent);
+        if (parentChildren == null) map.put(info.parent, parentChildren = new SmartList<>());
+        parentChildren.add(info);
+      }
+    }
+
+    final AddonlyKeylessHash<EntryInfo, Object> result = new AddonlyKeylessHash<>(map.size(), ourKeyValueMapper);
+    map.forEachEntry(new TObjectObjectProcedure<EntryInfo, List<EntryInfo>>() {
+      @Override
+      public boolean execute(EntryInfo a, List<EntryInfo> b) {
+        int numberOfChildren = b.size();
+        if (numberOfChildren == 1) {
+          result.add(b.get(0));
+        }
+        else if (numberOfChildren > 1) {
+          result.add(b.toArray(new EntryInfo[numberOfChildren]));
+        }
+        return true;
+      }
+    });
+    return result;
   }
 
   public void dispose() {
     myEntries.clear();
+    myChildrenEntries.clear();
   }
 
   @Nullable
@@ -129,7 +196,7 @@ public abstract class ArchiveHandler {
             }
           }
 
-          myEntries = new SoftReference<Map<String, EntryInfo>>(map);
+          myEntries = new SoftReference<>(map);
         }
       }
     }
@@ -167,4 +234,22 @@ public abstract class ArchiveHandler {
 
   @NotNull
   public abstract byte[] contentsToByteArray(@NotNull String relativePath) throws IOException;
+
+  @NotNull
+  public InputStream getInputStream(@NotNull String relativePath) throws IOException {
+    return new BufferExposingByteArrayInputStream(contentsToByteArray(relativePath));
+  }
+
+  private static final AddonlyKeylessHash.KeyValueMapper<EntryInfo, Object> ourKeyValueMapper = new AddonlyKeylessHash.KeyValueMapper<EntryInfo, Object>() {
+    @Override
+    public int hash(EntryInfo info) {
+      return System.identityHashCode(info);
+    }
+
+    @Override
+    public EntryInfo key(Object o) {
+      if (o instanceof EntryInfo) return ((EntryInfo)o).parent;
+      return ((EntryInfo[])o)[0].parent;
+    }
+  };
 }

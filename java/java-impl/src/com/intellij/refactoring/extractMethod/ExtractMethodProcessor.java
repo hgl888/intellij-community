@@ -41,7 +41,10 @@ import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.Pass;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.WindowManager;
@@ -67,7 +70,9 @@ import com.intellij.refactoring.introduceVariable.IntroduceVariableBase;
 import com.intellij.refactoring.util.*;
 import com.intellij.refactoring.util.classMembers.ElementNeedsThis;
 import com.intellij.refactoring.util.duplicates.*;
-import com.intellij.util.*;
+import com.intellij.util.ArrayUtil;
+import com.intellij.util.IncorrectOperationException;
+import com.intellij.util.VisibilityUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
 import org.jetbrains.annotations.NonNls;
@@ -1164,7 +1169,7 @@ public class ExtractMethodProcessor implements MatchProvider {
           }
         });
       }
-      else {
+      else if (!PsiUtil.isLanguageLevel8OrHigher(myTargetClass)){
         method.accept(new JavaRecursiveElementVisitor() {
           @Override public void visitReferenceExpression(PsiReferenceExpression expression) {
             final PsiElement resolved = expression.resolve();
@@ -1382,12 +1387,9 @@ public class ExtractMethodProcessor implements MatchProvider {
     if (variable instanceof PsiParameter) {
       final PsiModifierList modifierList = variable.getModifierList();
       if (modifierList != null) {
-        for (PsiAnnotation annotation : modifierList.getAnnotations()) {
-          if (SuppressWarnings.class.getName().equals(annotation.getQualifiedName())) continue;
-          final PsiModifierList parmModifierList = parm.getModifierList();
-          LOG.assertTrue(parmModifierList != null, parm);
-          parmModifierList.add(annotation);
-        }
+        PsiModifierList parmModifierList = parm.getModifierList();
+        LOG.assertTrue(parmModifierList != null);
+        GenerateMembersUtil.copyAnnotations(modifierList, parmModifierList, SuppressWarnings.class.getName());
       }
     }
   }
@@ -1462,6 +1464,9 @@ public class ExtractMethodProcessor implements MatchProvider {
     myTargetClass = myCodeFragmentMember instanceof PsiMember
                     ? ((PsiMember)myCodeFragmentMember).getContainingClass()
                     : PsiTreeUtil.getParentOfType(myCodeFragmentMember, PsiClass.class);
+    if (myTargetClass == null) {
+      LOG.error(myElements[0].getContainingFile());
+    }
     if (!shouldAcceptCurrentTarget(extractPass, myTargetClass)) {
 
       final LinkedHashMap<PsiClass, List<PsiVariable>> classes = new LinkedHashMap<>();
@@ -1521,7 +1526,7 @@ public class ExtractMethodProcessor implements MatchProvider {
       if (classes.size() > 1) {
         final PsiClass[] psiClasses = classes.keySet().toArray(new PsiClass[classes.size()]);
         final PsiClass preselection = AnonymousTargetClassPreselectionUtil.getPreselection(classes.keySet(), psiClasses[0]);
-        NavigationUtil.getPsiElementPopup(psiClasses, PsiClassListCellRenderer.INSTANCE, "Choose Destination Class", processor, preselection)
+        NavigationUtil.getPsiElementPopup(psiClasses, new PsiClassListCellRenderer(), "Choose Destination Class", processor, preselection)
           .showInBestPositionFor(myEditor);
         return true;
       }
@@ -1611,39 +1616,7 @@ public class ExtractMethodProcessor implements MatchProvider {
     throws PrepareFailedException {
     myStatic = shouldBeStatic();
     final Set<PsiField> fields = new LinkedHashSet<>();
-    if (!PsiUtil.isLocalOrAnonymousClass(myTargetClass) && (myTargetClass.getContainingClass() == null || myTargetClass.hasModifierProperty(PsiModifier.STATIC))) {
-      boolean canBeStatic = true;
-      if (myTargetClass.isInterface()) {
-        final PsiMethod containingMethod = PsiTreeUtil.getParentOfType(myCodeFragmentMember, PsiMethod.class, false);
-        canBeStatic = containingMethod == null || containingMethod.hasModifierProperty(PsiModifier.STATIC);
-      }
-      if (canBeStatic) {
-        ElementNeedsThis needsThis = new ElementNeedsThis(myTargetClass) {
-          @Override
-          protected void visitClassMemberReferenceElement(PsiMember classMember, PsiJavaCodeReferenceElement classMemberReference) {
-            if (classMember instanceof PsiField && !classMember.hasModifierProperty(PsiModifier.STATIC)) {
-              final PsiExpression expression = PsiTreeUtil.getParentOfType(classMemberReference, PsiExpression.class, false);
-              if (expression == null || !PsiUtil.isAccessedForWriting(expression)) {
-                fields.add((PsiField)classMember);
-                return;
-              }
-            }
-            super.visitClassMemberReferenceElement(classMember, classMemberReference);
-          }
-        };
-        for (int i = 0; i < myElements.length && !needsThis.usesMembers(); i++) {
-          PsiElement element = myElements[i];
-          element.accept(needsThis);
-        }
-        myCanBeStatic = !needsThis.usesMembers();
-      }
-      else {
-        myCanBeStatic = false;
-      }
-    }
-    else {
-      myCanBeStatic = false;
-    }
+    myCanBeStatic = canBeStatic(myTargetClass, myCodeFragmentMember, myElements, fields);
 
     myInputVariables = new InputVariables(inputVariables, myProject, new LocalSearchScope(myElements), isFoldingApplicable());
     myInputVariables.setUsedInstanceFields(fields);
@@ -1658,6 +1631,37 @@ public class ExtractMethodProcessor implements MatchProvider {
       extractPass.pass(this);
     }
     return true;
+  }
+
+  public static boolean canBeStatic(final PsiClass targetClass, final PsiElement place, final PsiElement[] elements, Set<PsiField> usedFields) {
+    if (!PsiUtil.isLocalOrAnonymousClass(targetClass) && (targetClass.getContainingClass() == null || targetClass.hasModifierProperty(PsiModifier.STATIC))) {
+      boolean canBeStatic = true;
+      if (targetClass.isInterface()) {
+        final PsiMethod containingMethod = PsiTreeUtil.getParentOfType(place, PsiMethod.class, false);
+        canBeStatic = containingMethod == null || containingMethod.hasModifierProperty(PsiModifier.STATIC);
+      }
+      if (canBeStatic) {
+        ElementNeedsThis needsThis = new ElementNeedsThis(targetClass) {
+          @Override
+          protected void visitClassMemberReferenceElement(PsiMember classMember, PsiJavaCodeReferenceElement classMemberReference) {
+            if (classMember instanceof PsiField && !classMember.hasModifierProperty(PsiModifier.STATIC)) {
+              final PsiExpression expression = PsiTreeUtil.getParentOfType(classMemberReference, PsiExpression.class, false);
+              if (expression == null || !PsiUtil.isAccessedForWriting(expression)) {
+                usedFields.add((PsiField)classMember);
+                return;
+              }
+            }
+            super.visitClassMemberReferenceElement(classMember, classMemberReference);
+          }
+        };
+        for (int i = 0; i < elements.length && !needsThis.usesMembers(); i++) {
+          PsiElement element = elements[i];
+          element.accept(needsThis);
+        }
+        return !needsThis.usesMembers();
+      }
+    }
+    return false;
   }
 
   protected boolean isFoldingApplicable() {

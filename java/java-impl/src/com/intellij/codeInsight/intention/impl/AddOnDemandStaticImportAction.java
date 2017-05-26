@@ -16,7 +16,6 @@
 package com.intellij.codeInsight.intention.impl;
 
 import com.intellij.codeInsight.CodeInsightBundle;
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.highlighting.HighlightManager;
 import com.intellij.codeInsight.intention.BaseElementAtCaretIntentionAction;
 import com.intellij.openapi.diagnostic.Logger;
@@ -24,13 +23,11 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.colors.EditorColors;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Comparing;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.IncorrectOperationException;
 import gnu.trove.TIntArrayList;
-import gnu.trove.TIntProcedure;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -52,7 +49,7 @@ public class AddOnDemandStaticImportAction extends BaseElementAtCaretIntentionAc
    * Allows to check if static import may be performed for the given element.
    *
    * @param element     element to check
-   * @return            target class that may be statically imported if any; <code>null</code> otherwise
+   * @return            target class that may be statically imported if any; {@code null} otherwise
    */
   @Nullable
   public static PsiClass getClassToPerformStaticImport(@NotNull PsiElement element) {
@@ -113,8 +110,6 @@ public class AddOnDemandStaticImportAction extends BaseElementAtCaretIntentionAc
   }
 
   public static void invoke(final Project project, PsiFile file, final Editor editor, PsiElement element) {
-    if (!FileModificationService.getInstance().prepareFileForWrite(file)) return;
-
     final PsiJavaCodeReferenceElement refExpr = (PsiJavaCodeReferenceElement)element.getParent();
     final PsiClass aClass = (PsiClass)refExpr.resolve();
     if (aClass == null) {
@@ -173,26 +168,23 @@ public class AddOnDemandStaticImportAction extends BaseElementAtCaretIntentionAc
         }
       });
 
-      expressionToDequalifyOffsets.forEachDescending(new TIntProcedure() {
-        @Override
-        public boolean execute(int offset) {
-          PsiJavaCodeReferenceElement expression = PsiTreeUtil.findElementOfClassAtOffset(root, offset, PsiJavaCodeReferenceElement.class, false);
-          if (expression == null) {
-            return false;
-          }
-          PsiElement qualifierExpression = expression.getQualifier();
-          if (qualifierExpression instanceof PsiJavaCodeReferenceElement && ((PsiJavaCodeReferenceElement)qualifierExpression).isReferenceTo(aClass)) {
-            qualifierExpression.delete();
-            if (editor != null) {
-              HighlightManager.getInstance(project)
-                .addRangeHighlight(editor, expression.getTextRange().getStartOffset(), expression.getTextRange().getEndOffset(),
-                                   EditorColorsManager.getInstance().getGlobalScheme().getAttributes(EditorColors.SEARCH_RESULT_ATTRIBUTES),
-                                   false, null);
-            }
-          }
-
-          return true;
+      expressionToDequalifyOffsets.forEachDescending(offset -> {
+        PsiJavaCodeReferenceElement expression = PsiTreeUtil.findElementOfClassAtOffset(root, offset, PsiJavaCodeReferenceElement.class, false);
+        if (expression == null) {
+          return false;
         }
+        PsiElement qualifierExpression = expression.getQualifier();
+        if (qualifierExpression instanceof PsiJavaCodeReferenceElement && ((PsiJavaCodeReferenceElement)qualifierExpression).isReferenceTo(aClass)) {
+          qualifierExpression.delete();
+          if (editor != null) {
+            HighlightManager.getInstance(project)
+              .addRangeHighlight(editor, expression.getTextRange().getStartOffset(), expression.getTextRange().getEndOffset(),
+                                 EditorColorsManager.getInstance().getGlobalScheme().getAttributes(EditorColors.SEARCH_RESULT_ATTRIBUTES),
+                                 false, null);
+          }
+        }
+
+        return true;
       });
     }
   }

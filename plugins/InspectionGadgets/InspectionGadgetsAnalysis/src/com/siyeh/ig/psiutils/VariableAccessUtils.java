@@ -21,6 +21,7 @@ import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.Processor;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -150,17 +151,6 @@ public class VariableAccessUtils {
     return visitor.isVariableValueUsed();
   }
 
-  public static boolean arrayContentsAreAccessed(
-    @NotNull PsiVariable variable, @Nullable PsiElement context) {
-    if (context == null) {
-      return false;
-    }
-    final ArrayContentsAccessedVisitor visitor =
-      new ArrayContentsAccessedVisitor(variable);
-    context.accept(visitor);
-    return visitor.isAccessed();
-  }
-
   public static boolean arrayContentsAreAssigned(
     @NotNull PsiVariable variable, @Nullable PsiElement context) {
     if (context == null) {
@@ -263,6 +253,7 @@ public class VariableAccessUtils {
     return variable.equals(target);
   }
 
+  @Contract("_, null -> false")
   public static boolean variableIsUsed(@NotNull PsiVariable variable,
                                        @Nullable PsiElement context) {
     return context != null && VariableUsedVisitor.isVariableUsedIn(variable, context);

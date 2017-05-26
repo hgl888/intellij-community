@@ -112,6 +112,24 @@ public class Messages {
     return UIUtil.getQuestionIcon();
   }
 
+  @NotNull
+  public static Runnable createMessageDialogRemover(@Nullable Project project) {
+    Window projectWindow = project == null ? null : WindowManager.getInstance().suggestParentWindow(project);
+    return () -> UIUtil.invokeLaterIfNeeded(() -> makeCurrentMessageDialogGoAway(
+      projectWindow != null ? projectWindow.getOwnedWindows() : Window.getWindows()));
+  }
+
+  private static void makeCurrentMessageDialogGoAway(@NotNull Window[] checkWindows) {
+    for (Window w : checkWindows) {
+      JDialog dialog = w instanceof JDialog ? (JDialog)w : null;
+      if (dialog == null || !dialog.isModal()) continue;
+      JButton cancelButton = UIUtil.uiTraverser(dialog.getRootPane()).filter(JButton.class)
+        .filter(b -> CommonBundle.getCancelButtonText().equals(b.getText()))
+        .first();
+      if (cancelButton != null) cancelButton.doClick();
+    }
+  }
+
   /**
    * Please, use {@link #showOkCancelDialog} or {@link #showYesNoCancelDialog} if possible (these dialogs implements native OS behavior)!
    * @return number of button pressed: from 0 up to options.length-1 inclusive, or -1 for Cancel
@@ -1494,6 +1512,16 @@ public class Messages {
     }
 
     protected JComponent doCreateCenterPanel() {
+      JPanel panel = createIconPanel();
+      if (myMessage != null) {
+        JTextPane messageComponent = createMessageComponent(myMessage);
+        panel.add(wrapToScrollPaneIfNeeded(messageComponent, 100, 10), BorderLayout.CENTER);
+      }
+      return panel;
+    }
+
+    @NotNull
+    protected JPanel createIconPanel() {
       JPanel panel = new JPanel(new BorderLayout(15, 0));
       if (myIcon != null) {
         JLabel iconLabel = new JLabel(myIcon);
@@ -1502,11 +1530,19 @@ public class Messages {
         container.add(iconLabel, BorderLayout.NORTH);
         panel.add(container, BorderLayout.WEST);
       }
-      if (myMessage != null) {
-        JTextPane messageComponent = createMessageComponent(myMessage);
-        panel.add(wrapToScrollPaneIfNeeded(messageComponent, 100, 10), BorderLayout.CENTER);
-      }
       return panel;
+    }
+
+    @NotNull
+    protected JPanel createMessagePanel() {
+      JPanel messagePanel = new JPanel(new BorderLayout());
+      if (myMessage != null) {
+        JLabel textLabel = new JLabel(myMessage);
+        textLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 5, 0));
+        textLabel.setUI(new MultiLineLabelUI());
+        messagePanel.add(textLabel, BorderLayout.NORTH);
+      }
+      return messagePanel;
     }
 
     protected static JTextPane createMessageComponent(final String message) {
@@ -1567,10 +1603,7 @@ public class Messages {
     UIUtil.FontSize fixedFontSize = fontSize == null ? UIUtil.FontSize.NORMAL : fontSize;
     messageComponent.setFont(UIUtil.getLabelFont(fixedFontSize));
     if (BasicHTML.isHTMLString(message)) {
-      HTMLEditorKit editorKit = UIUtil.getHTMLEditorKit();
-      Font font = UIUtil.getLabelFont(fixedFontSize);
-      editorKit.getStyleSheet().addRule(UIUtil.displayPropertiesToCSS(font, UIUtil.getLabelForeground()));
-      messageComponent.setEditorKit(editorKit);
+      messageComponent.setEditorKit(UIUtil.getHTMLEditorKit());
     }
     messageComponent.setText(message);
     messageComponent.setEditable(false);
@@ -1629,32 +1662,20 @@ public class Messages {
 
     @Override
     protected JComponent createNorthPanel() {
-      JPanel panel = new JPanel(new BorderLayout(15, 0));
-      if (myIcon != null) {
-        JLabel iconLabel = new JLabel(myIcon);
-        Container container = new Container();
-        container.setLayout(new BorderLayout());
-        container.add(iconLabel, BorderLayout.NORTH);
-        panel.add(container, BorderLayout.WEST);
-      }
+      JPanel panel = createIconPanel();
+      JPanel messagePanel = createMessagePanel();
 
-      JPanel messagePanel = new JPanel(new BorderLayout());
-      if (myMessage != null) {
-        JLabel textLabel = new JLabel(myMessage);
-        textLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 5, 0));
-        textLabel.setUI(new MultiLineLabelUI());
-        messagePanel.add(textLabel, BorderLayout.NORTH);
-      }
-
-      final JPanel checkboxPanel = new JPanel();
-      checkboxPanel.setLayout(new BoxLayout(checkboxPanel, BoxLayout.X_AXIS));
-
-      myCheckBox = new JCheckBox(myCheckboxText);
-      myCheckBox.setSelected(myChecked);
-      messagePanel.add(myCheckBox, BorderLayout.SOUTH);
+      messagePanel.add(createCheckComponent(), BorderLayout.SOUTH);
       panel.add(messagePanel, BorderLayout.CENTER);
 
       return panel;
+    }
+
+    @NotNull
+    protected JComponent createCheckComponent() {
+      myCheckBox = new JCheckBox(myCheckboxText);
+      myCheckBox.setSelected(myChecked);
+      return myCheckBox;
     }
 
     @Override
@@ -1682,7 +1703,7 @@ public class Messages {
     }
   }
 
-  protected static class InputDialog extends MessageDialog {
+  public static class InputDialog extends MessageDialog {
     protected JTextComponent myField;
     private final InputValidator myValidator;
 
@@ -1752,7 +1773,7 @@ public class Messages {
               final String text = myField.getText().trim();
               actions[exitCode].setEnabled(myValidator == null || myValidator.checkInput(text));
               if (myValidator instanceof InputValidatorEx) {
-                setErrorText(((InputValidatorEx) myValidator).getErrorText(text));
+                setErrorText(((InputValidatorEx) myValidator).getErrorText(text), myField);
               }
             }
           });
@@ -1786,14 +1807,7 @@ public class Messages {
 
     @Override
     protected JComponent createNorthPanel() {
-      JPanel panel = new JPanel(new BorderLayout(15, 0));
-      if (myIcon != null) {
-        JLabel iconLabel = new JLabel(myIcon);
-        Container container = new Container();
-        container.setLayout(new BorderLayout());
-        container.add(iconLabel, BorderLayout.NORTH);
-        panel.add(container, BorderLayout.WEST);
-      }
+      JPanel panel = createIconPanel();
 
       JPanel messagePanel = createMessagePanel();
       panel.add(messagePanel, BorderLayout.CENTER);
@@ -1824,7 +1838,7 @@ public class Messages {
         textLabel.setUI(new MultiLineLabelUI());
         textComponent = textLabel;
       }
-      textComponent.setBorder(BorderFactory.createEmptyBorder(0, 0, 5, 0));
+      textComponent.setBorder(BorderFactory.createEmptyBorder(0, 0, 5, 20));
       return textComponent;
     }
 
@@ -2014,22 +2028,8 @@ public class Messages {
 
     @Override
     protected JComponent createNorthPanel() {
-      JPanel panel = new JPanel(new BorderLayout(15, 0));
-      if (myIcon != null) {
-        JLabel iconLabel = new JLabel(myIcon);
-        Container container = new Container();
-        container.setLayout(new BorderLayout());
-        container.add(iconLabel, BorderLayout.NORTH);
-        panel.add(container, BorderLayout.WEST);
-      }
-
-      JPanel messagePanel = new JPanel(new BorderLayout());
-      if (myMessage != null) {
-        JLabel textLabel = new JLabel(myMessage);
-        textLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 5, 0));
-        textLabel.setUI(new MultiLineLabelUI());
-        messagePanel.add(textLabel, BorderLayout.NORTH);
-      }
+      JPanel panel = createIconPanel();
+      JPanel messagePanel = createMessagePanel();
 
       myComboBox = new ComboBox(220);
       messagePanel.add(myComboBox, BorderLayout.SOUTH);

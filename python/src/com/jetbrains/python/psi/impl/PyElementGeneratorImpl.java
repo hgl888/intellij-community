@@ -71,6 +71,9 @@ public class PyElementGeneratorImpl extends PyElementGenerator {
     return createDummyFile(langLevel, contents, false);
   }
 
+  /**
+   * TODO: Use {@link PsiFileFactory} instead?
+   */
   public PsiFile createDummyFile(LanguageLevel langLevel, String contents, boolean physical) {
     final PsiFileFactory factory = PsiFileFactory.getInstance(myProject);
     final String name = getDummyFileName();
@@ -299,8 +302,9 @@ public class PyElementGeneratorImpl extends PyElementGenerator {
   }
 
   @Override
-  public PyImportElement createImportElement(final LanguageLevel languageLevel, String name) {
-    return createFromText(languageLevel, PyImportElement.class, "from foo import " + name, new int[]{0, 6});
+  public PyImportElement createImportElement(@NotNull final LanguageLevel languageLevel, @NotNull String name, @Nullable String alias) {
+    final String importStatement = "from foo import " + name + (alias != null ? " as " + alias : "");
+    return createFromText(languageLevel, PyImportElement.class, importStatement, new int[]{0, 6});
   }
 
   @Override

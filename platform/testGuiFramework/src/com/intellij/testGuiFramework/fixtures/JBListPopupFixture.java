@@ -21,8 +21,10 @@ import com.intellij.ui.popup.PopupFactoryImpl;
 import org.fest.swing.core.GenericTypeMatcher;
 import org.fest.swing.core.MouseButton;
 import org.fest.swing.core.Robot;
+import org.fest.swing.exception.ComponentLookupException;
 import org.fest.swing.timing.Condition;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.junit.Assert;
 
 import javax.swing.*;
@@ -31,9 +33,6 @@ import java.awt.*;
 import static com.intellij.testGuiFramework.framework.GuiTestUtil.SHORT_TIMEOUT;
 import static org.fest.swing.timing.Pause.pause;
 
-/**
- * Created by jetbrains on 29/08/16.
- */
 public class JBListPopupFixture extends JComponentFixture<JBListPopupFixture, JBList> {
 
   private static final Logger LOG = Logger.getInstance("#com.intellij.tests.gui.fixtures.JBListPopupFixture");
@@ -64,18 +63,24 @@ public class JBListPopupFixture extends JComponentFixture<JBListPopupFixture, JB
     return new JBListPopupFixture(jblist, robot);
   }
 
+  @Nullable
   private static JBList getList(Robot robot) {
-    return robot.finder().find(new GenericTypeMatcher<JBList>(JBList.class) {
-      @Override
-      protected boolean isMatching(@NotNull JBList list) {
-        Container parent = list.getRootPane().getParent();
-        if (parent == null) return false;
-        if (parent instanceof JWindow && ((JWindow)parent).getType() == Window.Type.POPUP) {
-          return true;
+    try {
+      JBList list = robot.finder().find(new GenericTypeMatcher<JBList>(JBList.class) {
+        @Override
+        protected boolean isMatching(@NotNull JBList list) {
+          Container parent = list.getRootPane().getParent();
+          if (parent == null) return false;
+          if (parent instanceof JWindow && ((JWindow)parent).getType() == Window.Type.POPUP) {
+            return true;
+          }
+          return false;
         }
-        return false;
-      }
-    });
+      });
+      return list;
+    } catch (ComponentLookupException cle){
+      return null;
+    }
   }
 
   public void assertContainsAction(String actionName) {

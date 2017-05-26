@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,16 +25,14 @@ import com.intellij.ide.util.TreeClassChooserFactory;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CustomShortcutSet;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.Result;
 import com.intellij.openapi.command.WriteCommandAction;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.help.HelpManager;
 import com.intellij.openapi.module.Module;
-import com.intellij.openapi.project.DumbModePermission;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.JavaProjectRootsUtil;
@@ -97,7 +95,7 @@ public class CreateTestDialog extends DialogWrapper {
   private JCheckBox myGenerateBeforeBox = new JCheckBox(CodeInsightBundle.message("intention.create.test.dialog.setUp"));
   private JCheckBox myGenerateAfterBox = new JCheckBox(CodeInsightBundle.message("intention.create.test.dialog.tearDown"));
   private JCheckBox myShowInheritedMethodsBox = new JCheckBox(CodeInsightBundle.message("intention.create.test.dialog.show.inherited"));
-  private MemberSelectionTable myMethodsTable = new MemberSelectionTable(Collections.<MemberInfo>emptyList(), null);
+  private MemberSelectionTable myMethodsTable = new MemberSelectionTable(Collections.emptyList(), null);
   private JButton myFixLibraryButton = new JButton(CodeInsightBundle.message("intention.create.test.dialog.fix.library"));
   private JPanel myFixLibraryPanel;
   private JLabel myFixLibraryLabel;
@@ -259,7 +257,7 @@ public class CreateTestDialog extends DialogWrapper {
     panel.add(new JLabel(CodeInsightBundle.message("intention.create.test.dialog.class.name")), constr);
 
     myTargetClassNameField = new EditorTextField(suggestTestClassName(myTargetClass));
-    myTargetClassNameField.getDocument().addDocumentListener(new DocumentAdapter() {
+    myTargetClassNameField.getDocument().addDocumentListener(new DocumentListener() {
       @Override
       public void documentChanged(DocumentEvent e) {
         getOKAction().setEnabled(PsiNameHelper.getInstance(myProject).isIdentifier(getClassName()));
@@ -400,14 +398,12 @@ public class CreateTestDialog extends DialogWrapper {
 
     myFixLibraryButton.addActionListener(new ActionListener() {
       public void actionPerformed(ActionEvent e) {
-        DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND,
-                                                () -> ApplicationManager.getApplication().runWriteAction(() -> {
-                                                  if (mySelectedFramework instanceof JavaTestFramework) {
-                                                    ((JavaTestFramework)mySelectedFramework).setupLibrary(myTargetModule);
-                                                  } else {
-                                                    OrderEntryFix.addJarToRoots(mySelectedFramework.getLibraryPath(), myTargetModule, null);
-                                                  }
-                                                }));
+        if (mySelectedFramework instanceof JavaTestFramework) {
+          ((JavaTestFramework)mySelectedFramework).setupLibrary(myTargetModule);
+        }
+        else {
+          OrderEntryFix.addJarToRoots(mySelectedFramework.getLibraryPath(), myTargetModule, null);
+        }
         myFixLibraryPanel.setVisible(false);
       }
     });
@@ -493,7 +489,6 @@ public class CreateTestDialog extends DialogWrapper {
       final int result = Messages
         .showOkCancelDialog(myProject, errorMessage + ". Update existing class?", CommonBundle.getErrorTitle(), Messages.getErrorIcon());
       if (result == Messages.CANCEL) {
-        super.close(CANCEL_EXIT_CODE);
         return;
       }
     }

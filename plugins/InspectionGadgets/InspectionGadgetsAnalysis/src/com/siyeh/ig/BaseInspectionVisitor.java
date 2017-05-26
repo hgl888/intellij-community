@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2016 Dave Griffith, Bas Leijdekkers
+ * Copyright 2003-2017 Dave Griffith, Bas Leijdekkers
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.util.TextRange;
+import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.psi.*;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -79,6 +80,11 @@ public abstract class BaseInspectionVisitor extends JavaElementVisitor {
     }
   }
 
+  protected final void registerModuleError(@NotNull PsiJavaModule module, Object... infos) {
+    final PsiJavaModuleReferenceElement identifier = module.getNameIdentifier();
+    registerError(identifier, infos);
+  }
+
   protected final void registerClassError(@NotNull PsiClass aClass,
                                           Object... infos) {
     PsiElement nameIdentifier;
@@ -108,7 +114,19 @@ public abstract class BaseInspectionVisitor extends JavaElementVisitor {
                                            Object... infos) {
     final PsiElement nameIdentifier = method.getNameIdentifier();
     if (nameIdentifier == null) {
-      registerError(method.getContainingFile(), infos);
+      final LocalQuickFix[] fixes = createAndInitFixes(infos);
+      final String description = inspection.buildErrorString(infos);
+
+      final TextRange methodTextRange;
+      PsiCodeBlock body = method.getBody();
+      if (body != null) {
+        methodTextRange = new TextRange(0, body.getStartOffsetInParent());
+      }
+      else {
+        methodTextRange = new TextRange(0, method.getTextLength());
+      }
+
+      holder.registerProblem(method, methodTextRange, description, fixes);
     }
     else {
       registerError(nameIdentifier, infos);
@@ -242,5 +260,9 @@ public abstract class BaseInspectionVisitor extends JavaElementVisitor {
 
   public final void setProblemsHolder(ProblemsHolder holder) {
     this.holder = holder;
+  }
+
+  protected boolean isVisibleHighlight(@NotNull PsiElement element) {
+    return !isOnTheFly() || !InspectionProjectProfileManager.isInformationLevel(inspection.getShortName(), element);
   }
 }

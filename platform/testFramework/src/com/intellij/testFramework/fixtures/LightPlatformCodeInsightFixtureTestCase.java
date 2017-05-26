@@ -22,6 +22,8 @@ import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiFileFactory;
 import com.intellij.psi.PsiManager;
@@ -32,8 +34,6 @@ import com.intellij.testFramework.fixtures.impl.LightTempDirTestFixtureImpl;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.File;
-
 /**
  * @author peter
  */
@@ -41,9 +41,6 @@ import java.io.File;
 public abstract class LightPlatformCodeInsightFixtureTestCase extends UsefulTestCase {
 
   public LightPlatformCodeInsightFixtureTestCase() { }
-
-  /** @deprecated call {@link #LightPlatformCodeInsightFixtureTestCase()} instead (to be removed in IDEA 16) */
-  protected LightPlatformCodeInsightFixtureTestCase(boolean autodetect) { }
 
   protected CodeInsightTestFixture myFixture;
   protected Module myModule;
@@ -100,7 +97,8 @@ public abstract class LightPlatformCodeInsightFixtureTestCase extends UsefulTest
    @NonNls
    protected String getTestDataPath() {
      String path = isCommunity() ? PlatformTestUtil.getCommunityPath() : PathManager.getHomePath();
-     return path.replace(File.separatorChar, '/') + getBasePath();
+     return StringUtil.trimEnd(FileUtil.toSystemIndependentName(path), "/") + '/' +
+            StringUtil.trimStart(FileUtil.toSystemIndependentName(getBasePath()), "/");
    }
 
    protected boolean isCommunity() {

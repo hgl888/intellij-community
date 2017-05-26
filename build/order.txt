@@ -1335,7 +1335,7 @@ messages/VcsBundle.properties:/lib/resources_en.jar
 com/intellij/openapi/vcs/changes/VetoSavingCommittingDocumentsAdapter.class:/lib/idea.jar
 com/intellij/openapi/fileEditor/FileDocumentSynchronizationVetoListener.class:/lib/openapi.jar
 com/intellij/openapi/vcs/changes/VcsDirtyScopeVfsListener.class:/lib/idea.jar
-com/intellij/openapi/vfs/VirtualFileAdapter.class:/lib/openapi.jar
+com/intellij/openapi/vfs/VirtualFileListener.class:/lib/openapi.jar
 com/intellij/openapi/vfs/VirtualFilePropertyEvent.class:/lib/openapi.jar
 com/intellij/openapi/vfs/VirtualFileMoveEvent.class:/lib/openapi.jar
 com/intellij/openapi/vcs/FilePath.class:/lib/openapi.jar
@@ -2527,7 +2527,6 @@ com/intellij/openapi/ui/popup/ListPopupStep.class:/lib/openapi.jar
 com/intellij/openapi/ui/popup/PopupStep.class:/lib/openapi.jar
 com/intellij/execution/ExecutionException.class:/lib/openapi.jar
 com/intellij/execution/runners/Runner.class:/lib/openapi.jar
-com/intellij/tools/ToolProgramRunner.class:/lib/idea.jar
 com/intellij/execution/runners/DefaultProgramRunner.class:/lib/idea.jar
 com/intellij/execution/runners/GenericProgramRunner.class:/lib/openapi.jar
 com/intellij/execution/impl/DefaultJavaProgramRunner.class:/lib/idea.jar
@@ -4115,7 +4114,6 @@ com/intellij/util/indexing/UnindexedFilesUpdater.class:/lib/idea.jar
 com/intellij/util/indexing/FileBasedIndexProjectHandler$1.class:/lib/idea.jar
 com/intellij/codeInsight/navigation/CtrlMouseHandler$1.class:/lib/idea.jar
 com/intellij/codeInsight/navigation/CtrlMouseHandler$2.class:/lib/idea.jar
-com/intellij/openapi/fileEditor/FileEditorManagerAdapter.class:/lib/openapi.jar
 com/intellij/codeInsight/navigation/CtrlMouseHandler$3.class:/lib/idea.jar
 com/intellij/codeInsight/navigation/CtrlMouseHandler$5.class:/lib/idea.jar
 com/intellij/codeInsight/navigation/CtrlMouseHandler$6.class:/lib/idea.jar

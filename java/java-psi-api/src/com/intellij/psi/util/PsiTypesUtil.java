@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import com.intellij.psi.*;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.util.ArrayUtil;
 import gnu.trove.THashMap;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -33,8 +34,8 @@ import java.util.Map;
 import java.util.Set;
 
 public class PsiTypesUtil {
-  @NonNls private static final Map<String, String> ourUnboxedTypes = new THashMap<String, String>();
-  @NonNls private static final Map<String, String> ourBoxedTypes = new THashMap<String, String>();
+  @NonNls private static final Map<String, String> ourUnboxedTypes = new THashMap<>();
+  @NonNls private static final Map<String, String> ourBoxedTypes = new THashMap<>();
 
   static {
     ourUnboxedTypes.put(CommonClassNames.JAVA_LANG_BOOLEAN, "boolean");
@@ -73,10 +74,11 @@ public class PsiTypesUtil {
         }
       }
 
+      PsiType erasedComponentType = TypeConversionUtil.erasure(componentType);
       StringBuilder buffer = new StringBuilder();
       buffer.append(PsiKeyword.NEW);
       buffer.append(" ");
-      buffer.append(componentType.getCanonicalText());
+      buffer.append(erasedComponentType.getCanonicalText());
       buffer.append("[0]");
       for (int i = 0; i < count; i++) {
         buffer.append("[]");
@@ -94,6 +96,7 @@ public class PsiTypesUtil {
    * @param type boxed java type name
    * @return unboxed type name if available; same value otherwise
    */
+  @Contract("null -> null; !null -> !null")
   @Nullable
   public static String unboxIfPossible(final String type) {
     if (type == null) return null;
@@ -106,6 +109,7 @@ public class PsiTypesUtil {
    * @param type primitive java type name
    * @return boxed type name if available; same value otherwise
    */
+  @Contract("null -> null; !null -> !null")
   @Nullable
   public static String boxIfPossible(final String type) {
     if (type == null) return null;
@@ -197,8 +201,11 @@ public class PsiTypesUtil {
     return null;
   }
 
+  /**
+   * Return type explicitly declared in parent
+   */
   @Nullable
-  public static PsiType getExpectedTypeByParent(PsiElement element) {
+  public static PsiType getExpectedTypeByParent(@NotNull PsiElement element) {
     final PsiElement parent = PsiUtil.skipParenthesizedExprUp(element.getParent());
     if (parent instanceof PsiVariable) {
       if (PsiUtil.checkSameExpression(element, ((PsiVariable)parent).getInitializer())) {
@@ -237,14 +244,28 @@ public class PsiTypesUtil {
         }
       }
       else if (gParent instanceof PsiArrayInitializerExpression) {
-        final PsiType expectedTypeByParent = getExpectedTypeByParent((PsiExpression)parent);
+        final PsiType expectedTypeByParent = getExpectedTypeByParent(parent);
         return expectedTypeByParent != null && expectedTypeByParent instanceof PsiArrayType
                ? ((PsiArrayType)expectedTypeByParent).getComponentType() : null;
       }
     }
     return null;
   }
-  
+
+  /**
+   * Returns the return type for enclosing method or lambda
+   *
+   * @param element element inside method or lambda to determine the return type of
+   * @return the return type or null if cannot be determined
+   */
+  @Nullable
+  public static PsiType getMethodReturnType(PsiElement element) {
+    final PsiElement methodOrLambda = PsiTreeUtil.getParentOfType(element, PsiMethod.class, PsiLambdaExpression.class);
+    return methodOrLambda instanceof PsiMethod
+           ? ((PsiMethod)methodOrLambda).getReturnType()
+           : methodOrLambda instanceof PsiLambdaExpression ? LambdaUtil.getFunctionalInterfaceReturnType((PsiLambdaExpression)methodOrLambda) : null;
+  }
+
   public static boolean compareTypes(PsiType leftType, PsiType rightType, boolean ignoreEllipsis) {
     if (ignoreEllipsis) {
       if (leftType instanceof PsiEllipsisType) {
@@ -313,39 +334,48 @@ public class PsiTypesUtil {
     return parameterType;
   }
 
-  public static PsiTypeParameter[] filterUnusedTypeParameters(final PsiType superReturnTypeInBaseClassType,
-                                                              final PsiTypeParameter[] typeParameters) {
-    if (typeParameters.length == 0) return typeParameters;
+  @NotNull
+  public static PsiTypeParameter[] filterUnusedTypeParameters(@NotNull PsiTypeParameter[] typeParameters,
+                                                              final PsiType... types) {
+    if (typeParameters.length == 0) return PsiTypeParameter.EMPTY_ARRAY;
 
-    final Set<PsiTypeParameter> usedParameters = new HashSet<PsiTypeParameter>();
-    superReturnTypeInBaseClassType.accept(new PsiTypeVisitor<Object>(){
-      @Nullable
-      @Override
-      public Object visitClassType(PsiClassType classType) {
-        final PsiClass aClass = classType.resolve();
-        if (aClass instanceof PsiTypeParameter && ArrayUtil.find(typeParameters, aClass) > -1) {
-          usedParameters.add((PsiTypeParameter)aClass);
+    final Set<PsiTypeParameter> usedParameters = new HashSet<>();
+    for (PsiType type : types) {
+      type.accept(new PsiTypeVisitor<Object>() {
+        @Nullable
+        @Override
+        public Object visitClassType(PsiClassType classType) {
+          final PsiClass aClass = classType.resolve();
+          if (aClass instanceof PsiTypeParameter && ArrayUtil.find(typeParameters, aClass) > -1) {
+            usedParameters.add((PsiTypeParameter)aClass);
+            return null;
+          }
+          for (PsiType type : classType.getParameters()) {
+            type.accept(this);
+          }
           return null;
         }
-        for (PsiType type : classType.getParameters()) {
-          type.accept(this);
+
+        @Nullable
+        @Override
+        public Object visitWildcardType(PsiWildcardType wildcardType) {
+          final PsiType bound = wildcardType.getBound();
+          return bound != null ? bound.accept(this) : null;
         }
-        return null;
-      }
 
-      @Nullable
-      @Override
-      public Object visitWildcardType(PsiWildcardType wildcardType) {
-        final PsiType bound = wildcardType.getBound();
-        return bound != null ? bound.accept(this) : null;
-      }
-
-      @Nullable
-      @Override
-      public Object visitArrayType(PsiArrayType arrayType) {
-        return arrayType.getComponentType().accept(this);
-      }
-    });
+        @Nullable
+        @Override
+        public Object visitArrayType(PsiArrayType arrayType) {
+          return arrayType.getComponentType().accept(this);
+        }
+      });
+    }
     return usedParameters.toArray(new PsiTypeParameter[usedParameters.size()]);
+  }
+
+  @NotNull
+  public static PsiTypeParameter[] filterUnusedTypeParameters(final PsiType superReturnTypeInBaseClassType,
+                                                              @NotNull PsiTypeParameter[] typeParameters) {
+    return filterUnusedTypeParameters(typeParameters, superReturnTypeInBaseClassType);
   }
 }

@@ -1,14 +1,15 @@
 package org.jetbrains.idea.svn.difftool;
 
-import com.intellij.openapi.progress.BackgroundTaskQueue;
-import com.intellij.openapi.progress.ProcessCanceledException;
-import com.intellij.openapi.progress.ProgressIndicator;
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.UserDataHolder;
 import com.intellij.diff.DiffContext;
 import com.intellij.diff.FrameDiffTool;
 import com.intellij.diff.chains.DiffRequestProducerException;
 import com.intellij.diff.requests.DiffRequest;
+import com.intellij.openapi.progress.BackgroundTaskQueue;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.UserDataHolder;
 import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vcs.changes.actions.diff.ChangeDiffRequestProducer;
 import com.intellij.openapi.vcs.changes.actions.diff.ChangeDiffRequestProvider;
@@ -27,11 +28,14 @@ public class SvnTreeConflictDiffRequestProvider implements ChangeDiffRequestProv
   @Override
   public ThreeState isEquals(@NotNull Change change1, @NotNull Change change2) {
     if (change1 instanceof ConflictedSvnChange && change2 instanceof ConflictedSvnChange) {
-      if (!change1.isTreeConflict() && !change2.isTreeConflict()) return ThreeState.UNSURE;
-      if (!change1.isTreeConflict() || !change2.isTreeConflict()) return ThreeState.NO;
+      ConflictedSvnChange conflict1 = (ConflictedSvnChange)change1;
+      ConflictedSvnChange conflict2 = (ConflictedSvnChange)change2;
 
-      TreeConflictDescription description1 = ((ConflictedSvnChange)change1).getBeforeDescription();
-      TreeConflictDescription description2 = ((ConflictedSvnChange)change2).getBeforeDescription();
+      if (!conflict1.isTreeConflict() && !conflict2.isTreeConflict()) return ThreeState.UNSURE;
+      if (!conflict1.isTreeConflict() || !conflict2.isTreeConflict()) return ThreeState.NO;
+
+      TreeConflictDescription description1 = conflict1.getBeforeDescription();
+      TreeConflictDescription description2 = conflict2.getBeforeDescription();
       return TreeConflictRefreshablePanel.descriptionsEqual(description1, description2) ? ThreeState.YES : ThreeState.NO;
     }
     return ThreeState.UNSURE;
@@ -102,7 +106,7 @@ public class SvnTreeConflictDiffRequestProvider implements ChangeDiffRequestProv
 
       myQueue = new BackgroundTaskQueue(myContext.getProject(), "Loading change details");
 
-      // We don't need to listen on File/Document, because panel always will be the same for a single change (@see myDelegate.isStillValid())
+      // We don't need to listen on File/Document, because panel always will be the same for a single change.
       // And if Change will change - we'll create new DiffRequest and DiffViewer
       myDelegate =
         new TreeConflictRefreshablePanel(myContext.getProject(), "Loading tree conflict details", myQueue, myRequest.getChange());
@@ -131,6 +135,7 @@ public class SvnTreeConflictDiffRequestProvider implements ChangeDiffRequestProv
     @Override
     public void dispose() {
       myQueue.clear();
+      Disposer.dispose(myDelegate);
     }
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +35,8 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.*;
+import java.util.List;
 
 /**
  * @author Vladimir Kondratyev
@@ -172,7 +174,7 @@ public class ThreeComponentsSplitter extends JPanel implements Disposable {
   }
 
   public void setDividerMouseZoneSize(int size) {
-    myDividerZone = size;
+    myDividerZone = JBUI.scale(size);
   }
 
   public boolean isHonorMinimumSize() {
@@ -611,8 +613,15 @@ public class ThreeComponentsSplitter extends JPanel implements Disposable {
 
     private boolean isInside(Point p) {
       if (!isVisible()) return false;
+      Window window = UIUtil.getWindow(this);
+      if (window != null) {
+        Point point = SwingUtilities.convertPoint(this, p, window);
+        Component component = UIUtil.getDeepestComponentAt(window, point.x, point.y);
+        List<Component> components = Arrays.asList(myFirstComponent, myFirstDivider, myInnerComponent, myLastDivider, myLastComponent);
+        if (UIUtil.findParentByCondition(component, c -> c != null && components.contains(c)) == null) return false;
+      }
 
-      int dndOff = myIsOnePixel ? Registry.intValue("ide.splitter.mouseZone") / 2 : 0;
+      int dndOff = myIsOnePixel ? JBUI.scale(Registry.intValue("ide.splitter.mouseZone")) / 2 : 0;
       if (myVerticalSplit) {
         if (p.x >= 0 && p.x < getWidth()) {
           if (getHeight() > 0) {

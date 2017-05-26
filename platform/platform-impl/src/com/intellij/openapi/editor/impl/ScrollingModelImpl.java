@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,31 +14,25 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: max
- * Date: Jun 10, 2002
- * Time: 10:14:59 PM
- * To change template for new class use
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.openapi.editor.impl;
 
-import com.intellij.ide.RemoteDesktopDetector;
+import com.intellij.ide.RemoteDesktopService;
 import com.intellij.openapi.application.ex.ApplicationManagerEx;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.LogicalPosition;
 import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.VisualPosition;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.editor.event.VisibleAreaEvent;
 import com.intellij.openapi.editor.event.VisibleAreaListener;
 import com.intellij.openapi.editor.ex.ScrollingModelEx;
 import com.intellij.openapi.editor.ex.util.EditorUtil;
 import com.intellij.openapi.fileEditor.impl.text.AsyncEditorLoader;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.ui.components.Interpolable;
+import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.Animator;
 import org.jetbrains.annotations.NotNull;
@@ -65,7 +59,7 @@ public class ScrollingModelImpl implements ScrollingModelEx {
   private boolean myAccumulateViewportChanges;
   private boolean myViewportPositioned;
 
-  private final DocumentAdapter myDocumentListener = new DocumentAdapter() {
+  private final DocumentListener myDocumentListener = new DocumentListener() {
     @Override
     public void beforeDocumentChange(DocumentEvent e) {
       if (!myEditor.getDocument().isInBulkUpdate()) {
@@ -114,7 +108,7 @@ public class ScrollingModelImpl implements ScrollingModelEx {
     final int currentOffset = getVerticalScrollOffset();
     int offsetToUse = Math.min(minPreferredY, currentOffset);
     if (offsetToUse != currentOffset) {
-      scrollToOffsets(getHorizontalScrollOffset(), offsetToUse);
+      scroll(getHorizontalScrollOffset(), offsetToUse);
       return true;
     }
     return false;
@@ -131,6 +125,10 @@ public class ScrollingModelImpl implements ScrollingModelEx {
   @Override
   public Rectangle getVisibleAreaOnScrollingFinished() {
     assertIsDispatchThread();
+    if (SystemProperties.isTrueSmoothScrollingEnabled()) {
+      Rectangle viewRect = myEditor.getScrollPane().getViewport().getViewRect();
+      return new Rectangle(getOffset(getHorizontalScrollBar()), getOffset(getVerticalScrollBar()), viewRect.width, viewRect.height);
+    }
     if (myCurrentAnimationRequest != null) {
       return myCurrentAnimationRequest.getTargetVisibleArea();
     }
@@ -141,13 +139,7 @@ public class ScrollingModelImpl implements ScrollingModelEx {
   public void scrollToCaret(@NotNull ScrollType scrollType) {
     assertIsDispatchThread();
     myEditor.validateSize();
-    if (myEditor.myUseNewRendering) {
-      AsyncEditorLoader.performWhenLoaded(myEditor, () -> scrollTo(myEditor.getCaretModel().getVisualPosition(), scrollType));
-    }
-    else {
-      LogicalPosition caretPosition = myEditor.getCaretModel().getLogicalPosition();
-      scrollTo(caretPosition, scrollType);
-    }
+    AsyncEditorLoader.performWhenLoaded(myEditor, () -> scrollTo(myEditor.getCaretModel().getVisualPosition(), scrollType));
   }
 
   private void scrollTo(@NotNull VisualPosition pos, @NotNull ScrollType scrollType) {
@@ -159,7 +151,7 @@ public class ScrollingModelImpl implements ScrollingModelEx {
     AnimatedScrollingRunnable canceledThread = cancelAnimatedScrolling(false);
     Rectangle viewRect = canceledThread != null ? canceledThread.getTargetVisibleArea() : getVisibleArea();
     Point p = calcOffsetsToScroll(targetLocation, scrollType, viewRect);
-    scrollToOffsets(p.x, p.y);
+    scroll(p.x, p.y);
   }
 
   @Override
@@ -183,6 +175,10 @@ public class ScrollingModelImpl implements ScrollingModelEx {
     }
 
     action.run();
+  }
+
+  public boolean isAnimationEnabled() {
+    return !myAnimationDisabled;
   }
 
   @Override
@@ -296,7 +292,8 @@ public class ScrollingModelImpl implements ScrollingModelEx {
   }
 
   private static int getOffset(JScrollBar scrollBar) {
-    return scrollBar == null ? 0 : scrollBar.getValue();
+    return scrollBar == null ? 0 :
+           scrollBar instanceof Interpolable ? ((Interpolable)scrollBar).getTargetValue() : scrollBar.getValue();
   }
 
   private static int getExtent(JScrollBar scrollBar) {
@@ -305,7 +302,7 @@ public class ScrollingModelImpl implements ScrollingModelEx {
 
   @Override
   public void scrollVertically(int scrollOffset) {
-    scrollToOffsets(getHorizontalScrollOffset(), scrollOffset);
+    scroll(getHorizontalScrollOffset(), scrollOffset);
   }
 
   private void _scrollVertically(int scrollOffset) {
@@ -319,7 +316,7 @@ public class ScrollingModelImpl implements ScrollingModelEx {
 
   @Override
   public void scrollHorizontally(int scrollOffset) {
-    scrollToOffsets(scrollOffset, getVerticalScrollOffset());
+    scroll(scrollOffset, getVerticalScrollOffset());
   }
 
   private void _scrollHorizontally(int scrollOffset) {
@@ -330,7 +327,8 @@ public class ScrollingModelImpl implements ScrollingModelEx {
     scrollbar.setValue(scrollOffset);
   }
 
-  void scrollToOffsets(int hOffset, int vOffset) {
+  @Override
+  public void scroll(int hOffset, int vOffset) {
     if (myAccumulateViewportChanges) {
       myAccumulatedXOffset = hOffset;
       myAccumulatedYOffset = vOffset;
@@ -342,7 +340,7 @@ public class ScrollingModelImpl implements ScrollingModelEx {
     VisibleEditorsTracker editorsTracker = VisibleEditorsTracker.getInstance();
     boolean useAnimation;
     //System.out.println("myCurrentCommandStart - myLastCommandFinish = " + (myCurrentCommandStart - myLastCommandFinish));
-    if (!myEditor.getSettings().isAnimatedScrolling() || myAnimationDisabled || RemoteDesktopDetector.isRemoteSession()) {
+    if (!myEditor.getSettings().isAnimatedScrolling() || myAnimationDisabled || RemoteDesktopService.isRemoteSession()) {
       useAnimation = false;
     }
     else if (CommandProcessor.getInstance().getCurrentCommand() == null) {
@@ -431,7 +429,7 @@ public class ScrollingModelImpl implements ScrollingModelEx {
   public void flushViewportChanges() {
     myAccumulateViewportChanges = false;
     if (myAccumulatedXOffset >= 0 && myAccumulatedYOffset >= 0) {
-      scrollToOffsets(myAccumulatedXOffset, myAccumulatedYOffset);
+      scroll(myAccumulatedXOffset, myAccumulatedYOffset);
       myAccumulatedXOffset = myAccumulatedYOffset = -1;
       cancelAnimatedScrolling(true);
     }

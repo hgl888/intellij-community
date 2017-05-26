@@ -15,7 +15,6 @@
  */
 package com.intellij.codeInsight.daemon.impl.quickfix;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.intention.HighPriorityAction;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.openapi.diagnostic.Logger;
@@ -25,12 +24,8 @@ import com.intellij.psi.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * User: anna
- * Date: 1/18/12
- */
 public class RemoveTypeArgumentsFix extends LocalQuickFixAndIntentionActionOnPsiElement implements HighPriorityAction {
-  private static final Logger LOGGER = Logger.getInstance("#" + RemoveTypeArgumentsFix.class.getName());
+  private static final Logger LOGGER = Logger.getInstance(RemoveTypeArgumentsFix.class);
 
   public RemoveTypeArgumentsFix(@NotNull PsiElement element) {
     super(element);
@@ -68,7 +63,7 @@ public class RemoveTypeArgumentsFix extends LocalQuickFixAndIntentionActionOnPsi
     final PsiJavaCodeReferenceElement referenceElement = typeElement.getInnermostComponentReferenceElement();
     if (referenceElement != null) {
       final PsiReferenceParameterList parameterList = referenceElement.getParameterList();
-      if (parameterList != null && FileModificationService.getInstance().preparePsiElementForWrite(parameterList)) {
+      if (parameterList != null) {
         parameterList.delete();
       }
     }

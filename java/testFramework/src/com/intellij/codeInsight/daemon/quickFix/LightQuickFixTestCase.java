@@ -17,32 +17,31 @@ package com.intellij.codeInsight.daemon.quickFix;
 
 import com.intellij.codeInsight.daemon.LightDaemonAnalyzerTestCase;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
+import com.intellij.codeInsight.daemon.impl.HighlightInfoType;
 import com.intellij.codeInsight.intention.IntentionAction;
-import com.intellij.codeInsight.intention.impl.ShowIntentionActionsHandler;
-import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vcs.readOnlyHandler.ReadonlyStatusHandlerImpl;
 import com.intellij.openapi.vfs.CharsetToolkit;
-import com.intellij.openapi.vfs.ReadonlyStatusHandler;
 import com.intellij.psi.PsiFile;
-import com.intellij.rt.execution.junit.FileComparisonFailure;
+import com.intellij.psi.util.PsiUtil;
 import com.intellij.testFramework.LightPlatformCodeInsightTestCase;
 import com.intellij.testFramework.LightPlatformTestCase;
 import com.intellij.testFramework.fixtures.impl.CodeInsightTestFixtureImpl;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.ObjectUtils;
-import com.intellij.util.io.ReadOnlyAttributeUtil;
 import com.intellij.util.ui.UIUtil;
+import junit.framework.ComparisonFailure;
+import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.junit.Assert;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.List;
 
 public abstract class LightQuickFixTestCase extends LightDaemonAnalyzerTestCase {
@@ -51,13 +50,14 @@ public abstract class LightQuickFixTestCase extends LightDaemonAnalyzerTestCase 
 
   private static QuickFixTestCase myWrapper;
 
-  protected boolean shouldBeAvailableAfterExecution() {
-    return false;
+  @Override
+  protected void tearDown() throws Exception {
+    myWrapper = null;
+    super.tearDown();
   }
 
-  @NotNull
-  protected ActionHint parseActionHintImpl(@NotNull PsiFile file, @NotNull String contents) {
-    return ActionHint.parse(file, contents);
+  protected boolean shouldBeAvailableAfterExecution() {
+    return false;
   }
 
   private static void doTestFor(@NotNull String testName, @NotNull QuickFixTestCase quickFixTestCase) {
@@ -82,12 +82,12 @@ public abstract class LightQuickFixTestCase extends LightDaemonAnalyzerTestCase 
           quickFixTestCase.afterActionCompleted(testName, contents);
         }
       }
-      catch (FileComparisonFailure e){
+      catch (ComparisonFailure e) {
         throw e;
       }
       catch (Throwable e) {
         e.printStackTrace();
-        fail(testName);
+        Assert.fail(testName + " failed");
       }
     }, "", "");
   }
@@ -103,7 +103,7 @@ public abstract class LightQuickFixTestCase extends LightDaemonAnalyzerTestCase 
                               String testName,
                               QuickFixTestCase quickFix) throws Exception {
     IntentionAction action = actionHint.findAndCheck(quickFix.getAvailableActions(),
-                                                     () -> "Test: "+testFullPath+"\nInfos: "+quickFix.doHighlighting());
+                                                     () -> getTestInfo(testFullPath, quickFix));
     if (action != null) {
       String text = action.getText();
       quickFix.invoke(action);
@@ -117,7 +117,35 @@ public abstract class LightQuickFixTestCase extends LightDaemonAnalyzerTestCase 
       }
       String expectedFilePath = ObjectUtils.notNull(quickFix.getBasePath(), "") + "/" + AFTER_PREFIX + testName;
       quickFix.checkResultByFile("In file :" + expectedFilePath, expectedFilePath, false);
+
+      String familyName = action.getFamilyName();
+      if (StringUtil.isEmptyOrSpaces(familyName)) {
+        fail("Action '" + text + "' provides empty family name which means that user would see action with empty presentable text in Inspection Results");
+      }
     }
+  }
+
+  private static String getTestInfo(String testFullPath, QuickFixTestCase quickFix) {
+    String infos = StreamEx.of(quickFix.doHighlighting())
+      .filter(info -> info.getSeverity() != HighlightInfoType.SYMBOL_TYPE_SEVERITY)
+      .map(info -> {
+        String fixes = "";
+        if (info.quickFixActionRanges != null) {
+          fixes = StreamEx.of(info.quickFixActionRanges)
+            .map(p -> p.getSecond()+" "+p.getFirst())
+            .mapLastOrElse("|- "::concat, "\\- "::concat)
+            .map(str -> "        " + str + "\n")
+            .joining();
+        }
+        return info.getSeverity() +
+               ": (" + info.getStartOffset() + "," + info.getEndOffset() + ") '" +
+               info.getText() + "': " + info.getDescription() + "\n" + fixes;
+      })
+      .joining("       ");
+    return "Test: " + testFullPath + "\n" +
+           "Language level: " + PsiUtil.getLanguageLevel(quickFix.getProject()) + "\n" +
+           (quickFix.getProject().equals(getProject()) ? ("SDK: " + ModuleRootManager.getInstance(getModule()).getSdk() + "\n") : "") +
+           "Infos: " + infos;
   }
 
   protected void doAction(@NotNull ActionHint actionHint, final String testFullPath, final String testName)
@@ -133,27 +161,7 @@ public abstract class LightQuickFixTestCase extends LightDaemonAnalyzerTestCase 
   }
 
   protected static void invoke(@NotNull IntentionAction action) throws IncorrectOperationException {
-    PsiFile file = getFile();
-    WriteAction.run(() -> {
-      try {
-        // Test that action will automatically clear the read-only attribute if modification is necessary.
-        // If your test fails due to this, make sure that your quick-fix/intention has the following line:
-        // if (!FileModificationService.getInstance().prepareFileForWrite(file)) return;
-        ReadOnlyAttributeUtil.setReadOnlyAttribute(file.getVirtualFile(), true);
-      }
-      catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
-    });
-    ReadonlyStatusHandlerImpl handler = (ReadonlyStatusHandlerImpl)ReadonlyStatusHandler.getInstance(file.getProject());
-    handler.setClearReadOnlyInTests(true);
-    try {
-      ShowIntentionActionsHandler.chooseActionAndInvoke(file, getEditor(), action, action.getText());
-      UIUtil.dispatchAllInvocationEvents();
-    }
-    finally {
-      handler.setClearReadOnlyInTests(false);
-    }
+    CodeInsightTestFixtureImpl.invokeIntention(action, getFile(), getEditor(), action.getText());
   }
 
   protected IntentionAction findActionAndCheck(@NotNull ActionHint hint, String testFullPath) {
@@ -239,7 +247,7 @@ public abstract class LightQuickFixTestCase extends LightDaemonAnalyzerTestCase 
       @NotNull
       @Override
       public ActionHint parseActionHintImpl(@NotNull PsiFile file, @NotNull String contents) {
-        return LightQuickFixTestCase.this.parseActionHintImpl(file, contents);
+        return ActionHint.parse(file, contents);
       }
 
       @Override

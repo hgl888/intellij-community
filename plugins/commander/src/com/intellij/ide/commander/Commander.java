@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,16 +33,13 @@ import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
-import com.intellij.openapi.wm.FocusWatcher;
-import com.intellij.openapi.wm.ToolWindow;
-import com.intellij.openapi.wm.ToolWindowId;
-import com.intellij.openapi.wm.ToolWindowManager;
-import com.intellij.openapi.wm.ex.IdeFocusTraversalPolicy;
+import com.intellij.openapi.wm.*;
 import com.intellij.psi.*;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.ui.AutoScrollToSourceHandler;
+import com.intellij.util.SmartList;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
 
@@ -53,8 +50,9 @@ import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import java.awt.*;
 import java.awt.event.*;
-import java.util.ArrayList;
 import java.util.List;
+
+import static com.intellij.openapi.wm.ex.IdeFocusTraversalPolicy.getPreferredFocusedComponent;
 
 /**
  * @author Eugene Belyaev
@@ -95,6 +93,7 @@ public class Commander extends JPanel implements PersistentStateComponent<Elemen
 
   public Commander(final Project project, KeymapManager keymapManager, final ToolWindowManager toolWindowManager) {
     super(new BorderLayout());
+
     myProject = project;
     myToolWindowManager = toolWindowManager;
 
@@ -113,16 +112,14 @@ public class Commander extends JPanel implements PersistentStateComponent<Elemen
     final ActionMap actionMap = getActionMap();
     actionMap.put(ACTION_BACKCOMMAND, backAction);
     actionMap.put(ACTION_FORWARDCOMMAND, fwdAction);
-    final KeyStroke[] backStrokes = getKeyStrokes(IdeActions.ACTION_GOTO_BACK, keymapManager);
-    for (KeyStroke stroke : backStrokes) {
+    for (KeyStroke stroke : getKeyStrokes(IdeActions.ACTION_GOTO_BACK, keymapManager)) {
       //getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(stroke, "backCommand");
       //getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(stroke, "backCommand");
       registerKeyboardAction(backAction, ACTION_BACKCOMMAND, stroke, JComponent.WHEN_IN_FOCUSED_WINDOW);
       registerKeyboardAction(backAction, ACTION_BACKCOMMAND, stroke, JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
     }
 
-    final KeyStroke[] fwdStrokes = getKeyStrokes(IdeActions.ACTION_GOTO_FORWARD, keymapManager);
-    for (KeyStroke stroke : fwdStrokes) {
+    for (KeyStroke stroke : getKeyStrokes(IdeActions.ACTION_GOTO_FORWARD, keymapManager)) {
       //getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(stroke, "forwardCommand");
       //getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(stroke, "forwardCommand");
       registerKeyboardAction(fwdAction, ACTION_FORWARDCOMMAND, stroke, JComponent.WHEN_IN_FOCUSED_WINDOW);
@@ -258,9 +255,8 @@ public class Commander extends JPanel implements PersistentStateComponent<Elemen
   }
 
   private static KeyStroke[] getKeyStrokes(String actionId, KeymapManager keymapManager) {
-    final Shortcut[] shortcuts = keymapManager.getActiveKeymap().getShortcuts(actionId);
-    final List<KeyStroke> strokes = new ArrayList<>();
-    for (final Shortcut shortcut : shortcuts) {
+    List<KeyStroke> strokes = new SmartList<>();
+    for (Shortcut shortcut : keymapManager.getActiveKeymap().getShortcuts(actionId)) {
       if (shortcut instanceof KeyboardShortcut) {
         strokes.add(((KeyboardShortcut)shortcut).getFirstKeyStroke());
       }
@@ -325,7 +321,6 @@ public class Commander extends JPanel implements PersistentStateComponent<Elemen
         }
       }
     });
-
 
     final ProjectAbstractTreeStructureBase treeStructure = createProjectTreeStructure();
     panel.setBuilder(new ProjectListBuilder(myProject, panel, treeStructure, AlphaComparator.INSTANCE, true));
@@ -432,7 +427,9 @@ public class Commander extends JPanel implements PersistentStateComponent<Elemen
     final CommanderPanel inactivePanel = getInactivePanel();
     inactivePanel.setActive(true);
     activePanel.setActive(false);
-    IdeFocusTraversalPolicy.getPreferredFocusedComponent(inactivePanel).requestFocus();
+    IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> {
+      IdeFocusManager.getGlobalInstance().requestFocus(getPreferredFocusedComponent(inactivePanel), true);
+    });
   }
 
   public void enterElementInActivePanel(final PsiElement element) {

@@ -16,6 +16,7 @@
 package com.intellij.debugger;
 
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
@@ -36,11 +37,6 @@ import org.jetbrains.annotations.Nullable;
 import java.lang.ref.WeakReference;
 import java.util.List;
 
-/**
- * User: lex
- * Date: Oct 24, 2003
- * Time: 8:23:06 PM
- */
 public abstract class SourcePosition implements Navigatable{
   private static final Logger LOG = Logger.getInstance("#com.intellij.debugger.SourcePosition");
   @NotNull
@@ -128,7 +124,7 @@ public abstract class SourcePosition implements Navigatable{
         return true;
       }
       PsiElement psiElement = SoftReference.dereference(myPsiElementRef);
-      return psiElement != null && !ApplicationManager.getApplication().runReadAction((Computable<Boolean>)psiElement::isValid);
+      return psiElement != null && !ReadAction.compute(psiElement::isValid);
     }
 
     @Override
@@ -154,7 +150,7 @@ public abstract class SourcePosition implements Navigatable{
       updateData();
       PsiElement element = SoftReference.dereference(myPsiElementRef);
       if (element == null) {
-        element = ApplicationManager.getApplication().runReadAction((Computable<PsiElement>)this::calcPsiElement);
+        element = ReadAction.compute(this::calcPsiElement);
         myPsiElementRef = new WeakReference<>(element);
         return element;
       }
@@ -332,7 +328,7 @@ public abstract class SourcePosition implements Navigatable{
 
       @Override
       protected int calcOffset() {
-        return ApplicationManager.getApplication().runReadAction((Computable<Integer>)() -> {
+        return ReadAction.compute(() -> {
             PsiElement elem = pointer.getElement();
             return elem != null ? elem.getTextOffset() : -1;
         });

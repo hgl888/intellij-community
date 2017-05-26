@@ -33,7 +33,6 @@ import com.intellij.openapi.ui.popup.Balloon;
 import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.SystemInfo;
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.*;
@@ -43,6 +42,7 @@ import com.intellij.util.ui.SwingHelper;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import sun.awt.AWTAccessor;
 
 import javax.swing.*;
 import javax.swing.event.HyperlinkEvent;
@@ -134,7 +134,7 @@ public class AppUIUtil {
 
   public static String getFrameClass() {
     String name = ApplicationNamesInfo.getInstance().getProductName().toLowerCase(Locale.US);
-    String wmClass = VENDOR_PREFIX + StringUtil.replaceChar(name, ' ', '-');
+    String wmClass = VENDOR_PREFIX + name.replace(' ', '-');
     if ("true".equals(System.getProperty("idea.debug.mode"))) {
       wmClass += "-debug";
     }
@@ -299,5 +299,28 @@ public class AppUIUtil {
     dialog.setTitle(ApplicationNamesInfo.getInstance().getFullProductName() + " Privacy Policy Agreement");
     dialog.setSize(JBUI.scale(509), JBUI.scale(395));
     dialog.show();
+  }
+
+  /**
+   * Targets the component to a (screen) device before showing.
+   * In case the component is already a part of UI hierarchy (and is thus bound to a device)
+   * the method does nothing.
+   * <p>
+   * The prior targeting to a device is required when there's a need to calculate preferred
+   * size of a compound component (such as JEditorPane, for instance) which is not yet added
+   * to a hierarchy. The calculation in that case may involve device-dependent metrics
+   * (such as font metrics) and thus should refer to a particular device in multi-monitor env.
+   * <p>
+   * Note that if after calling this method the component is added to another hierarchy,
+   * bound to a different device, AWT will throw IllegalArgumentException. To avoid that,
+   * the device should be reset by calling {@code targetToDevice(comp, null)}.
+   *
+   * @param target the component representing the UI hierarchy and the target device
+   * @param comp the component to target
+   */
+  public static void targetToDevice(@NotNull Component comp, @Nullable Component target) {
+    if (comp.isShowing()) return;
+    GraphicsConfiguration gc = target != null ? target.getGraphicsConfiguration() : null;
+    AWTAccessor.getComponentAccessor().setGraphicsConfiguration(comp, gc);
   }
 }

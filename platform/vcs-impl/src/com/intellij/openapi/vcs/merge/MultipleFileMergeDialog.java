@@ -31,8 +31,6 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.diff.impl.mergeTool.MergeVersion;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.openapi.project.DumbModePermission;
-import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ex.ProjectManagerEx;
 import com.intellij.openapi.ui.DialogWrapper;
@@ -54,7 +52,6 @@ import com.intellij.ui.table.TableView;
 import com.intellij.util.Consumer;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.Convertor;
 import com.intellij.util.ui.ColumnInfo;
 import com.intellij.util.ui.ListTableModel;
 import com.intellij.util.ui.UIUtil;
@@ -157,7 +154,7 @@ public class MultipleFileMergeDialog extends DialogWrapper {
       myMergeSession = null;
     }
     myModel = new ListTableModel<>(columns.toArray(new ColumnInfo[columns.size()]));
-    myModel.setItems(files);
+    myModel.setItems(new ArrayList<>(myFiles));
     myTable.setModelAndUpdateColumns(myModel);
     myVirtualFileRenderer.setFont(UIUtil.getListFont());
     myTable.setRowHeight(myVirtualFileRenderer.getPreferredSize().height);
@@ -194,14 +191,11 @@ public class MultipleFileMergeDialog extends DialogWrapper {
         return true;
       }
     }.installOn(myTable);
-    new TableSpeedSearch(myTable, new Convertor<Object, String>() {
-      @Override
-      public String convert(Object o) {
-        if (o instanceof VirtualFile) {
-          return ((VirtualFile)o).getName();
-        }
-        return null;
+    new TableSpeedSearch(myTable, o -> {
+      if (o instanceof VirtualFile) {
+        return ((VirtualFile)o).getName();
       }
+      return null;
     });
   }
 
@@ -264,39 +258,49 @@ public class MultipleFileMergeDialog extends DialogWrapper {
     if (!beforeResolve(files)) {
       return;
     }
-    
-    for (final VirtualFile file : files) {
-      final Ref<Exception> ex = new Ref<>();
-      ApplicationManager.getApplication().runWriteAction(() -> {
-        CommandProcessor.getInstance().executeCommand(myProject, () -> {
-          try {
-            if (!(myProvider instanceof MergeProvider2) || myMergeSession.canMerge(file)) {
-              if (!DiffUtil.makeWritable(myProject, file)) {
-                throw new IOException("File is read-only: " + file.getPresentableName());
-              }
-              MergeData data = myProvider.loadRevisions(file);
-              if (isCurrent) {
-                file.setBinaryContent(data.CURRENT);
-              }
-              else {
-                file.setBinaryContent(data.LAST);
-                checkMarkModifiedProject(file);
-              }
-            }
-            markFileProcessed(file, isCurrent ? MergeSession.Resolution.AcceptedYours : MergeSession.Resolution.AcceptedTheirs);
-          }
-          catch (Exception e) {
-            ex.set(e);
-          }
-        }, "Accept " + (isCurrent ? "Yours" : "Theirs"), null);
-      });
-      if (!ex.isNull()) {
-        //noinspection ThrowableResultOfMethodCallIgnored
-        Messages.showErrorDialog(myRootPanel, "Error saving merged data: " + ex.get().getMessage());
-        break;
+
+    try {
+      for (VirtualFile file : files) {
+        acceptFileRevision(file, isCurrent);
+        markFileProcessed(file, isCurrent ? MergeSession.Resolution.AcceptedYours : MergeSession.Resolution.AcceptedTheirs);
       }
     }
+    catch (Exception e) {
+      LOG.warn(e);
+      Messages.showErrorDialog(myRootPanel, "Error saving merged data: " + e.getMessage());
+    }
+
     updateModelFromFiles();
+  }
+
+  private void acceptFileRevision(@NotNull VirtualFile file, boolean isCurrent) throws Exception {
+    if (myProvider instanceof MergeProvider2 && !myMergeSession.canMerge(file)) return;
+
+    if (!DiffUtil.makeWritable(myProject, file)) {
+      throw new IOException("File is read-only: " + file.getPresentableName());
+    }
+
+    MergeData data = myProvider.loadRevisions(file);
+
+    Ref<Exception> ex = new Ref<>();
+    CommandProcessor.getInstance().executeCommand(myProject, () -> {
+      ApplicationManager.getApplication().runWriteAction(() -> {
+        try {
+          if (isCurrent) {
+            file.setBinaryContent(data.CURRENT);
+          }
+          else {
+            file.setBinaryContent(data.LAST);
+            checkMarkModifiedProject(file);
+          }
+        }
+        catch (Exception e) {
+          ex.set(e);
+        }
+      });
+    }, "Accept " + (isCurrent ? "Yours" : "Theirs"), null);
+
+    if (!ex.isNull()) throw ex.get();
   }
 
   private void markFileProcessed(@NotNull VirtualFile file, @NotNull MergeSession.Resolution resolution) {
@@ -319,7 +323,7 @@ public class MultipleFileMergeDialog extends DialogWrapper {
     }
     else {
       int selIndex = myTable.getSelectionModel().getMinSelectionIndex();
-      myModel.setItems(myFiles);
+      myModel.setItems(new ArrayList<>(myFiles));
       if (selIndex >= myFiles.size()) {
         selIndex = myFiles.size() - 1;
       }
@@ -428,11 +432,6 @@ public class MultipleFileMergeDialog extends DialogWrapper {
   @NotNull
   public List<VirtualFile> getProcessedFiles() {
     return myProcessedFiles;
-  }
-
-  @Override
-  public void show() {
-    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, () -> super.show());
   }
 
   private class VirtualFileRenderer extends ColoredTableCellRenderer {

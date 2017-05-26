@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,41 +15,68 @@
  */
 package com.intellij.ui;
 
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.IdeActions;
+import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.util.Function;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.Convertor;
+import gnu.trove.TIntArrayList;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.util.Arrays;
+import java.util.List;
 
-public class ListSpeedSearch extends SpeedSearchBase<JList> {
-  private final Convertor<Object, String> myToStringConvertor;
+public class ListSpeedSearch<T> extends SpeedSearchBase<JList<T>> {
+  @Nullable private final Function<T, String> myToStringConvertor;
 
-  public ListSpeedSearch(JList list) {
+  public ListSpeedSearch(JList<T> list) {
     super(list);
     myToStringConvertor = null;
+    registerSelectAll(list);
   }
 
-  public ListSpeedSearch(final JList component, final Convertor<Object, String> convertor) {
-    super(component);
+  @SuppressWarnings("LambdaUnfriendlyMethodOverload")
+  public ListSpeedSearch(final JList<T> list, @NotNull Function<T, String> convertor) {
+    super(list);
     myToStringConvertor = convertor;
+    registerSelectAll(list);
   }
 
-  public ListSpeedSearch(final JList component, final Function<Object, String> convertor) {
-    this(component, new Convertor<Object, String>() {
-      @Override
-      public String convert(Object o) {
-        return convertor.fun(o);
-      }
-    });
+  /**
+   * @deprecated use {@link #ListSpeedSearch(JList, Function)}
+   */
+  @SuppressWarnings("LambdaUnfriendlyMethodOverload")
+  public ListSpeedSearch(final JList<T> list, @Nullable Convertor<T, String> convertor) {
+    super(list);
+    myToStringConvertor = convertor == null ? null : convertor::convert;
+    registerSelectAll(list);
   }
 
+  private void registerSelectAll(JList<T> list) {
+    new MySelectAllAction(list, this).registerCustomShortcutSet(list, null);
+  }
+
+  @Override
   protected void selectElement(Object element, String selectedText) {
-    ScrollingUtil.selectItem(myComponent, element);
+    if (element != null) {
+      ScrollingUtil.selectItem(myComponent, element);
+    }
+    else {
+      myComponent.clearSelection();
+    }
   }
 
+  @Override
   protected int getSelectedIndex() {
     return myComponent.getSelectedIndex();
   }
 
+  @Override
   protected Object[] getAllElements() {
     return getAllListElements(myComponent);
   }
@@ -68,10 +95,80 @@ public class ListSpeedSearch extends SpeedSearchBase<JList> {
     }
   }
 
+  @Override
   protected String getElementText(Object element) {
     if (myToStringConvertor != null) {
-      return myToStringConvertor.convert(element);
+      //noinspection unchecked
+      return myToStringConvertor.fun((T)element);
     }
     return element == null ? null : element.toString();
+  }
+
+  @NotNull
+  private TIntArrayList findAllFilteredElements(String s) {
+    TIntArrayList indices = new TIntArrayList();
+    String _s = s.trim();
+
+    Object[] elements = getAllListElements(myComponent);
+    for (int i = 0; i < elements.length; i++) {
+      final Object element = elements[i];
+      if (isMatchingElement(element, _s)) indices.add(i);
+    }
+    return indices;
+  }
+
+  private static class MySelectAllAction extends DumbAwareAction {
+    @NotNull private final JList myList;
+    @NotNull private final ListSpeedSearch mySearch;
+
+    MySelectAllAction(@NotNull JList list, @NotNull ListSpeedSearch search) {
+      myList = list;
+      mySearch = search;
+      AnAction action = ActionManager.getInstance().getAction(IdeActions.ACTION_SELECT_ALL);
+      if (action != null) {
+        copyShortcutFrom(action);
+      }
+      setEnabledInModalContext(true);
+    }
+
+    @Override
+    public void update(AnActionEvent e) {
+      e.getPresentation().setEnabled(mySearch.isPopupActive() &&
+                                     myList.getSelectionModel().getSelectionMode() == ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+    }
+
+    @Override
+    public void actionPerformed(AnActionEvent e) {
+      ListSelectionModel sm = myList.getSelectionModel();
+
+      String query = mySearch.getEnteredPrefix();
+      if (query == null) return;
+
+      TIntArrayList filtered = mySearch.findAllFilteredElements(query);
+      if (filtered.isEmpty()) return;
+
+      boolean alreadySelected = Arrays.equals(filtered.toNativeArray(), myList.getSelectedIndices());
+
+      if (alreadySelected) {
+        int anchor = myList.getAnchorSelectionIndex();
+
+        myList.setSelectedIndex(anchor);
+        sm.setAnchorSelectionIndex(anchor);
+
+        mySearch.findAndSelectElement(query);
+      }
+      else {
+        int anchor = -1;
+        Object currentElement = mySearch.findElement(query);
+        if (currentElement != null) {
+          List<Object> elements = Arrays.asList(getAllListElements(myList));
+          anchor = ContainerUtil.indexOfIdentity(elements, currentElement);
+        }
+        if (anchor == -1) anchor = filtered.get(0);
+
+        myList.setSelectedIndices(filtered.toNativeArray());
+        sm.setAnchorSelectionIndex(anchor);
+      }
+    }
   }
 }

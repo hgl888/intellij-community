@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,7 @@ package com.intellij.openapi.externalSystem.util;
 
 import com.intellij.execution.rmi.RemoteUtil;
 import com.intellij.ide.util.PropertiesComponent;
-import com.intellij.openapi.application.Application;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.PathManager;
+import com.intellij.openapi.application.*;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.externalSystem.ExternalSystemAutoImportAware;
 import com.intellij.openapi.externalSystem.ExternalSystemManager;
@@ -39,8 +37,10 @@ import com.intellij.openapi.fileTypes.FileTypes;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.roots.ExternalProjectSystemRegistry;
 import com.intellij.openapi.roots.ModifiableRootModel;
 import com.intellij.openapi.roots.OrderRootType;
+import com.intellij.openapi.roots.ProjectModelExternalSource;
 import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Conditions;
@@ -77,7 +77,7 @@ import java.util.regex.Pattern;
  */
 public class ExternalSystemApiUtil {
 
-  private static final Logger LOG                           = Logger.getInstance("#" + ExternalSystemApiUtil.class.getName());
+  private static final Logger LOG = Logger.getInstance(ExternalSystemApiUtil.class);
   private static final String LAST_USED_PROJECT_PATH_PREFIX = "LAST_EXTERNAL_PROJECT_PATH_";
 
   @NotNull public static final String PATH_SEPARATOR = "/";
@@ -273,7 +273,7 @@ public class ExternalSystemApiUtil {
       }
       result.add((DataNode<T>)child);
     }
-    return result == null ? Collections.<DataNode<T>>emptyList() : result;
+    return result == null ? Collections.emptyList() : result;
   }
 
   @SuppressWarnings("unchecked")
@@ -455,6 +455,7 @@ public class ExternalSystemApiUtil {
   }
 
   public static void executeProjectChangeAction(boolean synchronous, @NotNull final DisposeAwareProjectChange task) {
+    TransactionGuard.getInstance().assertWriteSafeContext(ModalityState.defaultModalityState());
     executeOnEdt(synchronous, () -> ApplicationManager.getApplication().runWriteAction(() -> task.run()));
   }
 
@@ -651,6 +652,9 @@ public class ExternalSystemApiUtil {
   @NotNull
   public static String buildErrorMessage(@NotNull Throwable e) {
     Throwable unwrapped = RemoteUtil.unwrap(e);
+    if (ApplicationManager.getApplication().isUnitTestMode()) {
+      return stacktraceAsString(unwrapped);
+    }
     String reason = unwrapped.getLocalizedMessage();
     if (!StringUtil.isEmpty(reason)) {
       return reason;
@@ -659,10 +663,14 @@ public class ExternalSystemApiUtil {
       return String.format("exception during working with external system: %s", ((ExternalSystemException)unwrapped).getOriginalReason());
     }
     else {
-      StringWriter writer = new StringWriter();
-      unwrapped.printStackTrace(new PrintWriter(writer));
-      return writer.toString();
+      return stacktraceAsString(unwrapped);
     }
+  }
+
+  private static String stacktraceAsString(Throwable unwrapped) {
+    StringWriter writer = new StringWriter();
+    unwrapped.printStackTrace(new PrintWriter(writer));
+    return writer.toString();
   }
 
   @SuppressWarnings("unchecked")
@@ -786,6 +794,10 @@ public class ExternalSystemApiUtil {
     };
     //noinspection unchecked
     return (T)loader.loadClass(clazz.getName()).newInstance();
+  }
+
+  public static ProjectModelExternalSource toExternalSource(@NotNull ProjectSystemId systemId) {
+    return ExternalProjectSystemRegistry.getInstance().getSourceById(systemId.getId());
   }
 
   @Contract(value = "_, null -> false", pure=true)

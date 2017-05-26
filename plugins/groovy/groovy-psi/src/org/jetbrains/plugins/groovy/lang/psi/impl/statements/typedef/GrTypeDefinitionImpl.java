@@ -249,6 +249,7 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return GrClassImplUtil.getSuperClass(this);
   }
 
+  @NotNull
   @Override
   public PsiClass[] getInterfaces() {
     return GrClassImplUtil.getInterfaces(this);
@@ -293,12 +294,6 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
   @Override
   public GrMethod[] getCodeMethods() {
     return myCache.getCodeMethods();
-  }
-
-  @Override
-  public void subtreeChanged() {
-    myCache.dropCaches();
-    super.subtreeChanged();
   }
 
   @NotNull

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,9 +32,7 @@ import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.util.PathUtil;
 import com.intellij.util.SystemProperties;
-import com.intellij.util.graph.CachingSemiGraph;
-import com.intellij.util.graph.DFSTBuilder;
-import com.intellij.util.graph.GraphGenerator;
+import com.intellij.util.graph.*;
 import com.intellij.util.xmlb.XmlSerializer;
 import com.intellij.util.xmlb.annotations.AbstractCollection;
 import com.intellij.util.xmlb.annotations.MapAnnotation;
@@ -111,10 +109,7 @@ public class ConversionServiceImpl extends ConversionService {
       saveConversionResult(context);
       return new ConversionResultImpl(runners);
     }
-    catch (CannotConvertException e) {
-      listener.error(e.getMessage());
-    }
-    catch (IOException e) {
+    catch (CannotConvertException | IOException e) {
       listener.error(e.getMessage());
     }
     return ConversionResultImpl.ERROR_OCCURRED;
@@ -242,19 +237,14 @@ public class ConversionServiceImpl extends ConversionService {
         runners.add(new ConversionRunner(provider, context));
       }
     }
-    final CachingSemiGraph<ConverterProvider> graph = CachingSemiGraph.create(new ConverterProvidersGraph(providers));
-    final DFSTBuilder<ConverterProvider> builder = new DFSTBuilder<>(GraphGenerator.create(graph));
+    final Graph<ConverterProvider> graph = GraphGenerator.generate(CachingSemiGraph.cache(new ConverterProvidersGraph(providers)));
+    final DFSTBuilder<ConverterProvider> builder = new DFSTBuilder<>(graph);
     if (!builder.isAcyclic()) {
       final Pair<ConverterProvider,ConverterProvider> pair = builder.getCircularDependency();
       LOG.error("cyclic dependencies between converters: " + pair.getFirst().getId() + " and " + pair.getSecond().getId());
     }
     final Comparator<ConverterProvider> comparator = builder.comparator();
-    Collections.sort(runners, new Comparator<ConversionRunner>() {
-      @Override
-      public int compare(ConversionRunner o1, ConversionRunner o2) {
-        return comparator.compare(o1.getProvider(), o2.getProvider());
-      }
-    });
+    Collections.sort(runners, (o1, o2) -> comparator.compare(o1.getProvider(), o2.getProvider()));
     return runners;
   }
 
@@ -291,9 +281,7 @@ public class ConversionServiceImpl extends ConversionService {
       if (!infoFile.exists()) {
         return new CachedConversionResult();
       }
-      final Document document = JDOMUtil.loadDocument(infoFile);
-      final CachedConversionResult result = XmlSerializer.deserialize(document, CachedConversionResult.class);
-      return result != null ? result : new CachedConversionResult();
+      return XmlSerializer.deserialize(JDOMUtil.load(infoFile), CachedConversionResult.class);
     }
     catch (Exception e) {
       LOG.info(e);
@@ -330,7 +318,7 @@ public class ConversionServiceImpl extends ConversionService {
 
     try {
       ConversionContextImpl context = new ConversionContextImpl(projectPath);
-      final List<ConversionRunner> runners = createConversionRunners(context, Collections.<String>emptySet());
+      final List<ConversionRunner> runners = createConversionRunners(context, Collections.emptySet());
       final File backupFile = ProjectConversionUtil.backupFile(moduleFile);
       List<ConversionRunner> usedRunners = new ArrayList<>();
       for (ConversionRunner runner : runners) {
@@ -358,7 +346,7 @@ public class ConversionServiceImpl extends ConversionService {
   private static boolean isConversionNeeded(String projectPath, File moduleFile) {
     try {
       ConversionContextImpl context = new ConversionContextImpl(projectPath);
-      final List<ConversionRunner> runners = createConversionRunners(context, Collections.<String>emptySet());
+      final List<ConversionRunner> runners = createConversionRunners(context, Collections.emptySet());
       for (ConversionRunner runner : runners) {
         if (runner.isModuleConversionNeeded(moduleFile)) {
           return true;
@@ -384,7 +372,7 @@ public class ConversionServiceImpl extends ConversionService {
     public Map<String, Long> myProjectFilesTimestamps = new HashMap<>();
   }
 
-  private static class ConverterProvidersGraph implements GraphGenerator.SemiGraph<ConverterProvider> {
+  private static class ConverterProvidersGraph implements InboundSemiGraph<ConverterProvider> {
     private final ConverterProvider[] myProviders;
 
     public ConverterProvidersGraph(ConverterProvider[] providers) {

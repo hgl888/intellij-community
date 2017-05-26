@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,9 +48,12 @@ public class PythonRunConfiguration extends AbstractPythonRunConfiguration
   public static final String PARAMETERS = "PARAMETERS";
   public static final String MULTIPROCESS = "MULTIPROCESS";
   public static final String SHOW_COMMAND_LINE = "SHOW_COMMAND_LINE";
+  public static final String EMULATE_TERMINAL = "EMULATE_TERMINAL";
+
   private String myScriptName;
   private String myScriptParameters;
   private boolean myShowCommandLineAfterwards = false;
+  private boolean myEmulateTerminal = false;
 
   protected PythonRunConfiguration(Project project, ConfigurationFactory configurationFactory) {
     super(project, configurationFactory);
@@ -108,12 +111,22 @@ public class PythonRunConfiguration extends AbstractPythonRunConfiguration
     myShowCommandLineAfterwards = showCommandLineAfterwards;
   }
 
-  public void readExternal(Element element) throws InvalidDataException {
-    PathMacroManager.getInstance(getProject()).expandPaths(element);
+  @Override
+  public boolean emulateTerminal() {
+    return myEmulateTerminal;
+  }
+
+  @Override
+  public void setEmulateTerminal(boolean emulateTerminal) {
+    myEmulateTerminal = emulateTerminal;
+  }
+
+  public void readExternal(Element element) {
     super.readExternal(element);
     myScriptName = JDOMExternalizerUtil.readField(element, SCRIPT_NAME);
     myScriptParameters = JDOMExternalizerUtil.readField(element, PARAMETERS);
     myShowCommandLineAfterwards = Boolean.parseBoolean(JDOMExternalizerUtil.readField(element, SHOW_COMMAND_LINE, "false"));
+    myEmulateTerminal = Boolean.parseBoolean(JDOMExternalizerUtil.readField(element, EMULATE_TERMINAL, "false"));
   }
 
   public void writeExternal(Element element) throws WriteExternalException {
@@ -121,6 +134,7 @@ public class PythonRunConfiguration extends AbstractPythonRunConfiguration
     JDOMExternalizerUtil.writeField(element, SCRIPT_NAME, myScriptName);
     JDOMExternalizerUtil.writeField(element, PARAMETERS, myScriptParameters);
     JDOMExternalizerUtil.writeField(element, SHOW_COMMAND_LINE, Boolean.toString(myShowCommandLineAfterwards));
+    JDOMExternalizerUtil.writeField(element, EMULATE_TERMINAL, Boolean.toString(myEmulateTerminal));
   }
 
   public AbstractPythonRunConfigurationParams getBaseParams() {
@@ -132,6 +146,7 @@ public class PythonRunConfiguration extends AbstractPythonRunConfiguration
     target.setScriptName(source.getScriptName());
     target.setScriptParameters(source.getScriptParameters());
     target.setShowCommandLineAfterwards(source.showCommandLineAfterwards());
+    target.setEmulateTerminal(source.emulateTerminal());
   }
 
   @Override

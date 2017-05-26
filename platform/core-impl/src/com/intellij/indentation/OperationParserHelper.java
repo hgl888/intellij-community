@@ -21,10 +21,6 @@ import com.intellij.psi.tree.TokenSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * User: Andrey.Vokin
- * Date: 3/23/12
- */
 public class OperationParserHelper {
   private static boolean parsePostfixOperation(@NotNull final BinaryOperationParser parser) {
     final PsiBuilder.Marker tempMarker = parser.mark();
@@ -137,14 +133,14 @@ public class OperationParserHelper {
     void advance();
 
     /**
-     * See what token type is in <code>step</code> ahead / benind (including whitespaces)
+     * See what token type is in {@code step} ahead / benind (including whitespaces)
      * @param step 0 is current token, -1 is previous, 1 is next and so on
      * @return IElementType of the required element
      */
     IElementType rawLookup(int step);
 
     /**
-     * See what token type is in <code>step</code> ahead (not including whitespaces)
+     * See what token type is in {@code step} ahead (not including whitespaces)
      * @param step 0 is current token, 1 is next and so on
      * @return IElementType of the required element
      */
@@ -191,6 +187,7 @@ public class OperationParserHelper {
      * Provides operation priority and operands
      * @return array of TokenSets
      */
+    @NotNull
     TokenSet[] getOperatorsByPriority();
 
     /**
@@ -211,6 +208,7 @@ public class OperationParserHelper {
      * Provides element types to finish binary operation element
      * @return array of Element Types
      */
+    @NotNull
     IElementType[] getOperationElementTypes();
   }
 

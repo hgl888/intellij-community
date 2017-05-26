@@ -28,7 +28,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.ArrayUtil;
 import git4idea.GitUtil;
 import git4idea.commands.*;
-import git4idea.config.GitVcsSettings;
 import git4idea.repo.GitRepository;
 import git4idea.util.GitPreservingProcess;
 import org.jetbrains.annotations.NotNull;
@@ -39,6 +38,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static com.intellij.util.containers.UtilKt.getIfSingle;
+import static git4idea.GitUtil.getRootsFromRepositories;
+import static git4idea.config.GitVcsSettings.UpdateChangesPolicy.STASH;
 import static git4idea.util.GitUIUtil.code;
 import static java.util.Arrays.stream;
 
@@ -52,8 +54,6 @@ import static java.util.Arrays.stream;
  *  @author Kirill Likhodedov
  */
 class GitCheckoutOperation extends GitBranchOperation {
-
-  public static final String ROLLBACK_PROPOSAL_FORMAT = "You may rollback (checkout back to previous branch) not to let branches diverge.";
 
   @NotNull private final String myStartPointReference;
   private final boolean myDetach;
@@ -122,7 +122,7 @@ class GitCheckoutOperation extends GitBranchOperation {
       }
     }
     finally {
-      DvcsUtil.workingTreeChangeFinished(myProject, token);
+      token.finish();
     }
 
     if (!fatalErrorHappened) {
@@ -192,8 +192,12 @@ class GitCheckoutOperation extends GitBranchOperation {
   @NotNull
   @Override
   protected String getRollbackProposal() {
+    String previousBranch = getIfSingle(getSuccessfulRepositories().stream().map(myCurrentHeads::get).distinct());
+    if (previousBranch == null) previousBranch = "previous branch";
+    String rollBackProposal = "You may rollback (checkout back to " + previousBranch + ") not to let branches diverge.";
     return "However checkout has succeeded for the following " + repositories() + ":<br/>" +
-           successfulRepositoriesJoined() + "<br/>" + ROLLBACK_PROPOSAL_FORMAT;
+           successfulRepositoriesJoined() + "<br/>" +
+           rollBackProposal;
   }
 
   @NotNull
@@ -251,16 +255,10 @@ class GitCheckoutOperation extends GitBranchOperation {
   // stash - checkout - unstash
   private boolean smartCheckout(@NotNull final List<GitRepository> repositories, @NotNull final String reference,
                                 @Nullable final String newBranch, @NotNull ProgressIndicator indicator) {
-    final AtomicBoolean result = new AtomicBoolean();
-    GitPreservingProcess preservingProcess = new GitPreservingProcess(myProject, myGit,
-                                                                      GitUtil.getRootsFromRepositories(repositories), "checkout", reference,
-                                                                      GitVcsSettings.UpdateChangesPolicy.STASH, indicator,
-                                                                      new Runnable() {
-      @Override
-      public void run() {
-        result.set(checkoutOrNotify(repositories, reference, newBranch, false));
-      }
-    });
+    AtomicBoolean result = new AtomicBoolean();
+    GitPreservingProcess preservingProcess =
+      new GitPreservingProcess(myProject, myGit, getRootsFromRepositories(repositories), "checkout", reference, STASH, indicator,
+                               () -> result .set(checkoutOrNotify(repositories, reference, newBranch, false)));
     preservingProcess.execute();
     return result.get();
   }

@@ -47,9 +47,28 @@ public class MinifiedFilesUtil {
                                    @NotNull ParserDefinition parserDefinition,
                                    @NotNull TokenSet noWSRequireBeforeTokenSet,
                                    @NotNull TokenSet noWSRequireAfterTokenSet) {
+    return isMinified(fileContent, parserDefinition, noWSRequireBeforeTokenSet, noWSRequireAfterTokenSet,
+                      parserDefinition.getStringLiteralElements());
+  }
+
+
+    /**
+     * Finds out whether the file minified by using common (not language-specific) heuristics.
+     * Can be used for checking of css/less/scss/sass and js files.
+     *
+     * @param fileContent              target file content
+     * @param parserDefinition         Parser definition of target language
+     * @param noWSRequireAfterTokenSet TokenSet of types that doesn't require whitespaces after them.
+     * @param stringsTokenSet TokenSet of types considered as string elements
+     */
+  public static boolean isMinified(@NotNull CharSequence fileContent,
+                                   @NotNull ParserDefinition parserDefinition,
+                                   @NotNull TokenSet noWSRequireBeforeTokenSet,
+                                   @NotNull TokenSet noWSRequireAfterTokenSet,
+                                   @NotNull TokenSet stringsTokenSet) {
     Lexer lexer = parserDefinition.createLexer(null);
     lexer.start(fileContent);
-    if (!isMinified(lexer, parserDefinition, noWSRequireBeforeTokenSet, noWSRequireAfterTokenSet)) {
+    if (!isMinified(lexer, parserDefinition, noWSRequireBeforeTokenSet, noWSRequireAfterTokenSet, stringsTokenSet)) {
       return false;
     }
     else if (lexer.getTokenType() == null) {
@@ -61,21 +80,26 @@ public class MinifiedFilesUtil {
     if (startOffset <= 0) {
       return true;
     }
-    lexer.start(fileContent, startOffset, fileContent.length());
-    return isMinified(lexer, parserDefinition, noWSRequireBeforeTokenSet, noWSRequireAfterTokenSet);
+    
+    while (lexer.getTokenType() != null && lexer.getTokenStart() < startOffset) lexer.advance();
+    if (lexer.getTokenType() == null || (fileContent.length() - lexer.getTokenStart() < MIN_SIZE * 2)) {
+      return true;
+    }
+
+    return isMinified(lexer, parserDefinition, noWSRequireBeforeTokenSet, noWSRequireAfterTokenSet, stringsTokenSet);
   }
 
   protected static boolean isMinified(@NotNull Lexer lexer,
                                       @NotNull ParserDefinition parserDefinition,
                                       @NotNull TokenSet noWSRequireBeforeTokenSet,
-                                      @NotNull TokenSet noWSRequireAfterTokenSet) {
+                                      @NotNull TokenSet noWSRequireAfterTokenSet,
+                                      @NotNull TokenSet stringLiteralElements) {
     int offsetIgnoringComments = 0;
     int offsetIgnoringCommentsAndStrings = 0;
     int unneededWhitespaceCount = 0;
     String lastTokenText = null;
     IElementType lastTokenType = null;
     TokenSet whitespaceTokens = parserDefinition.getWhitespaceTokens();
-    TokenSet stringLiteralElements = parserDefinition.getStringLiteralElements();
     TokenSet commentTokens = parserDefinition.getCommentTokens();
     boolean lastWhiteSpaceWasHandled = false;
     for (IElementType tokenType = lexer.getTokenType(); tokenType != null; lexer.advance(), tokenType = lexer.getTokenType()) {

@@ -26,7 +26,6 @@ import com.intellij.psi.impl.source.tree.JavaJspElementType;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.PsiTypesUtil;
-import com.intellij.psi.util.PsiUtilBase;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.refactoring.util.RefactoringUtil;
 import com.intellij.util.IncorrectOperationException;
@@ -42,7 +41,7 @@ public class SurroundWithUtil {
   private SurroundWithUtil() {
   }
 
-  static PsiElement[] moveDeclarationsOut(PsiElement block, PsiElement[] statements, boolean generateInitializers) {
+  public static PsiElement[] moveDeclarationsOut(PsiElement block, PsiElement[] statements, boolean generateInitializers) {
     try{
       PsiManager psiManager = block.getManager();
       PsiElementFactory factory = JavaPsiFacade.getInstance(psiManager.getProject()).getElementFactory();
@@ -152,7 +151,7 @@ public class SurroundWithUtil {
    *   }
    * </pre>
    * The problem is that surround block doesn't contain any indent spaces, hence, the first statement is inserted to the
-   * zero column. But we have a dedicated code style setting <code>'keep comment at first column'</code>, i.e. the comment
+   * zero column. But we have a dedicated code style setting {@code 'keep comment at first column'}, i.e. the comment
    * will not be moved if that setting is checked.
    * <p/>
    * Current method handles that situation.

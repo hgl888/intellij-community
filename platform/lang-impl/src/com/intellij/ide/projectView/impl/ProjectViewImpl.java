@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -82,6 +82,7 @@ import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentManager;
 import com.intellij.ui.content.ContentManagerAdapter;
 import com.intellij.ui.content.ContentManagerEvent;
+import com.intellij.ui.switcher.QuickActionProvider;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.IJSwingUtilities;
 import com.intellij.util.PlatformIcons;
@@ -106,7 +107,7 @@ import java.util.*;
 import java.util.List;
 
 @State(name = "ProjectView", storages = @Storage(StoragePathMacros.WORKSPACE_FILE))
-public class ProjectViewImpl extends ProjectView implements PersistentStateComponent<Element>, Disposable, BusyObject  {
+public class ProjectViewImpl extends ProjectView implements PersistentStateComponent<Element>, Disposable, QuickActionProvider, BusyObject  {
   private static final Logger LOG = Logger.getInstance("#com.intellij.ide.projectView.impl.ProjectViewImpl");
   private static final Key<String> ID_KEY = Key.create("pane-id");
   private static final Key<String> SUB_ID_KEY = Key.create("pane-sub-id");
@@ -137,7 +138,6 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
   private static final boolean ourAutoscrollFromSourceDefaults = false;
   
   private boolean myFoldersAlwaysOnTop = true;
-  
 
   private String myCurrentViewId;
   private String myCurrentViewSubId;
@@ -154,13 +154,11 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
   private final Map<String, AbstractProjectViewPane> myId2Pane = new LinkedHashMap<>();
   private final Collection<AbstractProjectViewPane> myUninitializedPanes = new THashSet<>();
 
-  static final DataKey<ProjectViewImpl> DATA_KEY = DataKey.create("com.intellij.ide.projectView.impl.ProjectViewImpl");
+  private static final DataKey<ProjectViewImpl> DATA_KEY = DataKey.create("com.intellij.ide.projectView.impl.ProjectViewImpl");
 
   private DefaultActionGroup myActionGroup;
   private String mySavedPaneId = ProjectViewPane.ID;
   private String mySavedPaneSubId;
-  //private static final Icon COMPACT_EMPTY_MIDDLE_PACKAGES_ICON = IconLoader.getIcon("/objectBrowser/compactEmptyPackages.png");
-  //private static final Icon HIDE_EMPTY_MIDDLE_PACKAGES_ICON = IconLoader.getIcon("/objectBrowser/hideEmptyPackages.png");
   @NonNls private static final String ELEMENT_NAVIGATOR = "navigator";
   @NonNls private static final String ELEMENT_PANES = "panes";
   @NonNls private static final String ELEMENT_PANE = "pane";
@@ -197,7 +195,7 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
     myFileEditorManager = fileEditorManager;
 
     myConnection = project.getMessageBus().connect();
-    myConnection.subscribe(ProjectTopics.PROJECT_ROOTS, new ModuleRootAdapter() {
+    myConnection.subscribe(ProjectTopics.PROJECT_ROOTS, new ModuleRootListener() {
       @Override
       public void rootsChanged(ModuleRootEvent event) {
         refresh();
@@ -254,14 +252,84 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
 
   private void constructUi() {
     myViewContentPanel = new JPanel();
-    myPanel = new SimpleToolWindowPanel(true);
+    myPanel = new SimpleToolWindowPanel(true).setProvideQuickActions(false);
     myPanel.setContent(myViewContentPanel);
   }
 
   @NotNull
-  @Deprecated
+  @Override
+  public String getName() {
+    return "Project";
+  }
+
+  @NotNull
+  @Override
   public List<AnAction> getActions(boolean originalProvider) {
-    return Collections.emptyList();
+    List<AnAction> result = new ArrayList<>();
+
+    DefaultActionGroup views = new DefaultActionGroup("Change View", true);
+
+    ChangeViewAction lastHeader = null;
+    for (int i = 0; i < myContentManager.getContentCount(); i++) {
+      Content each = myContentManager.getContent(i);
+      if (each == null) continue;
+
+      String id = each.getUserData(ID_KEY);
+      String subId = each.getUserData(SUB_ID_KEY);
+      ChangeViewAction newHeader = new ChangeViewAction(id, subId);
+
+      if (lastHeader != null) {
+        boolean lastHasKids = lastHeader.mySubId != null;
+        boolean newHasKids = newHeader.mySubId != null;
+        if (lastHasKids != newHasKids ||
+            lastHasKids && lastHeader.myId != newHeader.myId) {
+          views.add(Separator.getInstance());
+        }
+      }
+
+      views.add(newHeader);
+      lastHeader = newHeader;
+    }
+    result.add(views);
+    result.add(Separator.getInstance());
+
+    if (myActionGroup != null) {
+      List<AnAction> secondary = new ArrayList<>();
+      for (AnAction each : myActionGroup.getChildren(null)) {
+        if (myActionGroup.isPrimary(each)) {
+          result.add(each);
+        }
+        else {
+          secondary.add(each);
+        }
+      }
+
+      result.add(Separator.getInstance());
+      result.addAll(secondary);
+    }
+
+    return result;
+  }
+
+  private class ChangeViewAction extends AnAction {
+    @NotNull private final String myId;
+    @Nullable private final String mySubId;
+
+    private ChangeViewAction(@NotNull String id, @Nullable String subId) {
+      myId = id;
+      mySubId = subId;
+    }
+
+    @Override
+    public void update(AnActionEvent e) {
+      AbstractProjectViewPane pane = getProjectViewPaneById(myId);
+      e.getPresentation().setText(pane.getTitle() + (mySubId != null ? (" - " + pane.getPresentableSubIdName(mySubId)) : ""));
+    }
+
+    @Override
+    public void actionPerformed(AnActionEvent e) {
+      changeView(myId, mySubId);
+    }
   }
 
   @Override
@@ -323,12 +391,14 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
           StringUtil.equals(subId, mySavedPaneSubId)) {
         selectID = id;
         selectSubID = subId;
+        mySavedPaneId = null;
+        mySavedPaneSubId = null;
         break;
       }
     }
 
     // saved view not found (plugin disabled, ID changed etc.) - select first available view...
-    if (selectID == null && contents.length > 0) {
+    if (selectID == null && contents.length > 0 && myCurrentViewId == null) {
       Content content = contents[0];
       selectID = content.getUserData(ID_KEY);
       selectSubID = content.getUserData(SUB_ID_KEY);
@@ -336,8 +406,6 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
 
     if (selectID != null) {
       changeView(selectID, selectSubID);
-      mySavedPaneId = null;
-      mySavedPaneSubId = null;
     }
 
     myUninitializedPanes.clear();
@@ -411,12 +479,13 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
 
     myAutoScrollToSourceHandler.install(newPane.myTree);
 
-    IdeFocusManager.getInstance(myProject).requestFocus(newPane.getComponentToFocus(), false);
+    IdeFocusManager.getInstance(myProject).requestFocusInProject(newPane.getComponentToFocus(), myProject);
 
     newPane.restoreExpandedPaths();
     if (selectedPsiElement != null && newSubId != null) {
       final VirtualFile virtualFile = PsiUtilCore.getVirtualFile(selectedPsiElement);
-      if (virtualFile != null && ((ProjectViewSelectInTarget)newPane.createSelectInTarget()).isSubIdSelectable(newSubId, new SelectInContext() {
+      ProjectViewSelectInTarget target = virtualFile == null ? null : getProjectViewSelectInTarget(newPane);
+      if (target != null && target.isSubIdSelectable(newSubId, new SelectInContext() {
         @Override
         @NotNull
         public Project getProject() {
@@ -515,6 +584,8 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
     if (newPane == null) return false;
     newPane.setSubId(subId);
     showPane(newPane);
+    ProjectViewSelectInTarget target = getProjectViewSelectInTarget(newPane);
+    if (target != null) target.setSubId(subId);
     if (isAutoscrollFromSource(id)) {
       myAutoScrollFromSourceHandler.scrollFromSource();
     }
@@ -522,6 +593,7 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
   }
 
   private void createToolbarActions() {
+    if (myActionGroup == null) return;
     List<AnAction> titleActions = ContainerUtil.newSmartList();
     myActionGroup.removeAll();
     if (ProjectViewDirectoryHelper.getInstance(myProject).supportsFlattenPackages()) {
@@ -583,9 +655,16 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
                                                             ourAbbreviatePackagesDefaults) {
         @Override
         public boolean isSelected(AnActionEvent event) {
-          return super.isSelected(event) && isAbbreviatePackageNames(myCurrentViewId);
+          return isFlattenPackages(myCurrentViewId) && isAbbreviatePackageNames(myCurrentViewId);
         }
 
+        @Override
+        public void setSelected(AnActionEvent event, boolean flag) {
+          if (isGlobalOptions()) {
+            setAbbreviatePackageNames(flag, myCurrentViewId);
+          }
+          setPaneOption(myOptionsMap, flag, myCurrentViewId, true);
+        }
 
         @Override
         public void update(AnActionEvent e) {
@@ -722,6 +801,7 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
     myConnection.disconnect();
   }
 
+  @Override
   public JComponent getComponent() {
     return myDataProvider;
   }
@@ -729,6 +809,21 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
   @Override
   public String getCurrentViewId() {
     return myCurrentViewId;
+  }
+
+  private SelectInTarget getCurrentSelectInTarget() {
+    return getSelectInTarget(getCurrentViewId());
+  }
+
+  private SelectInTarget getSelectInTarget(String id) {
+    return mySelectInTargets.get(id);
+  }
+
+  private ProjectViewSelectInTarget getProjectViewSelectInTarget(AbstractProjectViewPane pane) {
+    SelectInTarget target = getSelectInTarget(pane.getId());
+    return target instanceof ProjectViewSelectInTarget
+           ? (ProjectViewSelectInTarget)target
+           : null;
   }
 
   @Override
@@ -771,7 +866,7 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
 
 
   private class PaneOptionAction extends ToggleAction implements DumbAware {
-    private final Map<String, Boolean> myOptionsMap;
+    final Map<String, Boolean> myOptionsMap;
     private final boolean myOptionDefaultValue;
 
     PaneOptionAction(@NotNull Map<String, Boolean> optionsMap,
@@ -839,17 +934,34 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
 
   @NotNull
   @Override
-  public ActionCallback changeViewCB(@NotNull String viewId, String subId) {
+  public ActionCallback changeViewCB(@NotNull String viewId, @Nullable String subId) {
     AbstractProjectViewPane pane = getProjectViewPaneById(viewId);
-    LOG.assertTrue(pane != null, "Project view pane not found: " + viewId + "; subId:" + subId);
-    if (!viewId.equals(getCurrentViewId())
-        || subId != null && !subId.equals(pane.getSubId())) {
-      for (Content content : getContentManager().getContents()) {
-        if (viewId.equals(content.getUserData(ID_KEY)) && StringUtil.equals(subId, content.getUserData(SUB_ID_KEY))) {
-          return getContentManager().setSelectedContentCB(content);
-        }
+    LOG.assertTrue(pane != null, "Project view pane not found: " + viewId + "; subId:" + subId + "; project: " + myProject);
+
+    boolean hasSubViews = pane.getSubIds().length > 0;
+    if (hasSubViews) {
+      if (subId == null) {
+        // we try not to change subview
+        // get currently selected subId from the pane
+        subId = pane.getSubId();
       }
     }
+    else {
+      if (subId != null) {
+        LOG.error("View doesn't have subviews: " + viewId + "; subId:" + subId + "; project: " + myProject);
+      }
+    }
+    if (viewId.equals(myCurrentViewId) && Objects.equals(subId, myCurrentViewSubId)) return ActionCallback.REJECTED;
+
+    // at this point null subId means that view has no subviews OR subview was never selected
+    // we then search first content with the right viewId ignoring subIds of contents
+
+    for (Content content : getContentManager().getContents()) {
+      if (viewId.equals(content.getUserData(ID_KEY)) && (subId == null || subId.equals(content.getUserData(SUB_ID_KEY)))) {
+        return getContentManager().setSelectedContentCB(content);
+      }
+    }
+
     return ActionCallback.REJECTED;
   }
 
@@ -1051,6 +1163,10 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
       if (NamedLibraryElement.ARRAY_DATA_KEY.is(dataId)) {
         final List<NamedLibraryElement> selectedElements = getSelectedElements(NamedLibraryElement.class);
         return selectedElements.isEmpty() ? null : selectedElements.toArray(new NamedLibraryElement[selectedElements.size()]);
+      }
+
+      if (QuickActionProvider.KEY.is(dataId)) {
+        return ProjectViewImpl.this;
       }
 
       return null;
@@ -1375,7 +1491,7 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
       return getGlobalOptions().getAutoscrollToSource();
     }
 
-    return getPaneOptionValue(myAutoscrollToSource, paneId, UISettings.getInstance().DEFAULT_AUTOSCROLL_TO_SOURCE);
+    return getPaneOptionValue(myAutoscrollToSource, paneId, UISettings.getInstance().getDefaultAutoScrollToSource());
   }
 
   public void setAutoscrollToSource(boolean autoscrollMode, String paneId) {
@@ -1654,12 +1770,12 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
           selectElementAtCaretNotLosingFocus(editor);
         }
         else {
-          final VirtualFile file = FileEditorManagerEx.getInstanceEx(myProject).getFile(fileEditor);
-          if (file != null) {
-            final PsiFile psiFile = PsiManager.getInstance(myProject).findFile(file);
-            if (psiFile != null) {
-              final SelectInTarget target = mySelectInTargets.get(getCurrentViewId());
-              if (target != null) {
+          SelectInTarget target = getCurrentSelectInTarget();
+          if (target != null) {
+            final VirtualFile file = FileEditorManagerEx.getInstanceEx(myProject).getFile(fileEditor);
+            if (file != null && file.isValid()) {
+              final PsiFile psiFile = PsiManager.getInstance(myProject).findFile(file);
+              if (psiFile != null) {
                 final MySelectInContext selectInContext = new MySelectInContext(psiFile, null) {
                   @Override
                   public Object getSelectorInFile() {
@@ -1702,8 +1818,10 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
     }
 
     private void selectElementAtCaretNotLosingFocus(@NotNull Editor editor) {
-      if (IJSwingUtilities.hasFocus(getCurrentProjectViewPane().getComponentToFocus())) return;
-      selectElementAtCaret(editor);
+      AbstractProjectViewPane pane = getCurrentProjectViewPane();
+      if (pane != null && !IJSwingUtilities.hasFocus(pane.getComponentToFocus())) {
+        selectElementAtCaret(editor);
+      }
     }
 
     private void selectElementAtCaret(@NotNull Editor editor) {
@@ -1714,11 +1832,17 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
     }
 
     private void scrollFromFile(@NotNull PsiFile file, @Nullable Editor editor) {
-      PsiDocumentManager.getInstance(myProject).performWhenAllCommitted(() -> {
-        final MySelectInContext selectInContext = new MySelectInContext(file, editor);
+      SmartPsiElementPointer<PsiFile> pointer = SmartPointerManager.getInstance(myProject).createSmartPsiElementPointer(file);
+      PsiDocumentManager.getInstance(myProject).performLaterWhenAllCommitted(() -> {
+        SelectInTarget target = getCurrentSelectInTarget();
+        if (target == null) return;
 
-        final SelectInTarget target = mySelectInTargets.get(getCurrentViewId());
-        if (target != null && target.canSelect(selectInContext)) {
+        PsiFile restoredPsi = pointer.getElement();
+        if (restoredPsi == null) return;
+
+        final MySelectInContext selectInContext = new MySelectInContext(restoredPsi, editor);
+
+        if (target.canSelect(selectInContext)) {
           target.selectIn(selectInContext, false);
         }
       });
@@ -1868,7 +1992,8 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
     public void update(final AnActionEvent e) {
       super.update(e);
       final Presentation presentation = e.getPresentation();
-      presentation.setVisible(getCurrentProjectViewPane() != null);
+      AbstractProjectViewPane pane = getCurrentProjectViewPane();
+      presentation.setVisible(pane != null && pane.supportsSortByType());
     }
   }
 
@@ -1891,7 +2016,8 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
     public void update(final AnActionEvent e) {
       super.update(e);
       final Presentation presentation = e.getPresentation();
-      presentation.setEnabledAndVisible(getCurrentProjectViewPane() != null);
+      AbstractProjectViewPane pane = getCurrentProjectViewPane();
+      presentation.setEnabledAndVisible(pane != null && pane.supportsFoldersAlwaysOnTop());
     }
   }
 
@@ -1910,7 +2036,7 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
   @NotNull
   @Override
   public Collection<String> getPaneIds() {
-    return myId2Pane.keySet();
+    return Collections.unmodifiableCollection(myId2Pane.keySet());
   }
 
   @NotNull

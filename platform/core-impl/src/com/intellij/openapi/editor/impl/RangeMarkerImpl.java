@@ -16,20 +16,17 @@
 package com.intellij.openapi.editor.impl;
 
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.RangeMarker;
 import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.editor.ex.DocumentEx;
 import com.intellij.openapi.editor.ex.RangeMarkerEx;
 import com.intellij.openapi.editor.impl.event.DocumentEventImpl;
-import com.intellij.openapi.util.ProperTextRange;
-import com.intellij.openapi.util.TextRange;
-import com.intellij.openapi.util.UnfairTextRange;
-import com.intellij.openapi.util.UserDataHolderBase;
-import com.intellij.util.Processor;
+import com.intellij.openapi.util.*;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class RangeMarkerImpl extends UserDataHolderBase implements RangeMarkerEx, MutableInterval {
+public class RangeMarkerImpl extends UserDataHolderBase implements RangeMarkerEx {
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.editor.impl.RangeMarkerImpl");
 
   private final DocumentEx myDocument;
@@ -38,7 +35,7 @@ public class RangeMarkerImpl extends UserDataHolderBase implements RangeMarkerEx
   private final long myId;
   private static final StripedIDGenerator counter = new StripedIDGenerator();
 
-  protected RangeMarkerImpl(@NotNull DocumentEx document, int start, int end, boolean register) {
+  RangeMarkerImpl(@NotNull DocumentEx document, int start, int end, boolean register) {
     this(document, start, end, register, false, false);
   }
   private RangeMarkerImpl(@NotNull DocumentEx document, int start, int end, boolean register, boolean greedyToLeft, boolean greedyToRight) {
@@ -99,12 +96,9 @@ public class RangeMarkerImpl extends UserDataHolderBase implements RangeMarkerEx
     RangeMarkerTree.RMNode<RangeMarkerEx> node = myNode;
 
     if (node != null) {
-      node.processAliveKeys(new Processor<RangeMarkerEx>() {
-        @Override
-        public boolean process(RangeMarkerEx markerEx) {
-          myNode.getTree().beforeRemove(markerEx, reason);
-          return true;
-        }
+      node.processAliveKeys(markerEx -> {
+        myNode.getTree().beforeRemove(markerEx, reason);
+        return true;
       });
     }
   }
@@ -183,6 +177,8 @@ public class RangeMarkerImpl extends UserDataHolderBase implements RangeMarkerEx
     setIntervalStart(newRange.getStartOffset());
     setIntervalEnd(newRange.getEndOffset());
   }
+
+  protected void onReTarget(int startOffset, int endOffset, int destOffset) {}
 
   @Nullable
   static TextRange applyChange(@NotNull DocumentEvent e, int intervalStart, int intervalEnd, boolean isGreedyToLeft, boolean isGreedyToRight) {
@@ -264,7 +260,6 @@ public class RangeMarkerImpl extends UserDataHolderBase implements RangeMarkerEx
            + (isGreedyToRight() ? "]" : ")") + " " + getId();
   }
 
-  @Override
   public int setIntervalStart(int start) {
     if (start < 0) {
       LOG.error("Negative start: " + start);
@@ -272,7 +267,6 @@ public class RangeMarkerImpl extends UserDataHolderBase implements RangeMarkerEx
     return myNode.setIntervalStart(start);
   }
 
-  @Override
   public int setIntervalEnd(int end) {
     if (end < 0) {
       LOG.error("Negative end: "+end);
@@ -286,13 +280,11 @@ public class RangeMarkerImpl extends UserDataHolderBase implements RangeMarkerEx
     return node != null && node.isValid();
   }
 
-  @Override
   public boolean setValid(boolean value) {
     RangeMarkerTree.RMNode node = myNode;
     return node == null || node.setValid(value);
   }
 
-  @Override
   public int intervalStart() {
     RangeMarkerTree.RMNode node = myNode;
     if (node == null) {
@@ -301,12 +293,19 @@ public class RangeMarkerImpl extends UserDataHolderBase implements RangeMarkerEx
     return node.intervalStart();
   }
 
-  @Override
   public int intervalEnd() {
     RangeMarkerTree.RMNode node = myNode;
     if (node == null) {
       return -1;
     }
     return node.intervalEnd();
+  }
+
+  public RangeMarker findRangeMarkerAfter() {
+    return myNode.getTree().findRangeMarkerAfter(this);
+  }
+
+  public RangeMarker findRangeMarkerBefore() {
+    return myNode.getTree().findRangeMarkerBefore(this);
   }
 }

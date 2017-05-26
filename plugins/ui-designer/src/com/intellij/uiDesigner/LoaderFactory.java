@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,8 @@ import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleUtil;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ModuleRootAdapter;
 import com.intellij.openapi.roots.ModuleRootEvent;
+import com.intellij.openapi.roots.ModuleRootListener;
 import com.intellij.openapi.roots.OrderEnumerator;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vfs.JarFileSystem;
@@ -63,7 +63,7 @@ public final class LoaderFactory {
     myProject = project;
     myModule2ClassLoader = ContainerUtil.createConcurrentWeakMap();
     myConnection = myProject.getMessageBus().connect();
-    myConnection.subscribe(ProjectTopics.PROJECT_ROOTS, new ModuleRootAdapter() {
+    myConnection.subscribe(ProjectTopics.PROJECT_ROOTS, new ModuleRootListener() {
       public void rootsChanged(final ModuleRootEvent event) {
         clearClassLoaderCache();
       }
@@ -155,7 +155,7 @@ public final class LoaderFactory {
   }
 
   private static class DesignTimeClassLoader extends UrlClassLoader {
-    static { registerAsParallelCapable(); }
+    static { if (registerAsParallelCapable()) markParallelCapable(DesignTimeClassLoader.class); }
 
     private final String myModuleName;
 

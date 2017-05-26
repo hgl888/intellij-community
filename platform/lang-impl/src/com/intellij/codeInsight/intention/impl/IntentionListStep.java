@@ -16,14 +16,11 @@
 
 package com.intellij.codeInsight.intention.impl;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.daemon.impl.ShowIntentionsPass;
 import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.codeInsight.intention.*;
-import com.intellij.codeInsight.intention.impl.config.IntentionActionWrapper;
 import com.intellij.codeInsight.intention.impl.config.IntentionManagerSettings;
-import com.intellij.codeInspection.IntentionWrapper;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.SuppressIntentionActionFromFix;
 import com.intellij.codeInspection.ex.QuickFixWrapper;
@@ -43,9 +40,11 @@ import gnu.trove.THashSet;
 import gnu.trove.TObjectHashingStrategy;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 import javax.swing.*;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
 * @author cdr
@@ -53,10 +52,8 @@ import java.util.*;
 public class IntentionListStep implements ListPopupStep<IntentionActionWithTextCaching>, SpeedSearchFilter<IntentionActionWithTextCaching> {
   private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.intention.impl.IntentionListStep");
 
-  private final Set<IntentionActionWithTextCaching> myCachedIntentions =
-    ContainerUtil.newConcurrentSet(ACTION_TEXT_AND_CLASS_EQUALS);
-  private final Set<IntentionActionWithTextCaching> myCachedErrorFixes =
-    ContainerUtil.newConcurrentSet(ACTION_TEXT_AND_CLASS_EQUALS);
+  private final Set<IntentionActionWithTextCaching> myCachedIntentions = ContainerUtil.newConcurrentSet(ACTION_TEXT_AND_CLASS_EQUALS);
+  private final Set<IntentionActionWithTextCaching> myCachedErrorFixes = ContainerUtil.newConcurrentSet(ACTION_TEXT_AND_CLASS_EQUALS);
   private final Set<IntentionActionWithTextCaching> myCachedInspectionFixes = ContainerUtil.newConcurrentSet(ACTION_TEXT_AND_CLASS_EQUALS);
   private final Set<IntentionActionWithTextCaching> myCachedGutters = ContainerUtil.newConcurrentSet(ACTION_TEXT_AND_CLASS_EQUALS);
   private final Set<IntentionActionWithTextCaching> myCachedNotifications = ContainerUtil.newConcurrentSet(ACTION_TEXT_AND_CLASS_EQUALS);
@@ -75,16 +72,24 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
 
     @Override
     public boolean equals(final IntentionActionWithTextCaching o1, final IntentionActionWithTextCaching o2) {
-      return o1.getAction().getClass() == o2.getAction().getClass() && o1.getText().equals(o2.getText());
+      return getActionClass(o1) == getActionClass(o2) && o1.getText().equals(o2.getText());
+    }
+
+    private Class<? extends IntentionAction> getActionClass(IntentionActionWithTextCaching o1) {
+      IntentionAction action = o1.getAction();
+      if (action instanceof IntentionActionDelegate) {
+        return ((IntentionActionDelegate)action).getDelegate().getClass();
+      }
+      return action.getClass();
     }
   };
   private Runnable myFinalRunnable;
 
   public IntentionListStep(@Nullable IntentionHintComponent intentionHintComponent,
-                    @NotNull ShowIntentionsPass.IntentionsInfo intentions,
-                    @Nullable Editor editor,
-                    @NotNull PsiFile file,
-                    @NotNull Project project) {
+                           @NotNull ShowIntentionsPass.IntentionsInfo intentions,
+                           @Nullable Editor editor,
+                           @NotNull PsiFile file,
+                           @NotNull Project project) {
     this(intentionHintComponent, editor, file, project);
     wrapAndUpdateActions(intentions, false); // when create bulb do not update actions again since it would impede the EDT
   }
@@ -101,12 +106,12 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
   }
 
   //true if something changed
-  boolean wrapAndUpdateActions(@NotNull ShowIntentionsPass.IntentionsInfo intentions, boolean callUpdate) {
-    boolean changed = wrapActionsTo(intentions.errorFixesToShow, myCachedErrorFixes, callUpdate);
-    changed |= wrapActionsTo(intentions.inspectionFixesToShow, myCachedInspectionFixes, callUpdate);
-    changed |= wrapActionsTo(intentions.intentionsToShow, myCachedIntentions, callUpdate);
-    changed |= wrapActionsTo(intentions.guttersToShow, myCachedGutters, callUpdate);
-    changed |= wrapActionsTo(intentions.notificationActionsToShow, myCachedNotifications, callUpdate);
+  boolean wrapAndUpdateActions(@NotNull ShowIntentionsPass.IntentionsInfo newInfo, boolean callUpdate) {
+    boolean changed = wrapActionsTo(newInfo.errorFixesToShow, myCachedErrorFixes, callUpdate);
+    changed |= wrapActionsTo(newInfo.inspectionFixesToShow, myCachedInspectionFixes, callUpdate);
+    changed |= wrapActionsTo(newInfo.intentionsToShow, myCachedIntentions, callUpdate);
+    changed |= wrapActionsTo(newInfo.guttersToShow, myCachedGutters, callUpdate);
+    changed |= wrapActionsTo(newInfo.notificationActionsToShow, myCachedNotifications, callUpdate);
     return changed;
   }
 
@@ -191,7 +196,10 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
                                             @Nullable PsiElement element,
                                             @Nullable PsiFile containingFile,
                                             @Nullable Editor containingEditor) {
-    IntentionActionWithTextCaching cachedAction = new IntentionActionWithTextCaching(descriptor);
+    IntentionActionWithTextCaching cachedAction = new IntentionActionWithTextCaching(descriptor, (cached, action)->{
+      removeActionFromCached(cached);
+      markInvoked(action);
+    });
     if (element == null) return cachedAction;
     final List<IntentionAction> options = descriptor.getOptions(element, containingEditor);
     if (options == null) return cachedAction;
@@ -204,12 +212,10 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
           }
         }
       }
-      else {
-        if (!option.isAvailable(myProject, containingEditor, containingFile)) {
-          // if option is not applicable in injected fragment, check in host file context
-          if (containingEditor == myEditor || !option.isAvailable(myProject, myEditor, myFile)) {
-            continue;
-          }
+      else if (!option.isAvailable(myProject, containingEditor, containingFile)) {
+        // if option is not applicable in injected fragment, check in host file context
+        if (containingEditor == myEditor || !option.isAvailable(myProject, myEditor, myFile)) {
+          continue;
         }
       }
       IntentionActionWithTextCaching textCaching = new IntentionActionWithTextCaching(option);
@@ -257,7 +263,7 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
     return myFinalRunnable;
   }
 
-  private void applyAction(final IntentionActionWithTextCaching cachedAction) {
+  private void applyAction(@NotNull IntentionActionWithTextCaching cachedAction) {
     myFinalRunnable = () -> {
       HintManager.getInstance().hideAllHints();
       if (myProject.isDisposed() || myEditor != null && myEditor.isDisposed()) return;
@@ -275,6 +281,22 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
 
       ShowIntentionActionsHandler.chooseActionAndInvoke(file, myEditor, cachedAction.getAction(), cachedAction.getText(), myProject);
     };
+  }
+
+  private void markInvoked(@NotNull IntentionAction action) {
+    if (myEditor != null) {
+      ShowIntentionsPass.markActionInvoked(myFile.getProject(), myEditor, action);
+    }
+  }
+
+  private void removeActionFromCached(@NotNull IntentionActionWithTextCaching action) {
+    // remove from the action from the list after invocation to make it appear unavailable sooner.
+    // (the highlighting will process the whole file and remove the no more available action from the list automatically - but it's may be too long)
+    myCachedErrorFixes.remove(action);
+    myCachedGutters.remove(action);
+    myCachedInspectionFixes.remove(action);
+    myCachedIntentions.remove(action);
+    myCachedNotifications.remove(action);
   }
 
   @NotNull
@@ -302,12 +324,20 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
     return optionIntention instanceof Iconable ? ((Iconable)optionIntention).getIcon(0) : null;
   }
 
-  @VisibleForTesting
+  @TestOnly
   public Map<IntentionAction, List<IntentionAction>> getActionsWithSubActions() {
     Map<IntentionAction, List<IntentionAction>> result = ContainerUtil.newLinkedHashMap();
-    for (IntentionActionWithTextCaching action : getValues()) {
-      List<IntentionActionWithTextCaching> subActions = getSubStep(action, action.getToolName()).getValues();
-      result.put(action.getAction(), ContainerUtil.map(subActions, IntentionActionWithTextCaching::getAction));
+
+    for (IntentionActionWithTextCaching cached : getValues()) {
+      IntentionAction action = cached.getAction();
+      if (ShowIntentionActionsHandler.chooseFileForAction(myFile, myEditor, action) == null) continue;
+
+      List<IntentionActionWithTextCaching> subActions = getSubStep(cached, cached.getToolName()).getValues();
+      List<IntentionAction> options = subActions.stream()
+          .map(IntentionActionWithTextCaching::getAction)
+          .filter(option -> ShowIntentionActionsHandler.chooseFileForAction(myFile, myEditor, option) != null)
+          .collect(Collectors.toList());
+      result.put(action, options);
     }
     return result;
   }
@@ -340,11 +370,8 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
   private int getWeight(IntentionActionWithTextCaching action) {
     IntentionAction a = action.getAction();
     int group = getGroup(action);
-    if (a instanceof IntentionActionWrapper) {
-      a = ((IntentionActionWrapper)a).getDelegate();
-    }
-    if (a instanceof IntentionWrapper) {
-      a = ((IntentionWrapper)a).getAction();
+    if (a instanceof IntentionActionDelegate) {
+      a = ((IntentionActionDelegate)a).getDelegate();
     }
     if (a instanceof HighPriorityAction) {
       return group + 3;
@@ -410,8 +437,9 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
     //custom icon
     if (action instanceof QuickFixWrapper) {
       iconable = ((QuickFixWrapper)action).getFix();
-    } else if (action instanceof IntentionActionWrapper) {
-      iconable = ((IntentionActionWrapper)action).getDelegate();
+    }
+    else if (action instanceof IntentionActionDelegate) {
+      iconable = ((IntentionActionDelegate)action).getDelegate();
     }
 
     if (iconable instanceof Iconable) {

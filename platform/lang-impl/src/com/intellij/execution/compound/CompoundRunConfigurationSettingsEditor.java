@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import com.intellij.execution.BeforeRunTask;
 import com.intellij.execution.RunnerAndConfigurationSettings;
 import com.intellij.execution.configurations.ConfigurationType;
 import com.intellij.execution.configurations.RunConfiguration;
-import com.intellij.execution.configurations.UnknownConfigurationType;
 import com.intellij.execution.impl.RunConfigurationBeforeRunProvider;
 import com.intellij.execution.impl.RunConfigurationSelector;
 import com.intellij.execution.impl.RunManagerImpl;
@@ -33,7 +32,6 @@ import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.ui.popup.ListSeparator;
 import com.intellij.openapi.ui.popup.MultiSelectionListPopupStep;
 import com.intellij.openapi.ui.popup.PopupStep;
-import com.intellij.openapi.util.Condition;
 import com.intellij.ui.*;
 import com.intellij.ui.components.JBList;
 import com.intellij.util.containers.ContainerUtil;
@@ -71,7 +69,7 @@ public class CompoundRunConfigurationSettingsEditor extends SettingsEditor<Compo
 
   private boolean canBeAdded(@NotNull RunConfiguration candidate, @NotNull final CompoundRunConfiguration root) {
     if (candidate.getType() == root.getType() && candidate.getName().equals(root.getName())) return false;
-    List<BeforeRunTask> tasks = myRunManager.getBeforeRunTasks(candidate);
+    List<BeforeRunTask<?>> tasks = myRunManager.getBeforeRunTasks(candidate);
     for (BeforeRunTask task : tasks) {
       if (task instanceof RunConfigurationBeforeRunProvider.RunConfigurableBeforeRunTask) {
         RunConfigurationBeforeRunProvider.RunConfigurableBeforeRunTask runTask
@@ -92,14 +90,14 @@ public class CompoundRunConfigurationSettingsEditor extends SettingsEditor<Compo
   }
 
   @Override
-  protected void resetEditorFrom(CompoundRunConfiguration compoundRunConfiguration) {
+  protected void resetEditorFrom(@NotNull CompoundRunConfiguration compoundRunConfiguration) {
     myModel.clear();
     myModel.addAll(compoundRunConfiguration.getSetToRun());
     mySnapshot = compoundRunConfiguration;
   }
 
   @Override
-  protected void applyEditorTo(CompoundRunConfiguration s) throws ConfigurationException {
+  protected void applyEditorTo(@NotNull CompoundRunConfiguration s) throws ConfigurationException {
     Set<RunConfiguration> checked = new HashSet<>();
     for (int i = 0; i < myModel.getSize(); i++) {
       RunConfiguration configuration = myModel.get(i);
@@ -120,13 +118,10 @@ public class CompoundRunConfigurationSettingsEditor extends SettingsEditor<Compo
     return decorator.disableUpDownActions().setAddAction(new AnActionButtonRunnable() {
       @Override
       public void run(AnActionButton button) {
-
         final List<RunConfiguration> all = new ArrayList<>();
-        for (ConfigurationType type : myRunManager.getConfigurationFactories()) {
-          if (!(type instanceof UnknownConfigurationType)) {
-            for (RunnerAndConfigurationSettings settings : myRunManager.getConfigurationSettingsList(type)) {
-              all.add(settings.getConfiguration());
-            }
+        for (ConfigurationType type : myRunManager.getConfigurationFactoriesWithoutUnknown()) {
+          for (RunnerAndConfigurationSettings settings : myRunManager.getConfigurationSettingsList(type)) {
+            all.add(settings.getConfiguration());
           }
         }
 

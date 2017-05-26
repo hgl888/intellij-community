@@ -24,13 +24,14 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.util.SystemInfo
 import java.io.File
+import kotlin.reflect.KMutableProperty1
 import kotlin.reflect.KProperty
 
 /**
  * @author traff
  */
 @State(name = "TerminalProjectOptionsProvider", storages = arrayOf(Storage("terminal.xml")))
-class TerminalProjectOptionsProvider(private val myProject: Project) : PersistentStateComponent<TerminalProjectOptionsProvider.State> {
+class TerminalProjectOptionsProvider(val project: Project) : PersistentStateComponent<TerminalProjectOptionsProvider.State> {
 
   private val myState = State()
 
@@ -39,18 +40,14 @@ class TerminalProjectOptionsProvider(private val myProject: Project) : Persisten
   }
 
   override fun loadState(state: State) {
-    shellPath = state.myShellPath
     myState.myStartingDirectory = state.myStartingDirectory
   }
 
   class State {
-    var myShellPath: String? = null
     var myStartingDirectory: String? = null
   }
 
-  var shellPath: String? by ValueWithDefault { defaultShellPath }
-
-  var startingDirectory: String? by ValueWithDefault { defaultStartingDirectory }
+  var startingDirectory: String? by ValueWithDefault(State::myStartingDirectory, myState) { defaultStartingDirectory }
 
   val defaultStartingDirectory: String?
     get() {
@@ -59,7 +56,7 @@ class TerminalProjectOptionsProvider(private val myProject: Project) : Persisten
         try {
 
           if (directory == null) {
-            directory = customizer.defaultFolder
+            directory = customizer.getDefaultFolder(project)
           }
         }
         catch (e: Exception) {
@@ -67,18 +64,18 @@ class TerminalProjectOptionsProvider(private val myProject: Project) : Persisten
         }
       }
 
-      return currentProjectFolder()
+      return directory ?: currentProjectFolder()
     }
 
 
   private fun currentProjectFolder(): String? {
-    val projectRootManager = ProjectRootManager.getInstance(myProject)
+    val projectRootManager = ProjectRootManager.getInstance(project)
 
     val roots = projectRootManager.contentRoots
     if (roots.size == 1) {
       roots[0].canonicalPath
     }
-    val baseDir = myProject.baseDir
+    val baseDir = project.baseDir
     return baseDir?.canonicalPath
   }
 
@@ -114,15 +111,15 @@ class TerminalProjectOptionsProvider(private val myProject: Project) : Persisten
 
 }
 
-class ValueWithDefault(val default: () -> String?) {
-  private var _value: String? = null
-
+// TODO: In Kotlin 1.1 it will be possible to pass references to instance properties. Until then we need 'state' argument as a reciever for
+// to property to apply
+class ValueWithDefault<S>(val prop: KMutableProperty1<S, String?>, val state: S, val default: () -> String?) {
   operator fun getValue(thisRef: Any?, property: KProperty<*>): String? {
-    return if (_value !== null) _value else default()
+    return if (prop.get(state) !== null) prop.get(state) else default()
   }
 
   operator fun setValue(thisRef: Any?, property: KProperty<*>, value: String?) {
-    _value = if (value == default() || value.isNullOrEmpty()) null else value
+    prop.set(state, if (value == default() || value.isNullOrEmpty()) null else value)
   }
 }
 

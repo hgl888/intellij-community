@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,7 +51,6 @@ import com.intellij.psi.util.PsiUtil;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.PairFunction;
-import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -169,7 +168,7 @@ public class PsiImplUtil {
     for (int i = 0; i < typeParameters.length; i++) {
       if (typeParameter.equals(typeParameters[i])) return i;
     }
-    LOG.assertTrue(false);
+    LOG.error(typeParameter + " in " + typeParameterList);
     return -1;
   }
 
@@ -332,6 +331,7 @@ public class PsiImplUtil {
   }
 
   /** @deprecated use {@link AnnotationTargetUtil#getTargetsForLocation(PsiAnnotationOwner)} (to be removed ion IDEA 17) */
+  @NotNull
   public static PsiAnnotation.TargetType[] getTargetsForLocation(@Nullable PsiAnnotationOwner owner) {
     return AnnotationTargetUtil.getTargetsForLocation(owner);
   }
@@ -561,6 +561,7 @@ public class PsiImplUtil {
     return null;
   }
 
+  @NotNull
   public static PsiStatement[] getChildStatements(@NotNull CompositeElement psiCodeBlock) {
     ApplicationManager.getApplication().assertReadAccessAllowed();
     // no lock is needed because all chameleons are expanded already
@@ -615,20 +616,6 @@ public class PsiImplUtil {
         annotations.add(annotation);
       }
     }
-  }
-
-  /** @deprecated use {@link #collectTypeUseAnnotations(PsiModifierList, List)} (to be removed in IDEA 16) */
-  public static List<PsiAnnotation> getTypeUseAnnotations(@NotNull PsiModifierList modifierList) {
-    SmartList<PsiAnnotation> result = null;
-
-    for (PsiAnnotation annotation : modifierList.getAnnotations()) {
-      if (isTypeAnnotation(annotation)) {
-        if (result == null) result = new SmartList<PsiAnnotation>();
-        result.add(annotation);
-      }
-    }
-
-    return result;
   }
 
   private static final Key<Boolean> TYPE_ANNO_MARK = Key.create("type.annotation.mark");
@@ -698,7 +685,6 @@ public class PsiImplUtil {
   public static <T extends PsiJavaCodeReferenceElement> JavaResolveResult[] multiResolveImpl(@NotNull T element,
                                                                                              boolean incompleteCode,
                                                                                              @NotNull ResolveCache.PolyVariantContextResolver<? super T> resolver) {
-
     FileASTNode fileElement = SharedImplUtil.findFileElement(element.getNode());
     if (fileElement == null) {
       PsiUtilCore.ensureValid(element);
@@ -729,14 +715,13 @@ public class PsiImplUtil {
     return multiResolveImpl(manager.getProject(), psiFile, element, incompleteCode, resolver);
   }
 
+  @NotNull
   public static <T extends PsiJavaCodeReferenceElement> JavaResolveResult[] multiResolveImpl(@NotNull Project project,
                                                                                              @NotNull PsiFile psiFile,
                                                                                              @NotNull T element,
                                                                                              boolean incompleteCode,
                                                                                              @NotNull ResolveCache.PolyVariantContextResolver<? super T> resolver) {
-
-    ResolveResult[] results =
-      ResolveCache.getInstance(project).resolveWithCaching(element, resolver, true, incompleteCode, psiFile);
+    ResolveResult[] results = ResolveCache.getInstance(project).resolveWithCaching(element, resolver, true, incompleteCode, psiFile);
     return results.length == 0 ? JavaResolveResult.EMPTY_ARRAY : (JavaResolveResult[])results;
   }
 

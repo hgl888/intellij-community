@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@
 package com.intellij.updater;
 
 import java.io.*;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
@@ -26,6 +24,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Stream;
 
 /**
  * @author Konstantin Bulenkov
@@ -33,11 +32,9 @@ import java.util.Locale;
 public class Bootstrap {
   private static final String IJ_PLATFORM_UPDATER = "ijPlatformUpdater";
 
-  public static void main(String[] args) throws
-                                         URISyntaxException,
-                                         IOException, ClassNotFoundException, NoSuchMethodException,
-                                         InvocationTargetException, IllegalAccessException, InterruptedException {
+  public static void main(String[] args) throws Exception {
     if (args.length != 1) return;
+
     String path = args[0].endsWith("\\") || args[0].endsWith("/") ? args[0] : args[0] + File.separator;
     if (isMac() && path.endsWith(".app/")) {
       final File file = new File(path + "Contents");
@@ -57,7 +54,10 @@ public class Bootstrap {
         while ((line = br.readLine()) != null) {
           final File file = new File(path + line);
           final Path tmp = Files.createTempFile(IJ_PLATFORM_UPDATER + file.getName(), "");
-          Files.copy(file.toPath(), Files.newOutputStream(tmp));
+
+          try (OutputStream targetStream = Files.newOutputStream(tmp)) {
+             Files.copy(file.toPath(), targetStream);
+          }
           urls.add(tmp.toFile().toURI().toURL());
           files.add(tmp.toFile());
         }
@@ -83,22 +83,25 @@ public class Bootstrap {
 
     final Class<?> runner = Bootstrap.class.getClassLoader().loadClass("com.intellij.updater.Runner");
     final Method main = runner.getMethod("main", String[].class);
-    main.invoke(null, (Object)new String[]{"apply", args[0]});
+    main.invoke(null, (Object)new String[]{"apply", args[0], "--toolbox-ui"});
   }
 
   private static void cleanUp() {
     log("Cleaning up...");
     try {
       final Path file = Files.createTempFile("", "");
-      Files.list(file.getParent()).forEach((p) -> {
-        if (!p.toFile().isDirectory() && p.toFile().getName().startsWith(IJ_PLATFORM_UPDATER)) try {
-          log("Deleting " + p.toString());
-          Files.delete(p);
-        } catch (IOException e) {
-          log("Can't delete " + p.toString());
-          log(e);
-        }
-      });
+      try (Stream<Path> listing = Files.list(file.getParent())) {
+        listing.forEach((p) -> {
+          if (!p.toFile().isDirectory() && p.toFile().getName().startsWith(IJ_PLATFORM_UPDATER)) try {
+            log("Deleting " + p.toString());
+            Files.delete(p);
+          }
+          catch (IOException e) {
+            log("Can't delete " + p.toString());
+            log(e);
+          }
+        });
+      }
       Files.delete(file);
     } catch (IOException e) {
       log(e);

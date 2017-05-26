@@ -21,7 +21,6 @@ import com.intellij.openapi.options.UnnamedConfigurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vcs.annotate.AnnotationProvider;
-import com.intellij.openapi.vcs.changes.ChangeListEditHandler;
 import com.intellij.openapi.vcs.changes.ChangeProvider;
 import com.intellij.openapi.vcs.changes.CommitExecutor;
 import com.intellij.openapi.vcs.changes.LocalChangeList;
@@ -75,14 +74,6 @@ public abstract class AbstractVcs<ComList extends CommittedChangeList> extends S
     myKey = new VcsKey(myName);
   }
 
-  // for tests only
-  protected AbstractVcs(@NotNull Project project, String name, VcsKey key) {
-    super();
-    myProject = project;
-    myName = name;
-    myKey = key;
-  }
-
   // acts as adapter
   @Override
   protected void start() throws VcsException {
@@ -132,9 +123,6 @@ public abstract class AbstractVcs<ComList extends CommittedChangeList> extends S
   @Nullable
   public EditFileProvider getEditFileProvider() {
     return null;
-  }
-
-  public void directoryMappingChanged() {
   }
 
   public boolean markExternalChangesAsUpToDate() {
@@ -403,18 +391,10 @@ public abstract class AbstractVcs<ComList extends CommittedChangeList> extends S
    * This method is used for VCS autodetection during initial project creation and VCS configuration.
    *
    * @param dir the directory to check.
-   * @return <code>true</code> if directory is managed by this VCS
+   * @return {@code true} if directory is managed by this VCS
    */
   public boolean isVersionedDirectory(VirtualFile dir) {
     return false;
-  }
-
-  /**
-   * If VCS does not implement detection whether directory is versioned ({@link #isVersionedDirectory(VirtualFile)}),
-   * it should return <code>false</code>. Otherwise return <code>true</code>
-   */
-  public boolean supportsVersionedStateDetection() {
-    return true;
   }
 
   /**
@@ -457,11 +437,6 @@ public abstract class AbstractVcs<ComList extends CommittedChangeList> extends S
     return null;
   }
 
-  @Nullable
-  public ChangeListEditHandler getEditHandler() {
-    return null;
-  }
-
   public boolean allowsNestedRoots() {
     return false;
   }
@@ -496,11 +471,6 @@ public abstract class AbstractVcs<ComList extends CommittedChangeList> extends S
 
   public VcsType getType() {
     return VcsType.centralized;
-  }
-
-  // todo ?
-  public boolean checkImmediateParentsBeforeCommit() {
-    return false;
   }
 
   @Nullable
@@ -569,25 +539,14 @@ public abstract class AbstractVcs<ComList extends CommittedChangeList> extends S
     setRollbackEnvironment(createRollbackEnvironment());
   }
 
-  /**
-   * @Deprecated to delete in 2017.3
-   */
-  @Deprecated
-  public boolean reportsIgnoredDirectories() {
-    return true;
-  }
-
   @Nullable
   public CommittedChangeList loadRevisions(final VirtualFile vf, final VcsRevisionNumber number) {
     final CommittedChangeList[] list = new CommittedChangeList[1];
-    final ThrowableRunnable<VcsException> runnable = new ThrowableRunnable<VcsException>() {
-      @Override
-      public void run() throws VcsException {
-        final Pair<CommittedChangeList, FilePath> pair =
-          getCommittedChangesProvider().getOneList(vf, number);
-        if (pair != null) {
-          list[0] = pair.getFirst();
-        }
+    final ThrowableRunnable<VcsException> runnable = () -> {
+      final Pair<CommittedChangeList, FilePath> pair =
+        getCommittedChangesProvider().getOneList(vf, number);
+      if (pair != null) {
+        list[0] = pair.getFirst();
       }
     };
     return VcsSynchronousProgressWrapper.wrap(runnable, getProject(), "Load revision contents") ? list[0] : null;
@@ -614,15 +573,13 @@ public abstract class AbstractVcs<ComList extends CommittedChangeList> extends S
     return true;
   }
 
-  /**
-   * compares different presentations of revision number (ex. in Perforce)
-   */
-  public boolean revisionsSame(@NotNull final VcsRevisionNumber number1, @NotNull final VcsRevisionNumber number2) {
-    return number1.equals(number2);
-  }
-
   public CheckoutProvider getCheckoutProvider() {
     return null;
+  }
+
+  @Override
+  public String toString() {
+    return getName();
   }
 }
 

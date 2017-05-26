@@ -16,11 +16,13 @@
 package com.intellij.util.ui;
 
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.ScalableIcon;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.ui.border.CustomLineBorder;
 import com.intellij.util.SystemProperties;
+import com.intellij.util.keyFMap.KeyFMap;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -30,33 +32,133 @@ import javax.swing.border.Border;
 import javax.swing.border.CompoundBorder;
 import javax.swing.plaf.UIResource;
 import java.awt.*;
+import java.awt.image.ImageObserver;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 
 /**
  * @author Konstantin Bulenkov
+ * @author tav
  */
 public class JBUI {
   private static final Logger LOG = Logger.getInstance("#com.intellij.util.ui.JBUI");
 
-  public static final String SCALE_FACTOR_PROPERTY = "JBUI.scale";
+  public static final String USER_SCALE_FACTOR_PROPERTY = "JBUI.userScaleFactor";
 
   private static final PropertyChangeSupport PCS = new PropertyChangeSupport(new JBUI());
 
   /**
-   * A default system scale factor.
+   * The IDE supports two different HiDPI modes:
+   *
+   * 1) IDE-managed HiDPI mode.
+   *
+   * Supported for backward compatibility until complete transition to the JRE-managed HiDPI mode happens.
+   * In this mode there's a single coordinate space and the whole UI is scaled by the IDE guided by the
+   * user scale factor ({@link #USR}).
+   *
+   * 2) JRE-managed HiDPI mode.
+   *
+   * In this mode the JRE scales graphics prior to drawing it on the device. So, there're two coordinate
+   * spaces: the user space and the device space. The system scale factor ({@link #SYS}) defines the
+   * transform b/w the spaces. The UI size metrics (windows, controls, fonts height) are in the user
+   * coordinate space. Though, the raster images should be aware of the device scale in order to meet
+   * HiDPI. (For instance, JRE on a Mac Retina monitor device works in the JRE-managed HiDPI mode,
+   * transforming graphics to the double-scaled device coordinate space)
+   *
+   * The IDE operates the scale factors of the following types:
+   *
+   * 1) The user scale factor: {@link #USR}
+   * 2) The system (monitor device) scale factor: {@link #SYS}
+   * 3) The pixel scale factor: {@link #PIX}
+   *
+   * @see UIUtil#isJreHiDPIEnabled()
+   * @see UIUtil#isJreHiDPI()
+   * @see UIUtil#isJreHiDPI(GraphicsConfiguration)
+   * @see UIUtil#isJreHiDPI(Graphics2D)
+   * @see JBUI#isUsrHiDPI()
+   * @see JBUI#isPixHiDPI(GraphicsConfiguration)
+   * @see JBUI#isPixHiDPI(Graphics2D)
+   * @see UIUtil#drawImage(Graphics, Image, int, int, int, int, ImageObserver)
+   * @see UIUtil#createImage(Graphics, int, int, int)
+   * @see UIUtil#createImage(GraphicsConfiguration, int, int, int)
+   * @see UIUtil#createImage(int, int, int)
    */
-  public static final float SYSTEM_DEF_SCALE = getSystemDefScale();
+  public enum ScaleType {
+    /**
+     * The user scale factor is set and managed by the IDE. Currently it's derived from the UI font size,
+     * specified in the IDE Settings.
+     *
+     * The user scale value depends on which HiDPI mode is enabled. In the IDE-managed HiDPI mode the
+     * user scale "includes" the default system scale and simply equals it with the default UI font size.
+     * In the JRE-managed HiDPI mode the user scale is independent of the system scale and equals 1.0
+     * with the default UI font size. In case the default UI font size changes, the user scale changes
+     * proportionally in both the HiDPI modes.
+     *
+     * In the IDE-managed HiDPI mode the user scale completely defines the UI scale. In the JRE-managed
+     * HiDPI mode the user scale can be considered a supplementary scale taking effect in cases like
+     * the IDE Presentation Mode and when the default UI scale is changed by the user.
+     *
+     * @see #setUserScaleFactor(float)
+     * @see #scale(float)
+     * @see #scale(int)
+     */
+    USR,
+    /**
+     * The system scale factor is defined by the device DPI and/or the system settings. For instance,
+     * Mac Retina monitor device has the system scale 2.0 by default. As there can be multiple devices
+     * (multi-monitor configuration) there can be multiple system scale factors, appropriately. However,
+     * there's always a single default system scale factor corresponding to the default device. And it's
+     * the only system scale available in the IDE-managed HiDPI mode.
+     *
+     * In the JRE-managed HiDPI mode, the system scale defines the scale of the transform b/w the user
+     * and the device coordinate spaces performed by the JRE.
+     *
+     * @see #sysScale()
+     * @see #sysScale(GraphicsConfiguration)
+     * @see #sysScale(Graphics2D)
+     * @see #sysScale(Component)
+     */
+    SYS,
+    /**
+     * The pixel scale factor "combines" both the user and the system scale factors and defines the
+     * effective scale of the whole UI.
+     *
+     * For instance, on Mac Retina monitor (JRE-managed HiDPI) in the Presentation mode (which, say,
+     * doubles the UI scale) the pixel scale would equal 4.0. The value is the product of the user
+     * scale 2.0 and the system scale 2.0. In the IDE-managed HiDPI mode, the pixel scale always equals
+     * the user scale.
+     *
+     * @see #pixScale()
+     * @see #pixScale(GraphicsConfiguration)
+     * @see #pixScale(Graphics2D)
+     * @see #pixScale(Component)
+     * @see #pixScale(GraphicsConfiguration, float)
+     * @see #pixScale(float)
+     */
+    PIX;
 
-  private static float scaleFactor;
+    private final Key<Float> key = Key.create(name());
+  }
+
+  /**
+   * The system scale factor, corresponding to the default monitor device.
+   */
+  private static final Float SYSTEM_SCALE_FACTOR = sysScale();
+
+  /**
+   * The user space scale factor.
+   */
+  private static float userScaleFactor;
 
   static {
-    setScaleFactor(SYSTEM_DEF_SCALE);
+    setUserScaleFactor(UIUtil.isJreHiDPIEnabled() ? 1f : SYSTEM_SCALE_FACTOR);
+    LOG.info("System scale factor: " + SYSTEM_SCALE_FACTOR + " (" +
+             (UIUtil.isJreHiDPIEnabled() ? "JRE-managed" : "IDE-managed") + " HiDPI)");
   }
 
   /**
    * Adds property change listener. Supported properties:
-   * {@link #SCALE_FACTOR_PROPERTY}
+   * {@link #USER_SCALE_FACTOR_PROPERTY}
    */
   public static void addPropertyChangeListener(String propertyName, PropertyChangeListener listener) {
     PCS.addPropertyChangeListener(propertyName, listener);
@@ -69,8 +171,22 @@ public class JBUI {
     PCS.removePropertyChangeListener(propertyName, listener);
   }
 
-  private static float getSystemDefScale() {
-    if (SystemInfo.isMac) {
+  /**
+   * Returns the system scale factor, corresponding to the default monitor device.
+   */
+  public static float sysScale() {
+    if (SYSTEM_SCALE_FACTOR != null) {
+      return SYSTEM_SCALE_FACTOR;
+    }
+
+    if (UIUtil.isJreHiDPIEnabled()) {
+      GraphicsDevice gd = null;
+      try {
+        gd = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
+      } catch (HeadlessException ignore) {}
+      if (gd != null && gd.getDefaultConfiguration() != null) {
+        return sysScale(gd.getDefaultConfiguration());
+      }
       return 1.0f;
     }
 
@@ -81,23 +197,135 @@ public class JBUI {
     UIUtil.initSystemFontData();
     Pair<String, Integer> fdata = UIUtil.getSystemFontData();
 
-    int size;
-    if (fdata != null) {
-      size = fdata.getSecond();
-    } else {
-      size = Fonts.label().getSize();
+    int size = fdata == null ? Fonts.label().getSize() : fdata.getSecond();
+    return getFontScale(size);
+  }
+
+  /**
+   * Returns the system scale factor based on the JBUIScaleUpdatable.
+   * In the IDE-managed HiDPI mode defaults to {@link #sysScale()}
+   */
+  public static float sysScale(JBUIScaleUpdatable updatable) {
+    if (UIUtil.isJreHiDPIEnabled() && updatable != null) {
+      return updatable.getJBUIScale(ScaleType.SYS);
     }
-    return size / UIUtil.DEF_SYSTEM_FONT_SIZE;
+    return sysScale();
   }
 
-  private static void setScaleFactorProperty(float scale) {
-    PCS.firePropertyChange(SCALE_FACTOR_PROPERTY, scaleFactor, scaleFactor = scale);
-    LOG.info("UI scale factor: " + scaleFactor);
+  /**
+   * Returns the system scale factor, corresponding to the graphics configuration.
+   * In the IDE-managed HiDPI mode defaults to {@link #sysScale()}
+   */
+  public static float sysScale(@Nullable GraphicsConfiguration gc) {
+    if (UIUtil.isJreHiDPIEnabled() && gc != null) {
+      if (gc.getDevice().getType() == GraphicsDevice.TYPE_RASTER_SCREEN) {
+        if (SystemInfo.isMac && UIUtil.isJreHiDPI_earlierVersion()) {
+          return UIUtil.DetectRetinaKit.isOracleMacRetinaDevice(gc.getDevice()) ? 2f : 1f;
+        }
+        return (float)gc.getDefaultTransform().getScaleX();
+      }
+    }
+    return sysScale();
   }
 
-  public static void setScaleFactor(float scale) {
+  /**
+   * Returns the system scale factor, corresponding to the graphics.
+   * For BufferedImage's graphics, the scale is taken from the graphics itself.
+   * In the IDE-managed HiDPI mode defaults to {@link #sysScale()}
+   */
+  public static float sysScale(@Nullable Graphics2D g) {
+    if (UIUtil.isJreHiDPIEnabled() && g != null) {
+      GraphicsConfiguration gc = g.getDeviceConfiguration();
+      if (gc == null ||
+          gc.getDevice().getType() == GraphicsDevice.TYPE_IMAGE_BUFFER ||
+          gc.getDevice().getType() == GraphicsDevice.TYPE_PRINTER)
+      {
+        // in this case gc doesn't provide a valid scale
+        return (float)g.getTransform().getScaleX();
+      }
+      return sysScale(gc);
+    }
+    return sysScale();
+  }
+
+  /**
+   * Returns the system scale factor, corresponding to the device the component is tied to.
+   * In the IDE-managed HiDPI mode defaults to {@link #sysScale()}
+   */
+  public static float sysScale(@Nullable Component comp) {
+    if (comp != null) {
+      return sysScale(comp.getGraphicsConfiguration());
+    }
+    return sysScale();
+  }
+
+  /**
+   * Returns the pixel scale factor, corresponding to the default monitor device.
+   */
+  public static float pixScale() {
+    return UIUtil.isJreHiDPIEnabled() ? sysScale() * scale(1f) : scale(1f);
+  }
+
+  /**
+   * Returns "f" scaled by pixScale().
+   */
+  public static float pixScale(float f) {
+    return pixScale() * f;
+  }
+
+  /**
+   * Returns "f" scaled by pixScale(gc).
+   */
+  public static float pixScale(@Nullable GraphicsConfiguration gc, float f) {
+    return pixScale(gc) * f;
+  }
+
+  /**
+   * Returns the pixel scale factor based on the JBUIScaleUpdatable.
+   */
+  public static float pixScale(@NotNull JBUIScaleUpdatable updatableable) {
+    return UIUtil.isJreHiDPIEnabled() ? sysScale(updatableable) * updatableable.getJBUIScale(ScaleType.USR) : updatableable.getJBUIScale(ScaleType.USR);
+  }
+
+  /**
+   * Returns the pixel scale factor, corresponding to the provided configuration.
+   * In the IDE-managed HiDPI mode defaults to {@link #pixScale()}
+   */
+  public static float pixScale(@Nullable GraphicsConfiguration gc) {
+    return UIUtil.isJreHiDPIEnabled() ? sysScale(gc) * scale(1f) : scale(1f);
+  }
+
+  /**
+   * Returns the pixel scale factor, corresponding to the provided graphics.
+   * In the IDE-managed HiDPI mode defaults to {@link #pixScale()}
+   */
+  public static float pixScale(@Nullable Graphics2D g) {
+    return UIUtil.isJreHiDPIEnabled() ? sysScale(g) * scale(1f) : scale(1f);
+  }
+
+  /**
+   * Returns the pixel scale factor, corresponding to the device the provided component is tied to.
+   * In the IDE-managed HiDPI mode defaults to {@link #pixScale()}
+   */
+  public static float pixScale(@Nullable Component comp) {
+    return pixScale(comp != null ? comp.getGraphicsConfiguration() : null);
+  }
+
+  private static void setUserScaleFactorProperty(float scale) {
+    PCS.firePropertyChange(USER_SCALE_FACTOR_PROPERTY, userScaleFactor, userScaleFactor = scale);
+    LOG.info("User scale factor: " + userScaleFactor);
+  }
+
+  /**
+   * Sets the user scale factor.
+   * The method is used by the IDE, it's not recommended to call the method directly from the client code.
+   * For debugging purposes, the following registry keys can be used:
+   * ide.ui.scale.override=[boolean]
+   * ide.ui.scale=[float]
+   */
+  public static void setUserScaleFactor(float scale) {
     if (SystemProperties.has("hidpi") && !SystemProperties.is("hidpi")) {
-      setScaleFactorProperty(1.0f);
+      setUserScaleFactorProperty(1.0f);
       return;
     }
 
@@ -111,20 +339,38 @@ public class JBUI {
       //Default UI font size for Unity and Gnome is 15. Scaling factor 1.25f works badly on Linux
       scale = 1f;
     }
-    if (scaleFactor == scale) {
+    if (userScaleFactor == scale) {
       return;
     }
-    setScaleFactorProperty(scale);
+    setUserScaleFactorProperty(scale);
   }
 
+  /**
+   * @return 'f' scaled by the user scale factor
+   */
+  public static float scale(float f) {
+    return f * userScaleFactor;
+  }
+
+  /**
+   * @return 'i' scaled by the user scale factor
+   */
   public static int scale(int i) {
-    return Math.round(scaleFactor * i);
+    return Math.round(userScaleFactor * i);
   }
 
-  public static int scaleFontSize(int fontSize) {
-    if (scaleFactor == 1.25f) return (int)(fontSize * 1.34f);
-    if (scaleFactor == 1.75f) return (int)(fontSize * 1.67f);
-    return scale(fontSize);
+  public static int scaleFontSize(float fontSize) {
+    if (userScaleFactor == 1.25f) return (int)(fontSize * 1.34f);
+    if (userScaleFactor == 1.75f) return (int)(fontSize * 1.67f);
+    return (int)scale(fontSize);
+  }
+
+  /**
+   * @param fontSize
+   * @return the scale factor of {@code fontSize} relative to the standard font size (currently 12pt)
+   */
+  public static float getFontScale(float fontSize) {
+    return fontSize / UIUtil.DEF_SYSTEM_FONT_SIZE;
   }
 
   public static JBDimension size(int width, int height) {
@@ -194,16 +440,55 @@ public class JBUI {
     return new JBDimension(0, 0);
   }
 
-  public static float scale(float f) {
-    return f * scaleFactor;
-  }
-
   public static JBInsets insets(Insets insets) {
     return JBInsets.create(insets);
   }
 
+  /**
+   * @deprecated use {@link #isUsrHiDPI()} instead
+   */
+  @Deprecated
   public static boolean isHiDPI() {
-    return scaleFactor > 1.0f;
+    return isUsrHiDPI();
+  }
+
+  /**
+   * Returns whether the {@link ScaleType#USR} scale factor assumes HiDPI-awareness.
+   * An equivalent of {@code isHiDPI(scale(1f))}
+   */
+  public static boolean isUsrHiDPI() {
+      return isHiDPI(scale(1f));
+  }
+
+  /**
+   * Returns whether the {@link ScaleType#PIX} scale factor assumes HiDPI-awareness in the provided graphics config.
+   * An equivalent of {@code isHiDPI(pixScale(gc))}
+   */
+  public static boolean isPixHiDPI(@Nullable GraphicsConfiguration gc) {
+    return isHiDPI(pixScale(gc));
+  }
+
+  /**
+   * Returns whether the {@link ScaleType#PIX} scale factor assumes HiDPI-awareness in the provided graphics.
+   * An equivalent of {@code isHiDPI(pixScale(g))}
+   */
+  public static boolean isPixHiDPI(@Nullable Graphics2D g) {
+    return isHiDPI(pixScale(g));
+  }
+
+  /**
+   * Returns whether the {@link ScaleType#PIX} scale factor assumes HiDPI-awareness in the provided component's device.
+   * An equivalent of {@code isHiDPI(pixScale(comp))}
+   */
+  public static boolean isPixHiDPI(@Nullable Component comp) {
+    return isHiDPI(pixScale(comp));
+  }
+
+  /**
+   * Returns whether the provided scale assumes HiDPI-awareness.
+   */
+  public static boolean isHiDPI(float scale) {
+    return scale > 1f;
   }
 
   public static class Fonts {
@@ -293,25 +578,12 @@ public class JBUI {
     }
   }
 
-  public static class ComboBox {
-    /**
-     *        JComboBox<String> comboBox = new ComboBox<>(new String[] {"First", "Second", "Third"});
-     *        comboBox.setEditable(true);
-     *        comboBox.setEditor(JBUI.ComboBox.compositeComboboxEditor(new JTextField(), new JLabel(AllIcons.Icon_CE)));
-     *
-     *        @param components an array of JComponent objects. The first one is the editable text component.
-     */
-/*    public static ComboBoxCompositeEditor compositeComboboxEditor  (JComponent ... components) {
-      return new ComboBoxCompositeEditor(components);
-    }*/
-  }
-
   /**
    * An Icon dynamically sticking to JBUI.scale to meet HiDPI.
    *
    * @author tav
    */
-  public static abstract class JBIcon implements Icon {
+  public abstract static class JBIcon implements Icon {
     private float myInitialJBUIScale = currentJBUIScale();
 
     protected JBIcon() {}
@@ -321,9 +593,9 @@ public class JBUI {
     }
 
     static float currentJBUIScale() {
-      // We don't JBUI-scale images on Retina, see comments in ImageLoader.loadFromUrl(..)
+      // We don't JBUI-scale images in JRE-managed HiDPI mode, see comments in ImageLoader.loadFromUrl(..)
       // So, make icons JBUI-scale conformant.
-      return UIUtil.isRetina() ? 1f : scale(1f);
+      return UIUtil.isJreHiDPIEnabled() ? 1f : scale(1f);
     }
 
     /**
@@ -373,11 +645,11 @@ public class JBUI {
   }
 
   /**
-   * An Icon supporting both JBUI.scale & arbitrary scale factors.
+   * An Icon supporting both JBUI.scale & instance scale factors.
    *
    * @author tav
    */
-  public static abstract class ScalableJBIcon extends JBIcon implements ScalableIcon {
+  public abstract static class ScalableJBIcon extends JBIcon implements ScalableIcon {
     private float myScale = 1f;
 
     protected ScalableJBIcon() {}
@@ -388,8 +660,8 @@ public class JBUI {
     }
 
     public enum Scale {
-      JBUI,       // JBIcon's scale
-      ARBITRARY,  // ScalableIcon's scale
+      JBUI,       // JBIcon's JBUI scale
+      INSTANCE,   // ScalableIcon's instance scale
       EFFECTIVE   // effective scale
     }
 
@@ -420,7 +692,7 @@ public class JBUI {
       switch (type) {
         case JBUI:
           return super.scaleVal(value);
-        case ARBITRARY:
+        case INSTANCE:
           return value * myScale;
         case EFFECTIVE:
         default:
@@ -452,7 +724,7 @@ public class JBUI {
    * @author tav
    * @author Aleksey Pivovarov
    */
-  public static abstract class CachingScalableJBIcon<T extends CachingScalableJBIcon> extends ScalableJBIcon {
+  public abstract static class CachingScalableJBIcon<T extends CachingScalableJBIcon> extends ScalableJBIcon {
     private CachingScalableJBIcon myScaledIconCache;
 
     protected CachingScalableJBIcon() {}
@@ -483,69 +755,222 @@ public class JBUI {
     protected abstract T copy();
   }
 
-  public interface AuxJBUIScale {
+  /**
+   * An interface to update JBUI scale factors.
+   */
+  public interface JBUIScaleUpdatable {
     /**
-     * Checks if cached JBUI.scale should be updated and updates it.
+     * Checks if tracked user scale should be updated and updates it.
      *
-     * @return true if cached JBUI.scale was updated
+     * @return true if tracked user scale was updated
      */
     boolean updateJBUIScale();
 
     /**
-     * @return true if cached JBUI.scale should be updated
+     * Updates all the scale factors based on the provided graphics.
+     *
+     * @param g the graphics, if null defaults to {@link #updateJBUIScale()}
+     * @return true if any of the tracked scale factors was updated
+     */
+    boolean updateJBUIScale(@Nullable Graphics2D g);
+
+    /**
+     * Updates all the scale factors based on the provided graphics config.
+     *
+     * @param gc the graphics config, if null defaults to {@link #updateJBUIScale()}
+     * @return true if any of the tracked scale factors was updated
+     */
+    boolean updateJBUIScale(@Nullable GraphicsConfiguration gc);
+
+    /**
+     * @return true if tracked user scale should be updated
      */
     boolean needUpdateJBUIScale();
+
+    /**
+     * @param g the graphics, if null defaults to {@link #needUpdateJBUIScale()}
+     * @return true if any of the tracked scale factors should be updated
+     */
+    boolean needUpdateJBUIScale(@Nullable Graphics2D g);
+
+    /**
+     * @param gc the graphics config, if null defaults to {@link #needUpdateJBUIScale()}
+     * @return true if any of the tracked scale factors should be updated
+     */
+    boolean needUpdateJBUIScale(@Nullable GraphicsConfiguration gc);
+
+    /**
+     * @param type the type of the scale
+     * @return the tracked scale factor value of the type
+     */
+    float getJBUIScale(ScaleType type);
   }
 
   /**
-   * A JBIcon caching JBUI.scale and allowing to lazily track its change.
-   *
-   * @author tav
+   * A helper class to update JBUI scale factors.
    */
-  public static abstract class AuxJBIcon extends JBIcon implements AuxJBUIScale {
-    private float myCachedJBUIScale = scale(1f);
+  private static class JBUIScaleUpdater implements JBUIScaleUpdatable {
+    // ScaleType.USR - tracked
+    // ScaleType.SYS - tracked
+    // ScaleType.PIX - derived
+    KeyFMap myTrackedJBUIScale = KeyFMap.EMPTY_MAP;
+
+    {
+      put(ScaleType.USR.key, JBIcon.currentJBUIScale());
+      put(ScaleType.SYS.key, sysScale());
+    }
+
+    private void put(Key<Float> key, Float value) {
+      myTrackedJBUIScale = myTrackedJBUIScale.plus(key, value);
+    }
 
     @Override
     public boolean updateJBUIScale() {
-      if (needUpdateJBUIScale()) {
-        myCachedJBUIScale = scale(1f);
+      return updateJBUIScale(JBIcon.currentJBUIScale(), ScaleType.USR);
+    }
+
+    private boolean updateJBUIScale(float scale, ScaleType type) {
+      if (needUpdateJBUIScale(scale, type)) {
+        put(type.key, scale);
         return true;
       }
       return false;
     }
 
     @Override
+    public boolean updateJBUIScale(@Nullable Graphics2D g) {
+      boolean res = updateJBUIScale();
+      if (g != null) res = res || updateJBUIScale(sysScale(g), ScaleType.SYS);
+      return res;
+    }
+
+    @Override
+    public boolean updateJBUIScale(@Nullable GraphicsConfiguration gc) {
+      boolean res = updateJBUIScale();
+      if (gc != null) res = res || updateJBUIScale(sysScale(gc), ScaleType.SYS);
+      return res;
+    }
+
+    @Override
     public boolean needUpdateJBUIScale() {
-      return myCachedJBUIScale != scale(1f);
+      return needUpdateJBUIScale(JBIcon.currentJBUIScale(), ScaleType.USR);
+    }
+
+    private boolean needUpdateJBUIScale(float scale, ScaleType type) {
+      return getJBUIScale(type) != scale;
+    }
+
+    @Override
+    public boolean needUpdateJBUIScale(@Nullable Graphics2D g) {
+      return needUpdateJBUIScale() || g != null && needUpdateJBUIScale(sysScale(g), ScaleType.SYS);
+    }
+
+    @Override
+    public boolean needUpdateJBUIScale(@Nullable GraphicsConfiguration gc) {
+      return needUpdateJBUIScale() || gc != null && needUpdateJBUIScale(sysScale(gc), ScaleType.SYS);
+    }
+
+    @Override
+    public float getJBUIScale(ScaleType type) {
+      return type == ScaleType.PIX ?
+             pixScale(this) : // derive
+             myTrackedJBUIScale.get(type.key);
     }
   }
 
   /**
-   * A ScalableJBIcon caching JBUI.scale and allowing to lazily track its change.
+   * A JBIcon lazily updating JBUI scale factors change.
    *
    * @author tav
    */
-  public static abstract class AuxScalableJBIcon extends CachingScalableJBIcon implements AuxJBUIScale {
-    private float myCachedJBUIScale = currentJBUIScale();
+  public abstract static class UpdatingJBIcon extends JBIcon implements JBUIScaleUpdatable {
+    private final JBUIScaleUpdater myJBUIScaleDelegate = new JBUIScaleUpdater();
 
-    protected AuxScalableJBIcon() {}
+    @Override
+    public boolean updateJBUIScale() {
+      return myJBUIScaleDelegate.updateJBUIScale();
+    }
 
-    protected AuxScalableJBIcon(AuxScalableJBIcon icon) {
+    @Override
+    public boolean updateJBUIScale(@Nullable Graphics2D g) {
+      return myJBUIScaleDelegate.updateJBUIScale(g);
+    }
+
+    @Override
+    public boolean updateJBUIScale(@Nullable GraphicsConfiguration gc) {
+      return myJBUIScaleDelegate.updateJBUIScale(gc);
+    }
+
+    @Override
+    public boolean needUpdateJBUIScale() {
+      return myJBUIScaleDelegate.needUpdateJBUIScale();
+    }
+
+    @Override
+    public boolean needUpdateJBUIScale(@Nullable Graphics2D g) {
+      return myJBUIScaleDelegate.needUpdateJBUIScale(g);
+    }
+
+    @Override
+    public boolean needUpdateJBUIScale(@Nullable GraphicsConfiguration gc) {
+      return myJBUIScaleDelegate.needUpdateJBUIScale(gc);
+    }
+
+    @Override
+    public float getJBUIScale(ScaleType type) {
+      return myJBUIScaleDelegate.getJBUIScale(type);
+    }
+  }
+
+  /**
+   * A ScalableJBIcon lazily updating JBUI scale factors change.
+   *
+   * @author tav
+   */
+  public abstract static class UpdatingScalableJBIcon<T extends UpdatingScalableJBIcon>
+    extends CachingScalableJBIcon<T> implements JBUIScaleUpdatable {
+
+    private final JBUIScaleUpdater myJBUIScaleDelegate = new JBUIScaleUpdater();
+
+    protected UpdatingScalableJBIcon() {}
+
+    protected UpdatingScalableJBIcon(UpdatingScalableJBIcon icon) {
       super(icon);
     }
 
     @Override
     public boolean updateJBUIScale() {
-      if (needUpdateJBUIScale()) {
-        myCachedJBUIScale = currentJBUIScale();
-        return true;
-      }
-      return false;
+      return myJBUIScaleDelegate.updateJBUIScale();
+    }
+
+    @Override
+    public boolean updateJBUIScale(@Nullable Graphics2D g) {
+      return myJBUIScaleDelegate.updateJBUIScale(g);
+    }
+
+    @Override
+    public boolean updateJBUIScale(@Nullable GraphicsConfiguration gc) {
+      return myJBUIScaleDelegate.updateJBUIScale(gc);
     }
 
     @Override
     public boolean needUpdateJBUIScale() {
-      return myCachedJBUIScale != currentJBUIScale();
+      return myJBUIScaleDelegate.needUpdateJBUIScale();
+    }
+
+    @Override
+    public boolean needUpdateJBUIScale(@Nullable Graphics2D g) {
+      return myJBUIScaleDelegate.needUpdateJBUIScale(g);
+    }
+
+    @Override
+    public boolean needUpdateJBUIScale(@Nullable GraphicsConfiguration gc) {
+      return myJBUIScaleDelegate.needUpdateJBUIScale(gc);
+    }
+
+    @Override
+    public float getJBUIScale(ScaleType type) {
+      return myJBUIScaleDelegate.getJBUIScale(type);
     }
   }
 }

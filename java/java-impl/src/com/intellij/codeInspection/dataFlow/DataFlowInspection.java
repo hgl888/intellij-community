@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,23 +18,14 @@ package com.intellij.codeInspection.dataFlow;
 import com.intellij.codeInsight.NullableNotNullDialog;
 import com.intellij.codeInspection.*;
 import com.intellij.codeInspection.nullable.NullableStuffInspection;
-import com.intellij.ide.DataManager;
-import com.intellij.openapi.actionSystem.CommonDataKeys;
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
 import com.intellij.psi.*;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.refactoring.util.RefactoringUtil;
 import com.intellij.util.ui.JBUI;
 import com.siyeh.ig.fixes.IntroduceVariableFix;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import javax.swing.event.ChangeEvent;
-import javax.swing.event.ChangeListener;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.util.List;
 
 public class DataFlowInspection extends DataFlowInspectionBase {
@@ -66,14 +57,13 @@ public class DataFlowInspection extends DataFlowInspectionBase {
   }
 
   @Override
+  protected LocalQuickFix createReplaceWithTrivialLambdaFix(Object value) {
+    return new ReplaceWithTrivialLambdaFix(value);
+  }
+
+  @Override
   protected LocalQuickFix createIntroduceVariableFix(final PsiExpression expression) {
-    return new IntroduceVariableFix(false) {
-      @Nullable
-      @Override
-      public PsiExpression getExpressionToExtract(PsiElement element) {
-        return (PsiExpression)element;
-      }
-    };
+    return new IntroduceVariableFix(true);
   }
 
   @Override
@@ -88,6 +78,8 @@ public class DataFlowInspection extends DataFlowInspectionBase {
     private final JCheckBox myDontReportTrueAsserts;
     private final JCheckBox myTreatUnknownMembersAsNullable;
     private final JCheckBox myReportNullArguments;
+    private final JCheckBox myReportNullableMethodsReturningNotNull;
+    private final JCheckBox myReportUncheckedOptionals;
 
     private OptionsPanel() {
       super(new GridBagLayout());
@@ -101,73 +93,45 @@ public class DataFlowInspection extends DataFlowInspectionBase {
       mySuggestNullables = new JCheckBox(
         InspectionsBundle.message("inspection.data.flow.nullable.quickfix.option"));
       mySuggestNullables.setSelected(SUGGEST_NULLABLE_ANNOTATIONS);
-      mySuggestNullables.getModel().addChangeListener(new ChangeListener() {
-        @Override
-        public void stateChanged(ChangeEvent e) {
-          SUGGEST_NULLABLE_ANNOTATIONS = mySuggestNullables.isSelected();
-        }
-      });
+      mySuggestNullables.getModel().addItemListener(e -> SUGGEST_NULLABLE_ANNOTATIONS = mySuggestNullables.isSelected());
 
       myDontReportTrueAsserts = new JCheckBox(
         InspectionsBundle.message("inspection.data.flow.true.asserts.option"));
       myDontReportTrueAsserts.setSelected(DONT_REPORT_TRUE_ASSERT_STATEMENTS);
-      myDontReportTrueAsserts.getModel().addChangeListener(new ChangeListener() {
-        @Override
-        public void stateChanged(ChangeEvent e) {
-          DONT_REPORT_TRUE_ASSERT_STATEMENTS = myDontReportTrueAsserts.isSelected();
-        }
-      });
+      myDontReportTrueAsserts.getModel().addItemListener(e -> DONT_REPORT_TRUE_ASSERT_STATEMENTS = myDontReportTrueAsserts.isSelected());
       
       myIgnoreAssertions = new JCheckBox("Ignore assert statements");
       myIgnoreAssertions.setSelected(IGNORE_ASSERT_STATEMENTS);
-      myIgnoreAssertions.getModel().addChangeListener(new ChangeListener() {
-        @Override
-        public void stateChanged(ChangeEvent e) {
-          IGNORE_ASSERT_STATEMENTS = myIgnoreAssertions.isSelected();
-        }
-      });
+      myIgnoreAssertions.getModel().addItemListener(e -> IGNORE_ASSERT_STATEMENTS = myIgnoreAssertions.isSelected());
 
       myReportConstantReferences = new JCheckBox("Warn when reading a value guaranteed to be constant");
       myReportConstantReferences.setSelected(REPORT_CONSTANT_REFERENCE_VALUES);
-      myReportConstantReferences.getModel().addChangeListener(new ChangeListener() {
-        @Override
-        public void stateChanged(ChangeEvent e) {
-          REPORT_CONSTANT_REFERENCE_VALUES = myReportConstantReferences.isSelected();
-        }
-      });
+      myReportConstantReferences.getModel().addItemListener(
+        e -> REPORT_CONSTANT_REFERENCE_VALUES = myReportConstantReferences.isSelected());
 
       myTreatUnknownMembersAsNullable = new JCheckBox("Treat non-annotated members and parameters as @Nullable");
       myTreatUnknownMembersAsNullable.setSelected(TREAT_UNKNOWN_MEMBERS_AS_NULLABLE);
-      myTreatUnknownMembersAsNullable.getModel().addChangeListener(new ChangeListener() {
-        @Override
-        public void stateChanged(ChangeEvent e) {
-          TREAT_UNKNOWN_MEMBERS_AS_NULLABLE = myTreatUnknownMembersAsNullable.isSelected();
-        }
-      });
+      myTreatUnknownMembersAsNullable.getModel().addItemListener(
+        e -> TREAT_UNKNOWN_MEMBERS_AS_NULLABLE = myTreatUnknownMembersAsNullable.isSelected());
 
       myReportNullArguments = new JCheckBox("Report not-null required parameter with null-literal argument usages");
       myReportNullArguments.setSelected(REPORT_NULLS_PASSED_TO_NOT_NULL_PARAMETER);
-      myReportNullArguments.getModel().addChangeListener(new ChangeListener() {
-        @Override
-        public void stateChanged(ChangeEvent e) {
-          REPORT_NULLS_PASSED_TO_NOT_NULL_PARAMETER = myReportNullArguments.isSelected();
-        }
-      });
+      myReportNullArguments.getModel().addItemListener(e -> REPORT_NULLS_PASSED_TO_NOT_NULL_PARAMETER = myReportNullArguments.isSelected());
+
+      myReportNullableMethodsReturningNotNull = new JCheckBox("Report nullable methods that always return a non-null value");
+      myReportNullableMethodsReturningNotNull.setSelected(REPORT_NULLABLE_METHODS_RETURNING_NOT_NULL);
+      myReportNullableMethodsReturningNotNull.getModel().addItemListener(
+        e -> REPORT_NULLABLE_METHODS_RETURNING_NOT_NULL = myReportNullableMethodsReturningNotNull.isSelected());
+
+      myReportUncheckedOptionals = new JCheckBox("Report Optional.get() calls without previous isPresent check");
+      myReportUncheckedOptionals.setSelected(REPORT_UNCHECKED_OPTIONALS);
+      myReportUncheckedOptionals.getModel().addItemListener(e -> REPORT_UNCHECKED_OPTIONALS = myReportUncheckedOptionals.isSelected());
 
       gc.insets = JBUI.emptyInsets();
       gc.gridy = 0;
       add(mySuggestNullables, gc);
 
-      final JButton configureAnnotations = new JButton(InspectionsBundle.message("configure.annotations.option"));
-      configureAnnotations.addActionListener(new ActionListener() {
-        @Override
-        public void actionPerformed(ActionEvent e) {
-          Project project = CommonDataKeys.PROJECT.getData(DataManager.getInstance().getDataContext(OptionsPanel.this));
-          if (project == null) project = ProjectManager.getInstance().getDefaultProject();
-          final NullableNotNullDialog dialog = new NullableNotNullDialog(project);
-          dialog.show();
-        }
-      });
+      final JButton configureAnnotations = NullableNotNullDialog.createConfigureAnnotationsButton(this);
       gc.gridy++;
       gc.fill = GridBagConstraints.NONE;
       gc.insets.left = 20;
@@ -191,6 +155,12 @@ public class DataFlowInspection extends DataFlowInspectionBase {
 
       gc.gridy++;
       add(myReportNullArguments, gc);
+
+      gc.gridy++;
+      add(myReportNullableMethodsReturningNotNull, gc);
+
+      gc.gridy++;
+      add(myReportUncheckedOptionals, gc);
     }
   }
 

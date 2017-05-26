@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import com.intellij.execution.configurations.RunnerSettings;
 import com.intellij.execution.runners.ProgramRunner;
 import com.intellij.execution.ui.AdjustingTabSettingsEditor;
 import com.intellij.openapi.options.*;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Pair;
 import com.intellij.ui.ColoredListCellRenderer;
@@ -136,23 +135,13 @@ public class ConfigurationSettingsEditor extends CompositeSettingsEditor<RunnerA
     SettingsEditor<RunnerAndConfigurationSettings> wrappedRunEditor = null;
     if (configEditor != null) {
       wrappedConfigEditor = wrapEditor(configEditor,
-                                       new Convertor<RunnerAndConfigurationSettings, ConfigurationPerRunnerSettings>() {
-                                         @Override
-                                         public ConfigurationPerRunnerSettings convert(RunnerAndConfigurationSettings configurationSettings) {
-                                           return configurationSettings.getConfigurationSettings(runner);
-                                         }
-                                       },
+                                       configurationSettings -> configurationSettings.getConfigurationSettings(runner),
                                        runner);
     }
 
     if (runnerEditor != null) {
       wrappedRunEditor = wrapEditor(runnerEditor,
-                                    new Convertor<RunnerAndConfigurationSettings, RunnerSettings>() {
-                                      @Override
-                                      public RunnerSettings convert(RunnerAndConfigurationSettings configurationSettings) {
-                                        return configurationSettings.getRunnerSettings(runner);
-                                      }
-                                    },
+                                    configurationSettings -> configurationSettings.getRunnerSettings(runner),
                                     runner);
     }
 
@@ -304,12 +293,12 @@ public class ConfigurationSettingsEditor extends CompositeSettingsEditor<RunnerA
     }
 
     @Override
-    public void resetEditorFrom(RunnerAndConfigurationSettings configurationSettings) {
+    public void resetEditorFrom(@NotNull RunnerAndConfigurationSettings configurationSettings) {
       myConfigEditor.resetFrom(configurationSettings.getConfiguration());
     }
 
     @Override
-    public void applyEditorTo(RunnerAndConfigurationSettings configurationSettings) throws ConfigurationException {
+    public void applyEditorTo(@NotNull RunnerAndConfigurationSettings configurationSettings) throws ConfigurationException {
       myConfigEditor.applyTo(configurationSettings.getConfiguration());
     }
 

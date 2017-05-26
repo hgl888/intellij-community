@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,18 +24,16 @@ import com.intellij.openapi.application.Result;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.command.impl.StartMarkAction;
-import com.intellij.openapi.command.undo.UndoUtil;
 import com.intellij.openapi.editor.*;
 import com.intellij.openapi.editor.colors.EditorColors;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.popup.Balloon;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.Ref;
@@ -49,22 +47,16 @@ import com.intellij.refactoring.RefactoringActionHandler;
 import com.intellij.refactoring.listeners.RefactoringEventData;
 import com.intellij.refactoring.listeners.RefactoringEventListener;
 import com.intellij.refactoring.rename.inplace.InplaceRefactoring;
-import com.intellij.ui.DottedBorder;
 import com.intellij.util.ui.PositionTracker;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
-import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
 
-/**
- * User: anna
- * Date: 3/15/11
- */
 public abstract class AbstractInplaceIntroducer<V extends PsiNameIdentifierOwner, E extends PsiElement> extends
                                                                                                         InplaceVariableIntroducer<E> {
   protected V myLocalVariable;
@@ -78,7 +70,7 @@ public abstract class AbstractInplaceIntroducer<V extends PsiNameIdentifierOwner
   private EditorEx myPreview;
   private final JComponent myPreviewComponent;
 
-  private DocumentAdapter myDocumentAdapter;
+  private DocumentListener myDocumentAdapter;
   protected final JPanel myWholePanel;
   protected boolean myFinished = false;
 
@@ -103,28 +95,7 @@ public abstract class AbstractInplaceIntroducer<V extends PsiNameIdentifierOwner
     myExprText = getExpressionText(expr);
     myLocalName = localVariable != null ? localVariable.getName() : null;
 
-    Document document = EditorFactory.getInstance().createDocument("");
-    UndoUtil.disableUndoFor(document);
-    myPreview = (EditorEx)EditorFactory.getInstance().createEditor(document, project, languageFileType, true);
-    myPreview.setOneLineMode(true);
-    final EditorSettings settings = myPreview.getSettings();
-    settings.setAdditionalLinesCount(0);
-    settings.setAdditionalColumnsCount(1);
-    settings.setRightMarginShown(false);
-    settings.setFoldingOutlineShown(false);
-    settings.setLineNumbersShown(false);
-    settings.setLineMarkerAreaShown(false);
-    settings.setIndentGuidesShown(false);
-    settings.setVirtualSpace(false);
-    myPreview.setHorizontalScrollbarVisible(false);
-    myPreview.setVerticalScrollbarVisible(false);
-    myPreview.setCaretEnabled(false);
-    settings.setLineCursorWidth(1);
-
-    final Color bg = myPreview.getColorsScheme().getColor(EditorColors.CARET_ROW_COLOR);
-    myPreview.setBackgroundColor(bg);
-    myPreview.setBorder(BorderFactory.createCompoundBorder(new DottedBorder(Color.gray), new LineBorder(bg, 2)));
-
+    myPreview = createPreviewComponent(project, languageFileType);
     myPreviewComponent = new JPanel(new BorderLayout());
     myPreviewComponent.add(myPreview.getComponent(), BorderLayout.CENTER);
     myPreviewComponent.setBorder(new EmptyBorder(2, 2, 6, 2));
@@ -229,7 +200,7 @@ public abstract class AbstractInplaceIntroducer<V extends PsiNameIdentifierOwner
         started = super.performInplaceRefactoring(nameSuggestions);
         if (started) {
           onRenameTemplateStarted();
-          myDocumentAdapter = new DocumentAdapter() {
+          myDocumentAdapter = new DocumentListener() {
             @Override
             public void documentChanged(DocumentEvent e) {
               if (myPreview == null) return;
@@ -357,10 +328,7 @@ public abstract class AbstractInplaceIntroducer<V extends PsiNameIdentifierOwner
   @Override
   public void finish(boolean success) {
     myFinished = true;
-    final TemplateState templateState = TemplateManagerImpl.getTemplateState(myEditor);
-    if (templateState != null) {
-      myEditor.putUserData(ACTIVE_INTRODUCE, null);
-    }
+    myEditor.putUserData(ACTIVE_INTRODUCE, null);
     if (myDocumentAdapter != null) {
       myEditor.getDocument().removeDocumentListener(myDocumentAdapter);
     }
@@ -404,13 +372,13 @@ public abstract class AbstractInplaceIntroducer<V extends PsiNameIdentifierOwner
     if (isReplaceAllOccurrences()) {
       for (E expression : getOccurrences()) {
         LOG.assertTrue(expression.isValid(), expression.getText());
-        stringUsages.add(Pair.<PsiElement, TextRange>create(expression, new TextRange(0, expression.getTextLength())));
+        stringUsages.add(Pair.create(expression, new TextRange(0, expression.getTextLength())));
       }
     }  else if (getExpr() != null) {
       correctExpression();
       final E expr = getExpr();
       LOG.assertTrue(expr.isValid(), expr.getText());
-      stringUsages.add(Pair.<PsiElement, TextRange>create(expr, new TextRange(0, expr.getTextLength())));
+      stringUsages.add(Pair.create(expr, new TextRange(0, expr.getTextLength())));
     }
 
     final V localVariable = getLocalVariable();
@@ -418,7 +386,7 @@ public abstract class AbstractInplaceIntroducer<V extends PsiNameIdentifierOwner
       final PsiElement nameIdentifier = localVariable.getNameIdentifier();
       if (nameIdentifier != null) {
         int length = nameIdentifier.getTextLength();
-        stringUsages.add(Pair.<PsiElement, TextRange>create(nameIdentifier, new TextRange(0, length)));
+        stringUsages.add(Pair.create(nameIdentifier, new TextRange(0, length)));
       }
     }
   }

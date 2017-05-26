@@ -30,7 +30,7 @@ import java.util.*;
  * @author dsl, ven
  */
 public class DFSTBuilder<Node> {
-  private final Graph<Node> myGraph;
+  private final OutboundSemiGraph<Node> myGraph;
   private final TObjectIntHashMap<Node> myNodeToNNumber; // node -> node number in topological order [0..size). Independent nodes are in reversed loading order (loading order is the graph.getNodes() order)
   private final Node[] myInvN; // node number in topological order [0..size) -> node
   private Couple<Node> myBackEdge;
@@ -42,8 +42,12 @@ public class DFSTBuilder<Node> {
   private final Node[] myInvT; // number in (enumerate all nodes scc by scc) order -> node
   private final Node[] myAllNodes;
 
-  @SuppressWarnings("unchecked")
   public DFSTBuilder(@NotNull Graph<Node> graph) {
+    this((OutboundSemiGraph<Node>)graph);
+  }
+
+  @SuppressWarnings("unchecked")
+  public DFSTBuilder(@NotNull OutboundSemiGraph<Node> graph) {
     myAllNodes = (Node[])graph.getNodes().toArray();
     myGraph = graph;
     int size = graph.getNodes().size();
@@ -251,17 +255,20 @@ public class DFSTBuilder<Node> {
     if (componentSizes.isEmpty()) return Collections.emptyList();
 
     return new MyCollection<Collection<Node>>(componentSizes.size()) {
+      @NotNull
       @Override
       public Iterator<Collection<Node>> iterator() {
         return new MyIterator<Collection<Node>>(componentSizes.size()) {
-          private int offset = 0;
+          private int offset;
 
           @Override
           protected Collection<Node> get(int i) {
-            final int cSize = componentSizes.get(i), cOffset = offset;
+            final int cSize = componentSizes.get(i);
+            final int cOffset = offset;
             if (cSize == 0) return Collections.emptyList();
             offset += cSize;
             return new MyCollection<Node>(cSize) {
+              @NotNull
               @Override
               public Iterator<Node> iterator() {
                 return new MyIterator<Node>(cSize) {
@@ -278,7 +285,7 @@ public class DFSTBuilder<Node> {
     };
   }
 
-  private static abstract class MyCollection<T> extends AbstractCollection<T> {
+  private abstract static class MyCollection<T> extends AbstractCollection<T> {
     private final int size;
 
     protected MyCollection(int size) {
@@ -291,9 +298,9 @@ public class DFSTBuilder<Node> {
     }
   }
 
-  private static abstract class MyIterator<T> implements Iterator<T> {
+  private abstract static class MyIterator<T> implements Iterator<T> {
     private final int size;
-    private int i = 0;
+    private int i;
 
     protected MyIterator(int size) {
       this.size = size;

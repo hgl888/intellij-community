@@ -55,9 +55,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-/**
- * User: catherine
- */
 public class PyPIPackageUtil {
   private static final Logger LOG = Logger.getInstance(PyPIPackageUtil.class);
   private static final Gson GSON = new GsonBuilder().create();
@@ -487,27 +484,27 @@ public class PyPIPackageUtil {
       
       @NotNull
       public String getVersion() {
-        return version;
+        return StringUtil.notNullize(version);
       }
 
       @NotNull
       public String getAuthor() {
-        return author;
+        return StringUtil.notNullize(author);
       }
 
       @NotNull
       public String getAuthorEmail() {
-        return authorEmail;
+        return StringUtil.notNullize(authorEmail);
       }
 
       @NotNull
       public String getHomePage() {
-        return homePage;
+        return StringUtil.notNullize(homePage);
       }
 
       @NotNull
       public String getSummary() {
-        return summary;
+        return StringUtil.notNullize(summary);
       }
     }
 

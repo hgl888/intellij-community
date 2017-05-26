@@ -89,11 +89,7 @@ class TaskItemProvider implements ChooseByNameItemProvider, Disposable {
         }
         catch (TimeoutException ignore) {
         }
-        if (base.hasPostponedAction()) {
-            future.cancel(true);
-            return true;
-          }
-        }
+      }
       myFutureReference.compareAndSet(future, null);
 
       // Exclude *all* cached and local issues, not only those returned by TaskSearchSupport.getLocalAndCachedTasks().
@@ -152,17 +148,13 @@ class TaskItemProvider implements ChooseByNameItemProvider, Disposable {
       limit = GotoTaskAction.PAGE_SIZE;
       myCurrentOffset += GotoTaskAction.PAGE_SIZE;
     }
-    List<Task> tasks = TaskSearchSupport.getRepositoriesTasks(TaskManager.getManager(myProject),
-                                                              pattern, offset, limit, true, everywhere, cancelled);
+    List<Task> tasks = TaskSearchSupport.getRepositoriesTasks(myProject, pattern, offset, limit, true, everywhere, cancelled);
     myOldEverywhere = everywhere;
     myOldPattern = pattern;
     return tasks;
   }
 
   private boolean processTasks(List<Task> tasks, Processor<Object> consumer, ProgressIndicator cancelled) {
-    if (!tasks.isEmpty() && !consumer.process(ChooseByNameBase.NON_PREFIX_SEPARATOR)) {
-      return false;
-    }
     PsiManager psiManager = PsiManager.getInstance(myProject);
     for (Task task : tasks) {
       cancelled.checkCanceled();

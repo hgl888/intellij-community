@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.jetbrains.plugins.groovy.transformations;
 
+import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.light.LightMethodBuilder;
 import com.intellij.psi.impl.light.LightPsiClassBuilder;
@@ -42,7 +43,12 @@ import static org.jetbrains.plugins.groovy.lang.psi.util.GrClassImplUtil.expandR
 
 public class TransformationContextImpl implements TransformationContext {
 
+  private final @NotNull Project myProject;
+  private final @NotNull PsiManager myPsiManager;
+  private final @NotNull JavaPsiFacade myPsiFacade;
   private final @NotNull GrTypeDefinition myCodeClass;
+  private final @NotNull PsiClassType myClassType;
+
   private final LinkedList<PsiMethod> myMethods = ContainerUtil.newLinkedList();
   private final Collection<GrField> myFields = ContainerUtil.newArrayList();
   private final Collection<PsiClass> myInnerClasses = ContainerUtil.newArrayList();
@@ -60,12 +66,35 @@ public class TransformationContextImpl implements TransformationContext {
   });
 
   public TransformationContextImpl(@NotNull GrTypeDefinition codeClass) {
+    myProject = codeClass.getProject();
+    myPsiManager = codeClass.getManager();
+    myPsiFacade = JavaPsiFacade.getInstance(myProject);
     myCodeClass = codeClass;
+    myClassType = getPsiFacade().getElementFactory().createType(getCodeClass());
+
     ContainerUtil.addAll(myFields, codeClass.getCodeFields());
     ContainerUtil.addAll(myMethods, flatten(map(codeClass.getCodeMethods(), m -> expandReflectedMethods(m))));
     ContainerUtil.addAll(myInnerClasses, codeClass.getCodeInnerClasses());
     ContainerUtil.addAll(myImplementsTypes, GrClassImplUtil.getReferenceListTypes(codeClass.getImplementsClause()));
     ContainerUtil.addAll(myExtendsTypes, GrClassImplUtil.getReferenceListTypes(codeClass.getExtendsClause()));
+  }
+
+  @NotNull
+  @Override
+  public Project getProject() {
+    return myProject;
+  }
+
+  @NotNull
+  @Override
+  public PsiManager getManager() {
+    return myPsiManager;
+  }
+
+  @NotNull
+  @Override
+  public JavaPsiFacade getPsiFacade() {
+    return myPsiFacade;
   }
 
   @Override
@@ -74,10 +103,35 @@ public class TransformationContextImpl implements TransformationContext {
     return myCodeClass;
   }
 
+  @NotNull
+  @Override
+  public PsiClassType getClassType() {
+    return myClassType;
+  }
+
   @Override
   @NotNull
   public Collection<GrField> getFields() {
     return myFields;
+  }
+
+  @NotNull
+  @Override
+  public Collection<PsiField> getAllFields(boolean includeSynthetic) {
+    if (!includeSynthetic) {
+      return Arrays.asList(GrClassImplUtil.getAllFields(getCodeClass(), false));
+    }
+
+    Set<PsiField> fields = ContainerUtil.newHashSet(myFields);
+    ArrayList<PsiClassType> superTypes = ContainerUtil.newArrayList(myExtendsTypes);
+    superTypes.addAll(myImplementsTypes);
+    for (PsiClassType type: superTypes) {
+      PsiClass psiClass = type.resolve();
+      if (psiClass != null) {
+        fields.addAll(Arrays.asList(psiClass.getAllFields()));
+      }
+    }
+    return fields;
   }
 
   @NotNull

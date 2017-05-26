@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,18 +49,19 @@ public class CaretVisualPositionKeeper {
     }
   }
 
-  public void restoreOriginalLocation() {
+  public void restoreOriginalLocation(boolean stopAnimation) {
     for (Map.Entry<Editor, Integer> e : myCaretRelativeVerticalPositions.entrySet()) {
       Editor editor = e.getKey();
       int relativePosition = e.getValue();
       Point caretLocation = editor.visualPositionToXY(editor.getCaretModel().getVisualPosition());
       int scrollOffset = caretLocation.y - relativePosition;
       ScrollingModel scrollingModel = editor.getScrollingModel();
+      Rectangle targetArea = scrollingModel.getVisibleAreaOnScrollingFinished();
       // when animated scrolling is in progress, we'll not stop it immediately
-      boolean useAnimation = !scrollingModel.getVisibleAreaOnScrollingFinished().equals(scrollingModel.getVisibleArea());
-      if (!useAnimation) scrollingModel.disableAnimation();
-      scrollingModel.scrollVertically(scrollOffset);
-      if (!useAnimation) scrollingModel.enableAnimation();
+      boolean disableAnimation = targetArea.equals(scrollingModel.getVisibleArea()) || stopAnimation;
+      if (disableAnimation) scrollingModel.disableAnimation();
+      scrollingModel.scroll(targetArea.x, scrollOffset);
+      if (disableAnimation) scrollingModel.enableAnimation();
     }
   }
 }

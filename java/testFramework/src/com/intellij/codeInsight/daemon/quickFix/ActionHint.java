@@ -16,6 +16,9 @@
 package com.intellij.codeInsight.daemon.quickFix;
 
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInsight.intention.IntentionActionDelegate;
+import com.intellij.codeInspection.ProblemHighlightType;
+import com.intellij.codeInspection.ex.QuickFixWrapper;
 import com.intellij.lang.Commenter;
 import com.intellij.lang.LanguageCommenters;
 import com.intellij.lang.injection.InjectedLanguageManager;
@@ -38,12 +41,14 @@ import static org.junit.Assert.fail;
  * @author Tagir Valeev
  */
 public class ActionHint {
-  final String myExpectedText;
-  final boolean myShouldPresent;
+  private final String myExpectedText;
+  private final boolean myShouldPresent;
+  private final ProblemHighlightType myHighlightType;
 
-  private ActionHint(String expectedText, boolean shouldPresent) {
+  private ActionHint(String expectedText, boolean shouldPresent, ProblemHighlightType severity) {
     myExpectedText = expectedText;
     myShouldPresent = shouldPresent;
+    myHighlightType = severity;
   }
 
   /**
@@ -63,6 +68,7 @@ public class ActionHint {
    * @return true if this ActionHint checks that some action should be present
    * or false if it checks that some action should be absent
    */
+  @SuppressWarnings("WeakerAccess") // used in kotlin
   public boolean shouldPresent() {
     return myShouldPresent;
   }
@@ -79,11 +85,27 @@ public class ActionHint {
   @Nullable
   public IntentionAction findAndCheck(Collection<IntentionAction> actions, Supplier<String> infoSupplier) {
     IntentionAction result = actions.stream().filter(t -> t.getText().equals(myExpectedText)).findFirst().orElse(null);
-    if(result == null && myShouldPresent) {
-      fail("Action with text '" + myExpectedText + "' not found\nAvailable actions: " +
-           actions.stream().map(IntentionAction::getText).collect(Collectors.joining(", ", "[", "]\n")) +
-           infoSupplier.get());
-    } else if(result != null && !myShouldPresent) {
+    if(myShouldPresent) {
+      if(result == null) {
+        fail("Action with text '" + myExpectedText + "' not found\nAvailable actions: " +
+             actions.stream().map(IntentionAction::getText).collect(Collectors.joining(", ", "[", "]\n")) +
+             infoSupplier.get());
+      }
+      else if(myHighlightType != null) {
+        if (result instanceof IntentionActionDelegate) result = ((IntentionActionDelegate)result).getDelegate();
+        if(!(result instanceof QuickFixWrapper)) {
+          fail("Action with text '" + myExpectedText + "' is not a LocalQuickFix, but " + result.getClass().getName() +
+               "\nExpected LocalQuickFix with ProblemHighlightType=" + myHighlightType + "\n" +
+               infoSupplier.get());
+        }
+        ProblemHighlightType actualType = ((QuickFixWrapper)result).getHighlightType();
+        if(actualType != myHighlightType) {
+          fail("Action with text '" + myExpectedText + "' has wrong ProblemHighlightType.\nExpected: " + myHighlightType +
+               "\nActual: " + actualType + "\n" + infoSupplier.get());
+        }
+      }
+    }
+    else if(result != null) {
       fail("Action with text '" + myExpectedText + "' is present, but should not\n" + infoSupplier.get());
     }
     return result;
@@ -93,8 +115,13 @@ public class ActionHint {
    * Parse given file with given contents extracting ActionHint of it.
    * <p>
    * Currently the following syntax is supported:
-   * // "quick-fix name or intention text" "true|false"
-   * (replace // with line comment prefix in the corresponding language if necessary)
+   * </p>
+   * {@code // "quick-fix name or intention text" "true|false|<ProblemHighlightType>"}
+   * <p>
+   * (replace // with line comment prefix in the corresponding language if necessary).
+   * If {@link ProblemHighlightType} enum value is specified instead of true/false
+   * (e.g. {@code "INFORMATION"}), then
+   * it's expected that the action is present and it's a quick-fix with given highlight type.
    * </p>
    *
    * @param file PsiFile associated with contents (used to determine the language)
@@ -114,11 +141,14 @@ public class ActionHint {
 
     assert comment != null : commenter;
     // "quick fix action text to perform" "should be available"
-    Pattern pattern = Pattern.compile("^" + Pattern.quote(comment) + " \"(.*)\" \"(true|false)\".*", Pattern.DOTALL);
+    Pattern pattern = Pattern.compile("^" + Pattern.quote(comment) + " \"(.*)\" \"(\\w+)\".*", Pattern.DOTALL);
     Matcher matcher = pattern.matcher(contents);
     TestCase.assertTrue("No comment found in " + file.getVirtualFile(), matcher.matches());
     final String text = matcher.group(1);
-    final boolean actionShouldBeAvailable = Boolean.parseBoolean(matcher.group(2));
-    return new ActionHint(text, actionShouldBeAvailable);
+    String state = matcher.group(2);
+    if(state.equals("true") || state.equals("false")) {
+      return new ActionHint(text, Boolean.parseBoolean(state), null);
+    }
+    return new ActionHint(text, true, ProblemHighlightType.valueOf(state));
   }
 }

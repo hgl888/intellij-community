@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,6 @@ import com.intellij.openapi.editor.markup.GutterIconRenderer;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.wm.ToolWindowId;
 import com.intellij.ui.AppUIUtil;
@@ -73,6 +72,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -401,7 +401,7 @@ public class XDebugSessionImpl implements XDebugSession {
   private <B extends XBreakpoint<?>> void handleBreakpoint(final XBreakpointHandler<B> handler, final B b, final boolean register,
                                                            final boolean temporary) {
     if (register) {
-      boolean active = ApplicationManager.getApplication().runReadAction((Computable<Boolean>)() -> isBreakpointActive(b));
+      boolean active = ReadAction.compute(() -> isBreakpointActive(b));
       if (active) {
         synchronized (myRegisteredBreakpoints) {
           myRegisteredBreakpoints.put(b, new CustomizedBreakpointPresentation());
@@ -506,8 +506,8 @@ public class XDebugSessionImpl implements XDebugSession {
   public <V extends XSmartStepIntoVariant> void smartStepInto(XSmartStepIntoHandler<V> handler, V variant) {
     if (!myDebugProcess.checkCanPerformCommands()) return;
 
-    doResume();
-    handler.startStepInto(variant);
+    final XSuspendContext context = doResume();
+    handler.startStepInto(variant, context);
   }
 
   @Override
@@ -785,20 +785,21 @@ public class XDebugSessionImpl implements XDebugSession {
 
     updateExecutionPosition();
 
-    if (myShowTabOnSuspend.compareAndSet(true, false)) {
+    final boolean showOnSuspend = myShowTabOnSuspend.compareAndSet(true, false);
+    if (showOnSuspend || attract) {
       AppUIUtil.invokeLaterIfProjectAlive(myProject, () -> {
-        initSessionTab(null);
-        showSessionTab();
-      });
-    }
+        if (showOnSuspend) {
+          initSessionTab(null);
+          showSessionTab();
+        }
 
-    myDispatcher.getMulticaster().sessionPaused();
-
-    // user attractions should only be made if event happens independently (e.g. program paused/suspended)
-    // and should not be made when user steps in the code
-    if (attract) {
-      UIUtil.invokeLaterIfNeeded(() -> {
-        if (mySessionTab != null) {
+        // user attractions should only be made if event happens independently (e.g. program paused/suspended)
+        // and should not be made when user steps in the code
+        if (attract) {
+          if (mySessionTab == null) {
+            LOG.debug("Cannot request focus because Session Tab is not initialized yet");
+            return;
+          }
 
           if (XDebuggerSettingManagerImpl.getInstanceImpl().getGeneralSettings().isShowDebuggerOnBreakpoint()) {
             mySessionTab.toFront(true, this::updateExecutionPosition);
@@ -814,6 +815,8 @@ public class XDebugSessionImpl implements XDebugSession {
         }
       });
     }
+
+    myDispatcher.getMulticaster().sessionPaused();
   }
 
   @Override
@@ -872,8 +875,10 @@ public class XDebugSessionImpl implements XDebugSession {
         }
 
         if (mySessionTab != null) {
-          ((XWatchesViewImpl)mySessionTab.getWatchesView()).updateSessionData();
-          mySessionTab.detachFromSession();
+          AppUIUtil.invokeOnEdt(() -> {
+            ((XWatchesViewImpl)mySessionTab.getWatchesView()).updateSessionData();
+            mySessionTab.detachFromSession();
+          });
         }
         else if (myConsoleView != null) {
           AppUIUtil.invokeOnEdt(() -> Disposer.dispose(myConsoleView));
@@ -894,6 +899,8 @@ public class XDebugSessionImpl implements XDebugSession {
         }
         myDebuggerManager.removeSession(this);
         myDispatcher.getMulticaster().sessionStopped();
+        myDispatcher.getListeners().clear();
+
         myProject.putUserData(XDebuggerEditorLinePainter.CACHE, null);
 
         synchronized (myRegisteredBreakpoints) {
@@ -932,7 +939,11 @@ public class XDebugSessionImpl implements XDebugSession {
 
   @Override
   public void reportMessage(@NotNull final String message, @NotNull final MessageType type, @Nullable final HyperlinkListener listener) {
-    NotificationListener notificationListener = listener == null ? null : (notification, event) -> listener.hyperlinkUpdate(event);
+    NotificationListener notificationListener = listener == null ? null : (notification, event) -> {
+      if (event.getEventType() == HyperlinkEvent.EventType.ACTIVATED) {
+        listener.hyperlinkUpdate(event);
+      }
+    };
     NOTIFICATION_GROUP.createNotification("", message, type.toNotificationType(), notificationListener).notify(myProject);
   }
 

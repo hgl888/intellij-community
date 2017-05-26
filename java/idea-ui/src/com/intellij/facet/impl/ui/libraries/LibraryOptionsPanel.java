@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,6 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.Result;
 import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.DumbModePermission;
-import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.roots.OrderRootType;
@@ -291,7 +289,7 @@ public class LibraryOptionsPanel implements Disposable {
     });
     myConfigureButton.addActionListener(new ActionListener() {
       public void actionPerformed(final ActionEvent e) {
-        DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, () -> doConfigure());
+        doConfigure();
       }
     });
     updateState();
@@ -399,8 +397,11 @@ public class LibraryOptionsPanel implements Disposable {
     String path = mySettings.getBaseDirectoryPath();
     VirtualFile dir = LocalFileSystem.getInstance().findFileByPath(path);
     if (dir == null) {
-      path = path.substring(0, path.lastIndexOf('/'));
-      dir = LocalFileSystem.getInstance().findFileByPath(path);
+      int index = path.lastIndexOf('/');
+      if (index >= 0) {
+        path = path.substring(0, index);
+        dir = LocalFileSystem.getInstance().findFileByPath(path);
+      }
     }
     return dir;
   }

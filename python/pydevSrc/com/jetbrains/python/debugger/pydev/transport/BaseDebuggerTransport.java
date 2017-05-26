@@ -30,16 +30,17 @@ public abstract class BaseDebuggerTransport implements DebuggerTransport {
       return sendMessageImpl(packed);
     }
     catch (SocketException se) {
-      myDebugger.disconnect();
-      myDebugger.fireCommunicationError();
+      onSocketException();
     }
     catch (IOException e) {
-      LOG.error(e);
+      LOG.debug(e);
     }
     return false;
   }
 
   protected abstract boolean sendMessageImpl(byte[] packed) throws IOException;
+
+  protected abstract void onSocketException();
 
   public static void logFrame(ProtocolFrame frame, boolean out) {
     if (LOG.isDebugEnabled()) {

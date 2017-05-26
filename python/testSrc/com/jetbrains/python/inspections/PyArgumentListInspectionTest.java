@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -198,10 +198,6 @@ public class PyArgumentListInspectionTest extends PyTestCase {
     doTest();
   }
 
-  public void testUnionTypeAttributeCall() {
-    doTest();
-  }
-
   // PY-18275
   public void testStrFormat() {
     doTest();
@@ -215,6 +211,86 @@ public class PyArgumentListInspectionTest extends PyTestCase {
   // PY-19522
   public void testCsvRegisterDialect() {
     doMultiFileTest();
+  }
+
+  // PY-21083
+  public void testFloatFromhex() {
+    doTest();
+  }
+
+  public void testMultiResolveWhenOneResultIsDecoratedFunction() {
+    doTest();
+  }
+
+  public void testMultiResolveWhenOneResultIsDunderInitInDecoratedClass() {
+    // Implement after fixing PY-20057
+  }
+
+  public void testMultiResolveWhenOneResultDoesNotHaveUnmappedArguments() {
+    doTest();
+  }
+
+  public void testMultiResolveWhenOneResultDoesNotHaveUnmappedParameters() {
+    doTest();
+  }
+
+  public void testMultiResolveWhenAllResultsHaveUnmappedArguments() {
+    doTest();
+  }
+
+  public void testMultiResolveWhenAllResultsHaveUnmappedParameters() {
+    doTest();
+  }
+
+  public void testUnfilledSentinelInBuiltinIter() {
+    doTest();
+  }
+
+  public void testUnfilledDefaultInBuiltinNext() {
+    doTest();
+  }
+
+  public void testUnfilledIter4InBuiltinZip() {
+    doTest();
+  }
+
+  public void testUnfilledIter2InBuiltinMap() {
+    doTest();
+  }
+
+  // PY-22507
+  public void testTimetupleOnAssertedDate() {
+    doMultiFileTest();
+  }
+
+  // PY-23069
+  public void testDunderNewCallInDictInheritor() {
+    doTest();
+  }
+
+  // PY-22767
+  public void testBuiltinZip() {
+    doTest();
+  }
+
+  // PY-22971
+  public void testOverloadsAndImplementationInClass() {
+    runWithLanguageLevel(LanguageLevel.PYTHON35, this::doTest);
+  }
+
+  // PY-22971
+  public void testTopLevelOverloadsAndImplementation() {
+    runWithLanguageLevel(LanguageLevel.PYTHON35, this::doTest);
+  }
+
+  // PY-22971
+  public void testOverloadsAndImplementationInImportedClass() {
+    runWithLanguageLevel(LanguageLevel.PYTHON35, this::doMultiFileTest);
+  }
+
+  // PY-22971
+  public void testOverloadsAndImplementationInImportedModule() {
+    runWithLanguageLevel(LanguageLevel.PYTHON35, this::doMultiFileTest);
   }
 
   private void doMultiFileTest() {

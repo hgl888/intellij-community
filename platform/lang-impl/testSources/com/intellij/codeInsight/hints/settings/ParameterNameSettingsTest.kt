@@ -20,14 +20,15 @@ import com.intellij.codeInsight.hints.InlayParameterHintsProvider
 import com.intellij.openapi.fileTypes.PlainTextLanguage
 import com.intellij.psi.PsiElement
 import junit.framework.TestCase
+import org.jdom.Element
+import org.jdom.input.SAXBuilder
+import java.io.StringReader
 
 
-class MockInlayProvider(override val defaultBlackList: Set<String>): InlayParameterHintsProvider {
-
+class MockInlayProvider(private val defaultBlackList: Set<String>): InlayParameterHintsProvider {
   override fun getParameterHints(element: PsiElement) = emptyList<InlayInfo>()
-
-  override fun getMethodInfo(element: PsiElement) = null
-  
+  override fun getHintInfo(element: PsiElement) = null
+  override fun getDefaultBlackList() = defaultBlackList
 }
 
 
@@ -75,6 +76,18 @@ class ParameterNameSettingsTest : TestCase() {
     assert(ignoreSet.contains("xxx"))
   }
 
+  fun `test if empty element is passed settings are dropped`() {
+    addIgnorePattern("new_ignore_pattern")
+
+    var ignoreSet = getIgnoreSet()
+    assert(ignoreSet.size == 1)
+
+    settings.loadState(Element("element"))
+
+    ignoreSet = getIgnoreSet()
+    assert(ignoreSet.isEmpty())
+  }
+
   fun `test removed pattern is removed when defaults are updated`() {
     defaultSettingsUpdated("aaa", "bbb")
 
@@ -107,6 +120,48 @@ class ParameterNameSettingsTest : TestCase() {
     assert(ignoreSet.contains("aaa"))
     assert(ignoreSet.contains("bbb"))
     assert(ignoreSet.contains("xxx"))
+  }
+
+  fun `test state is preserved between restarts`() {
+    val added = setOf("added")
+    val removed = setOf("removed")
+    
+    settings.setBlackListDiff(PlainTextLanguage.INSTANCE, Diff(added, removed))
+    
+    val state = settings.state
+    settings.loadState(state)
+
+    val diff = settings.getBlackListDiff(PlainTextLanguage.INSTANCE)
+    assert(diff.added.contains("added"))
+    assert(diff.added.size == 1)
+    
+    assert(diff.removed.contains("removed"))
+    assert(diff.removed.size == 1)
+  }
+
+  fun `test state is correctly loaded from incorrect model`() {
+    val text = """
+<settings>
+  <blacklists>
+    <blacklist language="Plain text">
+      <removed pattern="removed" />
+    </blacklist>
+    <blacklist language="Plain text">
+      <added pattern="added" />
+    </blacklist>
+  </blacklists>
+</settings>
+"""
+    
+    val root = SAXBuilder().build(StringReader(text)).rootElement
+    settings.loadState(root)
+    
+    val diff = settings.getBlackListDiff(PlainTextLanguage.INSTANCE)
+    assert(diff.added.contains("added"))
+    assert(diff.added.size == 1)
+    
+    assert(diff.removed.contains("removed"))
+    assert(diff.removed.size == 1)
   }
   
 }

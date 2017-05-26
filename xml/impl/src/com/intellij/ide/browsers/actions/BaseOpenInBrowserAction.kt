@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,6 @@ import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vcs.vfs.ContentRevisionVirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.components.JBList
@@ -52,12 +51,10 @@ private val LOG = Logger.getInstance(BaseOpenInBrowserAction::class.java)
 
 abstract class BaseOpenInBrowserAction : DumbAwareAction {
   @Suppress("unused")
-  protected constructor(browser: WebBrowser) : super(browser.name, null, browser.icon) {
-  }
+  protected constructor(browser: WebBrowser) : super(browser.name, null, browser.icon)
 
   @Suppress("unused")
-  protected constructor(text: String?, description: String?, icon: Icon?) : super(text, description, icon) {
-  }
+  protected constructor(text: String?, description: String?, icon: Icon?) : super(text, description, icon)
 
   companion object {
     @JvmStatic
@@ -83,7 +80,7 @@ abstract class BaseOpenInBrowserAction : DumbAwareAction {
           chooseUrl(urls)
               .done { url ->
                 ApplicationManager.getApplication().saveAll()
-                BrowserLauncher.getInstance().browse(url.toExternalForm(), browser, request.project)
+                BrowserLauncher.instance.browse(url.toExternalForm(), browser, request.project)
               }
         }
       }
@@ -112,7 +109,7 @@ abstract class BaseOpenInBrowserAction : DumbAwareAction {
       val builder = StringBuilder(description)
       builder.append(" (")
       val shortcuts = KeymapManager.getInstance().activeKeymap.getShortcuts("WebOpenInAction")
-      val exists = shortcuts.size > 0
+      val exists = shortcuts.isNotEmpty()
       if (exists) {
         builder.append(KeymapUtil.getShortcutText(shortcuts[0]))
       }
@@ -141,13 +138,11 @@ private fun createRequest(context: DataContext): OpenInBrowserRequest? {
     if (project != null && project.isInitialized) {
       val psiFile = CommonDataKeys.PSI_FILE.getData(context) ?: PsiDocumentManager.getInstance(project).getPsiFile(editor.document)
       if (psiFile != null && psiFile.virtualFile !is ContentRevisionVirtualFile) {
-        return object : OpenInBrowserRequest() {
-          override val file: PsiFile = psiFile
-
+        return object : OpenInBrowserRequest(psiFile) {
           private val _element by lazy { file.findElementAt(editor.caretModel.offset) }
 
           override val element: PsiElement
-              get() = _element ?: file
+            get() = _element ?: file
         }
       }
     }

@@ -18,7 +18,6 @@ package org.jetbrains.idea.maven.dom.converters;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.RecursionManager;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
@@ -87,7 +86,7 @@ public abstract class MavenArtifactCoordinatesConverter extends ResolvingConvert
 
   @Override
   public String getErrorMessage(@Nullable String s, ConvertContext context) {
-    return selectStrategy(context).getContextName() + " '''" + MavenArtifactCoordinatesHelper.getId(context) + "''' not found";
+    return selectStrategy(context).getContextName() + " '" + MavenArtifactCoordinatesHelper.getId(context) + "' not found";
   }
 
   @Override
@@ -164,6 +163,11 @@ public abstract class MavenArtifactCoordinatesConverter extends ResolvingConvert
     @NotNull
     public String getName() {
       return MavenDomBundle.message("fix.update.indices");
+    }
+
+    @Override
+    public boolean startInWriteAction() {
+      return false;
     }
 
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {

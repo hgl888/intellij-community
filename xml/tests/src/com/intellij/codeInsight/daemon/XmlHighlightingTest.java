@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1624,12 +1624,19 @@ public class XmlHighlightingTest extends DaemonAnalyzerTestCase {
       BASE_PATH +testName +"-inc.xml",
       BASE_PATH +testName +"TestSchema.xsd"
     );
-    ApplicationManager.getApplication().runWriteAction(() -> ExternalResourceManagerEx.getInstanceEx().addIgnoredResource("oxf:/apps/somefile.xml"));
 
-    doDoTest(true, false, true);
+    ExternalResourceManagerEx externalResourceManager = ExternalResourceManagerEx.getInstanceEx();
+    try {
+      ApplicationManager.getApplication().runWriteAction(() -> externalResourceManager.addIgnoredResource("oxf:/apps/somefile.xml"));
 
-    VirtualFile[] includedFiles = FileIncludeManager.getManager(getProject()).getIncludedFiles(getFile().getVirtualFile(), true);
-    assertEquals(1, includedFiles.length);
+      doDoTest(true, false, true);
+
+      VirtualFile[] includedFiles = FileIncludeManager.getManager(getProject()).getIncludedFiles(getFile().getVirtualFile(), true);
+      assertEquals(1, includedFiles.length);
+    }
+    finally {
+      ApplicationManager.getApplication().runWriteAction(() -> externalResourceManager.removeIgnoredResource("oxf:/apps/somefile.xml"));
+    }
   }
 
   public void testComplexRedefine() throws Exception {
@@ -2066,6 +2073,83 @@ public class XmlHighlightingTest extends DaemonAnalyzerTestCase {
     doDoTest(true, false);
   }
 
+  public void testLinksInAttrValuesAndComments() throws Exception {
+    configureByFile(BASE_PATH +getTestName(false) + ".xml");
+    doDoTest(true, false);
+
+    List<WebReference> list = PlatformTestUtil.collectWebReferences(myFile);
+    assertEquals(2, list.size());
+
+    Collections.sort(list, (o1, o2) -> o1.getCanonicalText().length() - o2.getCanonicalText().length());
+
+    assertEquals("https://www.jetbrains.com/ruby/download", list.get(0).getCanonicalText());
+    assertTrue(list.get(0).getElement() instanceof  XmlAttributeValue);
+    assertEquals("http://blog.jetbrains.com/ruby/2012/04/rubymine-4-0-3-update-is-available/", list.get(1).getCanonicalText());
+    assertTrue(list.get(1).getElement() instanceof  XmlComment);
+  }
+
+  public void testBillionLaughs() {
+    configureByFiles(null, BASE_PATH + "BillionLaughs.xml");
+    XmlFile file = (XmlFile)getFile();
+    int[] count = new int[] {0};
+    XmlUtil.processXmlElements(file.getRootTag(), element -> {
+      count[0]++;
+      return true;}, false);
+    assertEquals(9, count[0]);
+  }
+
+  public void testBillionLaughsValidation() throws Exception {
+    configureByFiles(null, BASE_PATH + "BillionLaughs.xml");
+    doDoTest(true, false);
+  }
+
+  public void testTheSameElement() throws Exception {
+    doTest(
+      new VirtualFile[] {
+        getVirtualFile(BASE_PATH + "TheSameElement/IntelliJPersonData.xml"),
+        getVirtualFile(BASE_PATH + "TheSameElement/IntellijCalTech.xsd"),
+        getVirtualFile(BASE_PATH + "TheSameElement/IntelliJMeldeamt.xsd")
+      },
+      true,
+      false
+    );
+  }
+
+  public void testTheSameTypeName() throws Exception {
+    doTest(
+      new VirtualFile[] {
+        getVirtualFile(BASE_PATH + "TheSameTypeName/test2.xml"),
+        getVirtualFile(BASE_PATH + "TheSameTypeName/test-common-xsd1.xsd"),
+        getVirtualFile(BASE_PATH + "TheSameTypeName/test-common-xsd2.xsd"),
+        getVirtualFile(BASE_PATH + "TheSameTypeName/test-xsd1.xsd"),
+        getVirtualFile(BASE_PATH + "TheSameTypeName/test-xsd2.xsd"),
+      },
+      true,
+      false
+    );
+  }
+
+  public void testRedefine() throws Exception {
+    doTest(
+      new VirtualFile[] {
+        getVirtualFile(BASE_PATH + "Redefine/derived.xsd"),
+        getVirtualFile(BASE_PATH + "Redefine/base.xsd"),
+      },
+      true, false
+    );
+  }
+
+  public void testRedefine2() throws Exception {
+    doTest(
+      new VirtualFile[] {
+        getVirtualFile(BASE_PATH + "Redefine/sample.xml"),
+        getVirtualFile(BASE_PATH + "Redefine/derived.xsd"),
+        getVirtualFile(BASE_PATH + "Redefine/base.xsd"),
+      },
+      true, false
+    );
+  }
+
   @Override
   protected void setUp() throws Exception {
     super.setUp();
@@ -2142,20 +2226,5 @@ public class XmlHighlightingTest extends DaemonAnalyzerTestCase {
   protected void tearDown() throws Exception {
     XmlSettings.getInstance().SHOW_XML_ADD_IMPORT_HINTS = old;
     super.tearDown();
-  }
-
-  public void testLinksInAttrValuesAndComments() throws Exception {
-    configureByFile(BASE_PATH +getTestName(false) + ".xml");
-    doDoTest(true, false);
-
-    List<WebReference> list = PlatformTestUtil.collectWebReferences(myFile);
-    assertEquals(2, list.size());
-
-    Collections.sort(list, (o1, o2) -> o1.getCanonicalText().length() - o2.getCanonicalText().length());
-
-    assertEquals("https://www.jetbrains.com/ruby/download", list.get(0).getCanonicalText());
-    assertTrue(list.get(0).getElement() instanceof  XmlAttributeValue);
-    assertEquals("http://blog.jetbrains.com/ruby/2012/04/rubymine-4-0-3-update-is-available/", list.get(1).getCanonicalText());
-    assertTrue(list.get(1).getElement() instanceof  XmlComment);
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package com.intellij.codeInspection;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
@@ -51,9 +50,9 @@ public class AnonymousHasLambdaAlternativeInspection extends BaseJavaBatchLocalI
 
   private static AnonymousLambdaAlternative[] ALTERNATIVES = {
     new AnonymousLambdaAlternative("java.lang.ThreadLocal", "initialValue", "java.lang.ThreadLocal.withInitial($lambda$)",
-                                   "ThreadLocal.withInitial"),
+                                   "ThreadLocal.withInitial()"),
     new AnonymousLambdaAlternative("java.lang.Thread", "run", "new java.lang.Thread($lambda$)",
-                                   "constructor accepting lambda")
+                                   "new Thread(() -> {…})")
   };
   
   @NotNull
@@ -107,7 +106,7 @@ public class AnonymousHasLambdaAlternativeInspection extends BaseJavaBatchLocalI
     @NotNull
     @Override
     public String getName() {
-      return "Replace anonymous class with "+myAlternative.myReplacementMessage;
+      return "Replace with "+myAlternative.myReplacementMessage;
     }
 
     @Nls
@@ -127,7 +126,6 @@ public class AnonymousHasLambdaAlternativeInspection extends BaseJavaBatchLocalI
       if(methods.length != 1) return;
       PsiMethod method = methods[0];
       if(method.getBody() == null) return;
-      if (!FileModificationService.getInstance().preparePsiElementForWrite(element)) return;
       UnaryOperator<PsiLambdaExpression> replacer = lambda -> {
         PsiElementFactory factory = JavaPsiFacade.getElementFactory(project);
         PsiElement replacement = element.replace(factory.createExpressionFromText(myAlternative.myLambdaAlternative, element));

@@ -19,7 +19,7 @@ import com.intellij.execution.filters.ExceptionInfoCache;
 import com.intellij.execution.filters.ExceptionWorker;
 import com.intellij.execution.filters.Filter;
 import com.intellij.execution.filters.FilterMixin;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.diff.DiffColors;
 import com.intellij.openapi.editor.DefaultLanguageHighlighterColors;
@@ -30,7 +30,6 @@ import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.localVcs.UpToDateLineNumberProvider;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.Trinity;
 import com.intellij.openapi.vcs.changes.ChangeListManager;
@@ -46,12 +45,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
-/**
- * Created by IntelliJ IDEA.
- * User: Irina.Chernushina
- * Date: 8/5/11
- * Time: 8:39 PM
- */
 public class VcsContentAnnotationExceptionFilter implements Filter, FilterMixin {
   private final Project myProject;
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.vcs.contentAnnotation.VcsContentAnnotationExceptionFilter");
@@ -106,12 +99,8 @@ public class VcsContentAnnotationExceptionFilter implements Filter, FilterMixin 
       final int lineStartOffset = copiedFragment.getLineStartOffset(i);
       final int lineEndOffset = copiedFragment.getLineEndOffset(i);
       final ExceptionWorker worker = new ExceptionWorker(myCache);
-      final String[] lineText = new String[1];
-      ApplicationManager.getApplication().runReadAction(() -> {
-        lineText[0] = copiedFragment.getText(new TextRange(lineStartOffset, lineEndOffset));
-        worker.execute(lineText[0], lineEndOffset);
-      });
-      if (worker.getResult() != null) {
+      final String lineText = copiedFragment.getText(new TextRange(lineStartOffset, lineEndOffset));
+      if (ReadAction.compute(() -> worker.execute(lineText, lineEndOffset)) != null) {
         VirtualFile vf = worker.getFile().getVirtualFile();
         if (vf.getFileSystem().isReadOnly()) continue;
 
@@ -133,7 +122,7 @@ public class VcsContentAnnotationExceptionFilter implements Filter, FilterMixin 
           if (document == null) return;
 
           int startFileOffset = worker.getInfo().getThird().getStartOffset();
-          int idx = lineText[0].indexOf(':', startFileOffset);
+          int idx = lineText.indexOf(':', startFileOffset);
           int endIdx = idx == -1 ? worker.getInfo().getThird().getEndOffset() : idx;
           consumer.consume(new MyAdditionalHighlight(startOffset + lineStartOffset + startFileOffset + 1, startOffset + lineStartOffset + endIdx));
 
@@ -187,23 +176,14 @@ public class VcsContentAnnotationExceptionFilter implements Filter, FilterMixin 
     
     public boolean isRangeChangedLocally(final VirtualFile vf, final Document document, final TextRange range) {
       final UpToDateLineNumberProvider provider = getProvider(vf, document);
-      return ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {
-        @Override
-        public Boolean compute() {
-          return provider.isRangeChanged(range.getStartOffset(), range.getEndOffset());
-        }
-      });
+      return ReadAction.compute(() -> provider.isRangeChanged(range.getStartOffset(), range.getEndOffset()));
     }
     
     public TextRange getCorrectedRange(final VirtualFile vf, final Document document, final TextRange range) {
       final UpToDateLineNumberProvider provider = getProvider(vf, document);
       if (provider == null) return range;
-      return ApplicationManager.getApplication().runReadAction(new Computable<TextRange>() {
-        @Override
-        public TextRange compute() {
-          return new TextRange(provider.getLineNumber(range.getStartOffset()), provider.getLineNumber(range.getEndOffset()));
-        }
-      });
+      return ReadAction
+        .compute(() -> new TextRange(provider.getLineNumber(range.getStartOffset()), provider.getLineNumber(range.getEndOffset())));
     }
 
     private UpToDateLineNumberProvider getProvider(VirtualFile vf, Document document) {
@@ -217,16 +197,13 @@ public class VcsContentAnnotationExceptionFilter implements Filter, FilterMixin 
   }
 
   private static Document getDocumentForFile(final ExceptionWorker worker) {
-    return ApplicationManager.getApplication().runReadAction(new Computable<Document>() {
-      @Override
-      public Document compute() {
-        final Document document = FileDocumentManager.getInstance().getDocument(worker.getFile().getVirtualFile());
-        if (document == null) {
-          LOG.info("can not get document for file: " + worker.getFile().getVirtualFile());
-          return null;
-        }
-        return document;
+    return ReadAction.compute(() -> {
+      final Document document = FileDocumentManager.getInstance().getDocument(worker.getFile().getVirtualFile());
+      if (document == null) {
+        LOG.info("can not get document for file: " + worker.getFile().getVirtualFile());
+        return null;
       }
+      return document;
     });
   }
 
@@ -234,18 +211,15 @@ public class VcsContentAnnotationExceptionFilter implements Filter, FilterMixin 
   private static List<TextRange> findMethodRange(final ExceptionWorker worker,
                                                  final Document document,
                                                  final Trinity<PsiClass, PsiFile, String> previousLineResult) {
-    return ApplicationManager.getApplication().runReadAction(new Computable<List<TextRange>>() {
-      @Override
-      public List<TextRange> compute() {
-        List<TextRange> ranges = getTextRangeForMethod(worker, previousLineResult);
-        if (ranges == null) return null;
-        final List<TextRange> result = new ArrayList<>();
-        for (TextRange range : ranges) {
-          result.add(new TextRange(document.getLineNumber(range.getStartOffset()),
-                                       document.getLineNumber(range.getEndOffset())));
-        }
-        return result;
+    return ReadAction.compute(() -> {
+      List<TextRange> ranges = getTextRangeForMethod(worker, previousLineResult);
+      if (ranges == null) return null;
+      final List<TextRange> result = new ArrayList<>();
+      for (TextRange range : ranges) {
+        result.add(new TextRange(document.getLineNumber(range.getStartOffset()),
+                                 document.getLineNumber(range.getEndOffset())));
       }
+      return result;
     });
   }
 

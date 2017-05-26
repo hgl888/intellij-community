@@ -81,6 +81,7 @@ public class VariableTypeFix extends LocalQuickFixAndIntentionActionOnPsiElement
         && myVariable.getTypeElement() != null
         && myVariable.getManager().isInProject(myVariable)
         && getReturnType() != null
+        && !LambdaUtil.notInferredType(getReturnType())
         && getReturnType().isValid()
         && !TypeConversionUtil.isNullType(getReturnType())
         && !TypeConversionUtil.isVoidType(getReturnType());
@@ -94,7 +95,6 @@ public class VariableTypeFix extends LocalQuickFixAndIntentionActionOnPsiElement
                      @NotNull PsiElement endElement) {
     final PsiVariable myVariable = (PsiVariable)startElement;
     if (changeMethodSignatureIfNeeded(myVariable)) return;
-    if (!FileModificationService.getInstance().prepareFileForWrite(myVariable.getContainingFile())) return;
     new WriteCommandAction.Simple(project, getText(), file) {
 
       @Override

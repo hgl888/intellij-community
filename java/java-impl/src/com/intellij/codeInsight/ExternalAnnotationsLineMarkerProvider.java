@@ -20,10 +20,10 @@ import com.intellij.codeInsight.daemon.GutterIconNavigationHandler;
 import com.intellij.codeInsight.daemon.LineMarkerInfo;
 import com.intellij.codeInsight.daemon.LineMarkerProviderDescriptor;
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInsight.intention.IntentionActionDelegate;
 import com.intellij.codeInsight.intention.IntentionManager;
 import com.intellij.codeInsight.intention.impl.AddAnnotationIntention;
 import com.intellij.codeInsight.intention.impl.DeannotateIntentionAction;
-import com.intellij.codeInsight.intention.impl.config.IntentionActionWrapper;
 import com.intellij.codeInsight.javadoc.JavaDocInfoGenerator;
 import com.intellij.codeInspection.dataFlow.EditContractIntention;
 import com.intellij.icons.AllIcons;
@@ -143,11 +143,7 @@ public class ExternalAnnotationsLineMarkerProvider extends LineMarkerProviderDes
   }
 
   private static boolean isVisibleAnnotation(@NotNull PsiAnnotation annotation) {
-    PsiJavaCodeReferenceElement ref = annotation.getNameReferenceElement();
-    if (ref == null) return true;
-
-    PsiElement target = ref.resolve();
-    return !(target instanceof PsiClass) || JavaDocInfoGenerator.isDocumentedAnnotationType(target);
+    return !"org.intellij.lang.annotations.Flow".equals(annotation.getQualifiedName());
   }
 
   @Override
@@ -216,7 +212,8 @@ public class ExternalAnnotationsLineMarkerProvider extends LineMarkerProviderDes
              action instanceof EditContractIntention ||
              action instanceof ToggleSourceInferredAnnotations ||
              action instanceof MakeInferredAnnotationExplicit ||
-             action instanceof IntentionActionWrapper && shouldShowInGutterPopup(((IntentionActionWrapper)action).getDelegate());
+             action instanceof MakeExternalAnnotationExplicit ||
+             action instanceof IntentionActionDelegate && shouldShowInGutterPopup(((IntentionActionDelegate)action).getDelegate());
     }
   }
 }

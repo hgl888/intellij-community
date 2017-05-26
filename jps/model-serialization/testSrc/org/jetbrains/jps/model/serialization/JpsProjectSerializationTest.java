@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2012 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,11 @@ package org.jetbrains.jps.model.serialization;
 
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.testFramework.PlatformTestUtil;
 import org.jdom.Element;
 import org.jetbrains.jps.model.JpsDummyElement;
 import org.jetbrains.jps.model.JpsEncodingConfigurationService;
 import org.jetbrains.jps.model.JpsEncodingProjectConfiguration;
+import org.jetbrains.jps.model.JpsExcludePattern;
 import org.jetbrains.jps.model.artifact.JpsArtifactService;
 import org.jetbrains.jps.model.java.*;
 import org.jetbrains.jps.model.library.JpsLibrary;
@@ -32,9 +32,10 @@ import org.jetbrains.jps.model.serialization.library.JpsLibraryTableSerializer;
 import org.jetbrains.jps.model.serialization.module.JpsModuleRootModelSerializer;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+
+import static com.intellij.testFramework.assertions.Assertions.assertThat;
 
 /**
  * @author nik
@@ -115,6 +116,16 @@ public class JpsProjectSerializationTest extends JpsSerializationTestCase {
     assertNotNull(testModuleProperties);
     assertEquals("productionModule", testModuleProperties.getProductionModuleReference().getModuleName());
     assertSame(productionModule, testModuleProperties.getProductionModule());
+  }
+
+  public void testExcludePatterns() {
+    String projectPath = "/jps/model-serialization/testData/excludePatterns";
+    loadProject(projectPath + "/excludePatterns.ipr");
+    JpsModule module = assertOneElement(myProject.getModules());
+    JpsExcludePattern pattern = assertOneElement(module.getExcludePatterns());
+    assertEquals("*.class", pattern.getPattern());
+    assertEquals(assertOneElement(module.getContentRootsList().getUrls()), pattern.getBaseDirUrl());
+    doTestSaveModule(module, projectPath + "/excludePatterns.iml");
   }
 
   public void testProjectSdkWithoutType() {
@@ -215,18 +226,12 @@ public class JpsProjectSerializationTest extends JpsSerializationTestCase {
   }
 
   private void doTestSaveLibrary(File libFile, String libName, JpsLibrary library) {
-    try {
-      Element actual = new Element("library");
-      JpsLibraryTableSerializer.saveLibrary(library, actual, libName);
-      JpsMacroExpander
-        macroExpander = JpsProjectLoader.createProjectMacroExpander(Collections.<String, String>emptyMap(), getFileInSampleProject(""));
-      Element rootElement = JpsLoaderBase.loadRootElement(libFile, macroExpander);
-      Element expected = rootElement.getChild("library");
-      PlatformTestUtil.assertElementsEqual(expected, actual);
-    }
-    catch (IOException e) {
-      throw new RuntimeException(e);
-    }
+    Element actual = new Element("library");
+    JpsLibraryTableSerializer.saveLibrary(library, actual, libName);
+    JpsMacroExpander
+      macroExpander = JpsProjectLoader.createProjectMacroExpander(Collections.emptyMap(), getFileInSampleProject(""));
+    Element rootElement = JpsLoaderBase.loadRootElement(libFile, macroExpander);
+    assertThat(actual).isEqualTo(rootElement.getChild("library"));
   }
 
   private void doTestSaveModule(JpsModule module, final String moduleFilePath) {
@@ -235,8 +240,7 @@ public class JpsProjectSerializationTest extends JpsSerializationTestCase {
       JpsModuleRootModelSerializer.saveRootModel(module, actual);
       File imlFile = new File(getTestDataFileAbsolutePath(moduleFilePath));
       Element rootElement = loadModuleRootTag(imlFile);
-      Element expected = JDomSerializationUtil.findComponent(rootElement, "NewModuleRootManager");
-      PlatformTestUtil.assertElementsEqual(expected, actual);
+      assertThat(actual).isEqualTo(JDomSerializationUtil.findComponent(rootElement, "NewModuleRootManager"));
     }
     catch (Exception e) {
       throw new RuntimeException(e);

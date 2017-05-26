@@ -1,0 +1,70 @@
+/*
+ * Copyright 2000-2016 JetBrains s.r.o.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+task setupAndroidSdk {
+  if (!inJetBrainsNetwork) {
+    return
+  }
+
+  def zipFile = org.gradle.internal.os.OperatingSystem.current().familyName + ".zip"
+  def gradleFile = "gradle-3.3-bin.zip"
+  def repoFile = "offline_repo_repo.zip"
+  def archivePath = "$project.buildDir/android-sdk/" + zipFile
+  def gradlePath = "$project.buildDir/android-sdk/" + gradleFile
+  def repoPath = "$project.buildDir/android-sdk/" + repoFile
+  def outputDir ="$project.buildDir/android-sdk/prebuilts/studio/sdk"
+  def outputGradle ="$project.buildDir/android-sdk/tools/external/gradle"
+  def outputRepo ="$project.buildDir/android-sdk/prebuilts/tools/common/m2/repository"
+  outputs.dir(outputDir)
+  outputs.dir(outputGradle)
+  outputs.dir("$project.buildDir/android-sdk/prebuilts/tools/common");
+  outputs.file(archivePath)
+  outputs.file(gradlePath)
+  outputs.file(repoPath)
+
+  doFirst {
+    download {
+      src "http://repo.labs.intellij.net/thirdparty/android-sdk/" + zipFile
+      dest archivePath
+      onlyIfNewer true
+    }
+    download {
+      src "http://repo.labs.intellij.net/thirdparty/gradle/" + gradleFile
+      dest gradlePath
+      onlyIfNewer true
+    }
+    download {
+      src "http://repo.labs.intellij.net/thirdparty/android-sdk/" + repoFile
+      dest repoPath
+      onlyIfNewer true
+    }
+  }
+  doLast {
+    logger.info("Unpacking android sdk into " + archivePath)
+    copy {
+      from zipTree(file(archivePath))
+      into outputDir
+    }
+    copy {
+      from file(gradlePath)
+      into outputGradle
+    }
+    copy {
+      from zipTree(file(repoPath))
+      into outputRepo
+    }
+    file("$project.buildDir/android-sdk/prebuilts/tools/common/offline-m2").mkdirs()
+  }
+}

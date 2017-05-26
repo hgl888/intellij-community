@@ -14,18 +14,10 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: sweinreuter
- * Date: 11.04.2006
- * Time: 00:14:22
- */
 package org.intellij.lang.xpath.validation.inspections.quickfix;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.codeInspection.SuppressIntentionAction;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
@@ -67,16 +59,7 @@ public interface XPathQuickFixFactory {
                        @NotNull PsiFile file,
                        Editor editor, @NotNull PsiElement startElement,
                        @NotNull PsiElement endElement) {
-      if (!FileModificationService.getInstance().prepareFileForWrite(file)) {
-        return;
-      }
-
-      try {
-        invokeImpl(project, file);
-      }
-      catch (IncorrectOperationException e) {
-        Logger.getInstance(getClass().getName()).error(e);
-      }
+      invokeImpl(project, file);
     }
 
 

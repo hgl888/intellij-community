@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,9 +38,6 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * User: anna
- */
 public abstract class BackgroundUpdaterTask<T> extends Task.Backgroundable {
   protected AbstractPopup myPopup;
   protected T myComponent;
@@ -104,24 +101,29 @@ public abstract class BackgroundUpdaterTask<T> extends Task.Backgroundable {
     synchronized (lock) {
       if (myData.contains(element)) return true;
       myData.add(element);
+      if (comparator != null) {
+        Collections.sort(myData, comparator);
+      }
     }
 
     myAlarm.addRequest(() -> {
       myAlarm.cancelAllRequests();
-      if (myCanceled) return;
-      if (myPopup.isDisposed()) return;
-      ArrayList<PsiElement> data = new ArrayList<>();
-      synchronized (lock) {
-        if (comparator != null) {
-          Collections.sort(myData, comparator);
-        }
-        data.addAll(myData);
-      }
-      replaceModel(data);
-      myPopup.setCaption(getCaption(getCurrentSize()));
-      myPopup.pack(true, true);
+      refreshModelImmediately();
     }, 200, ModalityState.stateForComponent(content));
     return true;
+  }
+
+  private void refreshModelImmediately() {
+    ApplicationManager.getApplication().assertIsDispatchThread();
+    if (myCanceled) return;
+    if (myPopup.isDisposed()) return;
+    List<PsiElement> data;
+    synchronized (lock) {
+      data = new ArrayList<>(myData);
+    }
+    replaceModel(data);
+    myPopup.setCaption(getCaption(getCurrentSize()));
+    myPopup.pack(true, true);
   }
 
   public int getCurrentSize() {
@@ -138,13 +140,24 @@ public abstract class BackgroundUpdaterTask<T> extends Task.Backgroundable {
 
   @Override
   public void onSuccess() {
-    myPopup.setCaption(getCaption(getCurrentSize()));
+    refreshModelImmediately();
     paintBusy(false);
   }
 
   @Override
   public void onFinished() {
+    myAlarm.cancelAllRequests();
     myFinished = true;
+  }
+
+  @Nullable
+  protected PsiElement getTheOnlyOneElement() {
+    synchronized (lock) {
+      if (myData.size() == 1) {
+        return myData.get(0);
+      }
+    }
+    return null;
   }
 
   public boolean isFinished() {

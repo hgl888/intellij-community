@@ -1,9 +1,24 @@
+/*
+ * Copyright 2000-2017 JetBrains s.r.o.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.intellij.structuralsearch.impl.matcher;
 
 import com.intellij.dupLocator.iterators.ArrayBackedNodeIterator;
 import com.intellij.dupLocator.iterators.NodeIterator;
 import com.intellij.lang.Language;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypes;
@@ -13,7 +28,6 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ContentIterator;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil;
@@ -113,7 +127,7 @@ public class MatcherImpl {
           return false;
         }
         final MatchingHandler matchingHandler = pattern.getHandler(patternNode);
-        if (matchingHandler == null || !matchingHandler.canMatch(patternNode, matchedNode)) {
+        if (matchingHandler == null || !matchingHandler.canMatch(patternNode, matchedNode, context)) {
           return false;
         }
         matchedNodes.advance();
@@ -181,14 +195,13 @@ public class MatcherImpl {
       final MatchOptions matchOptions = configuration.getMatchOptions();
       matchContext.setOptions(matchOptions);
 
-      ApplicationManager.getApplication().runReadAction(() -> {
+      ReadAction.run(() -> {
         try {
           final CompiledPattern compiledPattern = PatternCompiler.compilePattern(project, matchOptions);
           matchContext.setPattern(compiledPattern);
           out.put(configuration, matchContext);
         }
-        catch (UnsupportedPatternException ignored) {}
-        catch (MalformedPatternException ignored) {}
+        catch (UnsupportedPatternException | MalformedPatternException ignored) {}
       });
     }
   }
@@ -249,18 +262,15 @@ public class MatcherImpl {
     if (searchScope instanceof GlobalSearchScope) {
       final GlobalSearchScope scope = (GlobalSearchScope)searchScope;
 
-      final ContentIterator ci = new ContentIterator() {
-        @Override
-        public boolean processFile(final VirtualFile fileOrDir) {
-          if (!fileOrDir.isDirectory() && scope.contains(fileOrDir) && fileOrDir.getFileType() != FileTypes.UNKNOWN) {
-            ++totalFilesToScan;
-            scheduler.addOneTask(new MatchOneVirtualFile(fileOrDir));
-          }
-          return true;
+      final ContentIterator ci = fileOrDir -> {
+        if (!fileOrDir.isDirectory() && scope.contains(fileOrDir) && fileOrDir.getFileType() != FileTypes.UNKNOWN) {
+          ++totalFilesToScan;
+          scheduler.addOneTask(new MatchOneVirtualFile(fileOrDir));
         }
+        return true;
       };
 
-      ApplicationManager.getApplication().runReadAction(() -> FileBasedIndex.getInstance().iterateIndexableFiles(ci, project, progress));
+      ReadAction.run(() -> FileBasedIndex.getInstance().iterateIndexableFiles(ci, project, progress));
       progress.setText2("");
     }
     else {
@@ -305,12 +315,7 @@ public class MatcherImpl {
       }
 
       if (compiledPattern==null) {
-        compiledPattern = ApplicationManager.getApplication().runReadAction(new Computable<CompiledPattern>() {
-          @Override
-          public CompiledPattern compute() {
-            return PatternCompiler.compilePattern(project,options);
-          }
-        });
+        compiledPattern = ReadAction.compute(() -> PatternCompiler.compilePattern(project, options));
       }
     }
 
@@ -342,15 +347,13 @@ public class MatcherImpl {
   /**
    * Finds the matches of given pattern starting from given tree element.
    * @param source string for search
-   * @param pattern to be searched
    * @return list of matches found
    * @throws MalformedPatternException
    * @throws UnsupportedPatternException
    */
   protected List<MatchResult> testFindMatches(String source,
-                                              String pattern,
                                               MatchOptions options,
-                                              boolean filePattern,
+                                              boolean fileContext,
                                               FileType sourceFileType,
                                               String sourceExtension,
                                               boolean physicalSourceFile)
@@ -360,12 +363,11 @@ public class MatcherImpl {
 
     try {
       PsiElement[] elements = MatcherImplUtil.createSourceTreeFromText(source,
-                                                                       filePattern ? PatternTreeContext.File : PatternTreeContext.Block,
+                                                                       fileContext ? PatternTreeContext.File : PatternTreeContext.Block,
                                                                        sourceFileType,
                                                                        sourceExtension,
                                                                        project, physicalSourceFile);
 
-      options.setSearchPattern(pattern);
       options.setScope(new LocalSearchScope(elements));
       testFindMatches(sink, options);
     }
@@ -380,8 +382,8 @@ public class MatcherImpl {
     return sink.getMatches();
   }
 
-  protected List<MatchResult> testFindMatches(String source, String pattern, MatchOptions options, boolean filePattern) {
-    return testFindMatches(source, pattern, options, filePattern, options.getFileType(), null, false);
+  protected List<MatchResult> testFindMatches(String source, MatchOptions options, boolean filePattern) {
+    return testFindMatches(source, options, filePattern, options.getFileType(), null, false);
   }
 
   class TaskScheduler implements MatchingProcess {
@@ -440,12 +442,7 @@ public class MatcherImpl {
         try {
           task.run();
         }
-        catch (ProcessCanceledException e) {
-          ended = true;
-          clearSchedule();
-          throw e;
-        }
-        catch (StructuralSearchException e) {
+        catch (ProcessCanceledException | StructuralSearchException e) {
           ended = true;
           clearSchedule();
           throw e;
@@ -542,12 +539,7 @@ public class MatcherImpl {
       match(el, language);
     }
     if (element instanceof PsiLanguageInjectionHost) {
-      InjectedLanguageUtil.enumerate(element, new PsiLanguageInjectionHost.InjectedPsiVisitor() {
-        @Override
-        public void visit(@NotNull PsiFile injectedPsi, @NotNull List<PsiLanguageInjectionHost.Shred> places) {
-          match(injectedPsi, language);
-        }
-      });
+      InjectedLanguageUtil.enumerate(element, (injectedPsi, places) -> match(injectedPsi, language));
     }
   }
 
@@ -586,7 +578,7 @@ public class MatcherImpl {
       MatchingHandler handler = null;
 
       while (element.getClass() == targetNode.getClass() ||
-             compiledPattern.isTypedVar(targetNode) && compiledPattern.getHandler(targetNode).canMatch(targetNode, element)) {
+             compiledPattern.isTypedVar(targetNode) && compiledPattern.getHandler(targetNode).canMatch(targetNode, element, matchContext)) {
         handler = compiledPattern.getHandler(targetNode);
         handler.setPinnedElement(element);
         elementToStartMatching = element;
@@ -621,9 +613,11 @@ public class MatcherImpl {
     @NotNull
     @Override
     protected List<PsiElement> getPsiElementsToProcess() {
-      return ApplicationManager.getApplication().runReadAction(new Computable<List<PsiElement>>() {
-        @Override
-        public List<PsiElement> compute() {
+      return ReadAction.compute(() -> {
+          if (!myFile.isValid()) {
+            // file may be been deleted since search started
+            return Collections.emptyList();
+          }
           final PsiFile file = PsiManager.getInstance(project).findFile(myFile);
           if (file == null) {
             return Collections.emptyList();
@@ -638,7 +632,7 @@ public class MatcherImpl {
 
           return elementsToProcess;
         }
-      });
+      );
     }
   }
 }

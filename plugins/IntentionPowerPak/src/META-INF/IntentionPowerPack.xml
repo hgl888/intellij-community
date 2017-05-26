@@ -1,4 +1,4 @@
-<idea-plugin version="2">
+<idea-plugin>
 
   <extensions defaultExtensionNs="com.intellij">
 
@@ -171,16 +171,8 @@
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
       <categoryKey>intention.category.junit</categoryKey>
     </intentionAction>
+
     <!-- Declaration -->
-
-    <!--
-    <intentionAction>
-      <className>com.siyeh.ipp.decls.MoveDeclarationIntention</className>
-      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.declaration</categoryKey>
-    </intentionAction>
-    -->
-
     <intentionAction>
       <className>com.siyeh.ipp.initialization.SplitDeclarationAndInitializationIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
@@ -189,18 +181,6 @@
 
     <intentionAction>
       <className>com.siyeh.ipp.interfacetoclass.ConvertInterfaceToClassIntention</className>
-      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.declaration</categoryKey>
-    </intentionAction>
-
-    <intentionAction>
-      <className>com.siyeh.ipp.varargs.MakeMethodVarargsIntention</className>
-      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.declaration</categoryKey>
-    </intentionAction>
-
-    <intentionAction>
-      <className>com.siyeh.ipp.varargs.ConvertVarargParameterToArrayIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
       <categoryKey>intention.category.declaration</categoryKey>
     </intentionAction>
@@ -229,14 +209,13 @@
       <categoryKey>intention.category.declaration</categoryKey>
     </intentionAction>
 
-    <!-- Imports -->
-
     <intentionAction>
-      <className>com.siyeh.ipp.fqnames.ReplaceFullyQualifiedNameWithImportIntention</className>
+      <className>com.siyeh.ipp.exceptions.ObscureThrownExceptionsIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.imports</categoryKey>
+      <categoryKey>intention.category.declaration</categoryKey>
     </intentionAction>
 
+    <!-- Imports -->
     <intentionAction>
       <className>com.siyeh.ipp.imports.ReplaceOnDemandImportIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
@@ -344,9 +323,18 @@
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
       <categoryKey>intention.category.control.flow</categoryKey>
     </intentionAction>
+    <intentionAction>
+      <className>com.siyeh.ipp.enumswitch.CreateEnumSwitchBranchesIntention</className>
+      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
+      <categoryKey>intention.category.control.flow</categoryKey>
+    </intentionAction>
+    <intentionAction>
+      <className>com.siyeh.ipp.functional.ExtractToMethodReferenceIntention</className>
+      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
+      <categoryKey>intention.category.control.flow</categoryKey>
+    </intentionAction>
 
     <!-- Modifiers -->
-
     <intentionAction>
       <className>com.siyeh.ipp.modifiers.MakePublicIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
@@ -368,27 +356,7 @@
       <categoryKey>intention.category.modifiers</categoryKey>
     </intentionAction>
 
-    <!-- Other -->
-    <intentionAction>
-      <className>com.siyeh.ipp.expression.FlipExpressionIntention</className>
-      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.other</categoryKey>
-    </intentionAction>
-    <intentionAction>
-      <className>com.siyeh.ipp.expression.FlipSetterCallIntention</className>
-      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.other</categoryKey>
-    </intentionAction>
-    <intentionAction>
-      <className>com.siyeh.ipp.commutative.FlipCommutativeMethodCallIntention</className>
-      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.other</categoryKey>
-    </intentionAction>
-    <intentionAction>
-      <className>com.siyeh.ipp.commutative.SwapMethodCallArgumentsIntention</className>
-      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.other</categoryKey>
-    </intentionAction>
+    <!-- Strings -->
     <intentionAction>
       <className>com.siyeh.ipp.concatenation.ReplaceConcatenationWithStringBufferIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
@@ -410,15 +378,17 @@
       <categoryKey>intention.category.strings</categoryKey>
     </intentionAction>
     <intentionAction>
-      <className>com.siyeh.ipp.concatenation.MakeCallChainIntoCallSequenceIntention</className>
+      <className>com.siyeh.ipp.chartostring.CharToStringIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.other</categoryKey>
+      <categoryKey>intention.category.strings</categoryKey>
     </intentionAction>
     <intentionAction>
-      <className>com.siyeh.ipp.concatenation.MergeCallSequenceToChainIntention</className>
+      <className>com.siyeh.ipp.chartostring.StringToCharIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.other</categoryKey>
+      <categoryKey>intention.category.strings</categoryKey>
     </intentionAction>
+
+    <!-- Try Statements -->
     <intentionAction>
       <className>com.siyeh.ipp.exceptions.DetailExceptionsIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
@@ -439,10 +409,37 @@
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
       <categoryKey>intention.category.try.statements</categoryKey>
     </intentionAction>
+
+    <!-- Other -->
     <intentionAction>
-      <className>com.siyeh.ipp.exceptions.ObscureThrownExceptionsIntention</className>
+      <className>com.siyeh.ipp.expression.FlipExpressionIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.declaration</categoryKey>
+      <categoryKey>intention.category.other</categoryKey>
+    </intentionAction>
+    <intentionAction>
+      <className>com.siyeh.ipp.expression.FlipSetterCallIntention</className>
+      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
+      <categoryKey>intention.category.other</categoryKey>
+    </intentionAction>
+    <intentionAction>
+      <className>com.siyeh.ipp.commutative.FlipCommutativeMethodCallIntention</className>
+      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
+      <categoryKey>intention.category.other</categoryKey>
+    </intentionAction>
+    <!--<intentionAction>
+      <className>com.siyeh.ipp.commutative.SwapMethodCallArgumentsIntention</className>
+      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
+      <categoryKey>intention.category.other</categoryKey>
+    </intentionAction>-->
+    <intentionAction>
+      <className>com.siyeh.ipp.concatenation.MakeCallChainIntoCallSequenceIntention</className>
+      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
+      <categoryKey>intention.category.other</categoryKey>
+    </intentionAction>
+    <intentionAction>
+      <className>com.siyeh.ipp.concatenation.MergeCallSequenceToChainIntention</className>
+      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
+      <categoryKey>intention.category.other</categoryKey>
     </intentionAction>
     <intentionAction>
       <className>com.siyeh.ipp.opassign.ReplaceWithOperatorAssignmentIntention</className>
@@ -475,21 +472,6 @@
       <categoryKey>intention.category.other</categoryKey>
     </intentionAction>
     <intentionAction>
-      <className>com.siyeh.ipp.chartostring.CharToStringIntention</className>
-      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.strings</categoryKey>
-    </intentionAction>
-    <intentionAction>
-      <className>com.siyeh.ipp.chartostring.StringToCharIntention</className>
-      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.strings</categoryKey>
-    </intentionAction>
-    <intentionAction>
-      <className>com.siyeh.ipp.enumswitch.CreateEnumSwitchBranchesIntention</className>
-      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
-      <categoryKey>intention.category.control.flow</categoryKey>
-    </intentionAction>
-    <intentionAction>
       <className>com.siyeh.ipp.constant.ConstantExpressionIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
       <categoryKey>intention.category.other</categoryKey>
@@ -501,6 +483,11 @@
     </intentionAction>
     <intentionAction>
       <className>com.siyeh.ipp.increment.ExtractIncrementIntention</className>
+      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
+      <categoryKey>intention.category.other</categoryKey>
+    </intentionAction>
+    <intentionAction>
+      <className>com.siyeh.ipp.increment.InlineIncrementIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
       <categoryKey>intention.category.other</categoryKey>
     </intentionAction>
@@ -526,6 +513,11 @@
     </intentionAction>
     <intentionAction>
       <className>com.siyeh.ipp.opassign.PostfixPrefixIntention</className>
+      <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
+      <categoryKey>intention.category.other</categoryKey>
+    </intentionAction>
+    <intentionAction>
+      <className>com.siyeh.ipp.collections.ReplaceWithArraysAsListIntention</className>
       <bundleName>com.siyeh.IntentionPowerPackBundle</bundleName>
       <categoryKey>intention.category.other</categoryKey>
     </intentionAction>

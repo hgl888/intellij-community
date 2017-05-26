@@ -16,18 +16,22 @@
 
 package com.intellij.application.options.colors;
 
-import com.intellij.openapi.application.ApplicationBundle;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.editor.colors.EditorColorsScheme;
-import com.intellij.openapi.options.colors.ColorSettingsPage;
 import com.intellij.openapi.editor.colors.EditorSchemeAttributeDescriptor;
+import com.intellij.openapi.options.colors.ColorSettingsPage;
+import com.intellij.openapi.ui.MessageType;
+import com.intellij.openapi.ui.popup.Balloon;
+import com.intellij.openapi.ui.popup.JBPopupFactory;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.GuiUtils;
+import com.intellij.ui.awt.RelativePoint;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
@@ -37,7 +41,6 @@ public class NewColorAndFontPanel extends JPanel {
   private final SchemesPanel mySchemesPanel;
   private final OptionsPanel myOptionsPanel;
   private final PreviewPanel myPreviewPanel;
-  private final AbstractAction myCopyAction;
   private final String myCategory;
   private final Collection<String> myOptionList;
 
@@ -57,26 +60,6 @@ public class NewColorAndFontPanel extends JPanel {
 
     top.add(mySchemesPanel, BorderLayout.NORTH);
     top.add(myOptionsPanel.getPanel(), BorderLayout.CENTER);
-    if (optionsPanel instanceof ConsoleFontOptions) {
-      JPanel wrapper = new JPanel(new FlowLayout(FlowLayout.TRAILING));
-      myCopyAction = new AbstractAction(ApplicationBundle.message("action.apply.editor.font.settings")) {
-        @Override
-        public void actionPerformed(ActionEvent e) {
-          EditorColorsScheme scheme = ((ConsoleFontOptions)myOptionsPanel).getCurrentScheme();
-          scheme.setConsoleFontName(scheme.getEditorFontName());
-          scheme.setConsoleFontPreferences(scheme.getFontPreferences());
-          scheme.setConsoleFontSize(scheme.getEditorFontSize());
-          scheme.setConsoleLineSpacing(scheme.getLineSpacing());
-          myOptionsPanel.updateOptionsList();
-          myPreviewPanel.updateView();
-        }
-      };
-      wrapper.add(new JButton(myCopyAction));
-      top.add(wrapper, BorderLayout.SOUTH);
-    }
-    else {
-      myCopyAction = null;
-    }
 
     // We don't want to show non-used preview panel (it's considered to be not in use if it doesn't contain text).
     if (myPreviewPanel.getPanel() != null && (page == null || !StringUtil.isEmptyOrSpaces(page.getDemoText()))) {
@@ -101,6 +84,7 @@ public class NewColorAndFontPanel extends JPanel {
     optionsPanel.addListener(new ColorAndFontSettingsListener.Abstract() {
       @Override
       public void settingsChanged() {
+        mySchemesPanel.updateOnCurrentSettingsChange();
         optionsPanel.applyChangesToScheme();
         previewPanel.updateView();
       }
@@ -118,11 +102,6 @@ public class NewColorAndFontPanel extends JPanel {
       public void schemeChanged(final Object source) {
         myOptionsPanel.updateOptionsList();
         myPreviewPanel.updateView();
-        if (optionsPanel instanceof ConsoleFontOptions) {
-          ConsoleFontOptions options = (ConsoleFontOptions)optionsPanel;
-          boolean readOnly = ColorAndFontOptions.isReadOnly(options.getCurrentScheme());
-          myCopyAction.setEnabled(!readOnly);
-        }
       }
     });
 
@@ -183,6 +162,10 @@ public class NewColorAndFontPanel extends JPanel {
   public void updatePreview() {
     myPreviewPanel.updateView();
   }
+  
+  public void updateSchemesPanel() {
+    mySchemesPanel.updateOnCurrentSettingsChange();
+  }
 
   public void addDescriptionListener(final ColorAndFontSettingsListener listener) {
     myOptionsPanel.addListener(listener);
@@ -194,5 +177,27 @@ public class NewColorAndFontPanel extends JPanel {
 
   public ColorSettingsPage getSettingsPage() {
     return mySettingsPage;
+  }
+  
+  public void setEmptyText(@NotNull String text, @NotNull String details) {
+    myOptionsPanel.setEmptyText(text, new ActionListener() {
+      @Override
+      public void actionPerformed(ActionEvent e) {
+        notifyAtSchemePanel(details);
+      }
+    });
+  }
+
+  private void notifyAtSchemePanel(@NotNull String message) {
+    final JBPopupFactory popupFactory = JBPopupFactory.getInstance();
+    Balloon balloon = popupFactory
+      .createHtmlTextBalloonBuilder(message, MessageType.INFO, null)
+      .setHideOnClickOutside(true)
+      .setHideOnKeyOutside(true)
+      .createBalloon();
+    Disposer.register(ApplicationManager.getApplication(), balloon);
+    balloon.show(new RelativePoint(
+      mySchemesPanel,
+      new Point(mySchemesPanel.getWidth() / 10, mySchemesPanel.getHeight())), Balloon.Position.below);
   }
 }

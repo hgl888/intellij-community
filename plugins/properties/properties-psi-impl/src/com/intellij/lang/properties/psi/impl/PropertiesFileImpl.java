@@ -20,17 +20,17 @@ import com.intellij.lang.ASTFactory;
 import com.intellij.lang.ASTNode;
 import com.intellij.lang.properties.*;
 import com.intellij.lang.properties.parsing.PropertiesElementTypes;
-import com.intellij.lang.properties.psi.PropertiesElementFactory;
-import com.intellij.lang.properties.psi.PropertiesFile;
-import com.intellij.lang.properties.psi.PropertiesList;
-import com.intellij.lang.properties.psi.Property;
+import com.intellij.lang.properties.psi.*;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileType;
+import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.FileViewProvider;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.TokenType;
 import com.intellij.psi.impl.source.tree.ChangeUtil;
 import com.intellij.psi.impl.source.tree.TreeElement;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.tree.TokenSet;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ArrayUtil;
@@ -191,7 +191,13 @@ public class PropertiesFileImpl extends PsiFileBase implements PropertiesFile {
     return ContainerUtil.getLastItem(properties);
   }
 
-  private Stream<IProperty> propertiesByKey(@NotNull String key) {
-    return getProperties().stream().filter(p -> key.equals(p.getUnescapedKey()));
+  private Stream<? extends IProperty> propertiesByKey(@NotNull String key) {
+    VirtualFile file = getVirtualFile();
+    if (file != null && ProjectFileIndex.getInstance(getProject()).isInContent(file)) {
+      return PropertyKeyIndex.getInstance().get(key, getProject(), GlobalSearchScope.fileScope(this)).stream();
+    } else {
+      // see PropertiesElementFactory.createPropertiesFile(Project, Properties, String)
+      return getProperties().stream().filter(p -> key.equals(p.getUnescapedKey()));
+    }
   }
 }

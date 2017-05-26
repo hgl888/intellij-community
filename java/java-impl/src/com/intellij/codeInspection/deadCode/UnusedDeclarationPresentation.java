@@ -27,6 +27,7 @@ import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -53,7 +54,6 @@ import com.intellij.util.text.CharArrayUtil;
 import com.intellij.util.text.DateFormatUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
-import gnu.trove.TObjectHashingStrategy;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -77,8 +77,8 @@ import java.util.function.Predicate;
 
 public class UnusedDeclarationPresentation extends DefaultInspectionToolPresentation {
 
-  private final Set<RefEntity> myIgnoreElements = ContainerUtil.newConcurrentSet(TObjectHashingStrategy.IDENTITY);
-  private final Map<RefEntity, UnusedDeclarationHint> myFixedElements = ContainerUtil.newConcurrentMap(TObjectHashingStrategy.IDENTITY);
+  private final Set<RefEntity> myIgnoreElements = ContainerUtil.newConcurrentSet(ContainerUtil.identityStrategy());
+  private final Map<RefEntity, UnusedDeclarationHint> myFixedElements = ContainerUtil.newConcurrentMap(ContainerUtil.identityStrategy());
 
   private WeakUnreferencedFilter myFilter;
   private DeadHTMLComposer myComposer;
@@ -428,12 +428,12 @@ public class UnusedDeclarationPresentation extends DefaultInspectionToolPresenta
     return new RefElementNode(entity, this) {
       @Nullable
       @Override
-      public String getCustomizedTailText() {
+      public String getTailText() {
         final UnusedDeclarationHint hint = myFixedElements.get(getElement());
         if (hint != null) {
           return hint.getDescription();
         }
-        return super.getCustomizedTailText();
+        return super.getTailText();
       }
 
       @Override
@@ -530,6 +530,23 @@ public class UnusedDeclarationPresentation extends DefaultInspectionToolPresenta
   }
 
   @Override
+  public void ignoreElement(@NotNull RefEntity refEntity) {
+    if (refEntity instanceof RefElement) {
+      final CommonProblemDescriptor[] descriptors = getProblemElements().get(refEntity);
+      if (descriptors != null) {
+        final PsiElement psiElement = ReadAction.compute(() -> ((RefElement)refEntity).getElement());
+        List<CommonProblemDescriptor> foreignDescriptors = new ArrayList<>();
+        for (CommonProblemDescriptor descriptor : descriptors) {
+          if (descriptor instanceof ProblemDescriptor && ReadAction.compute(() -> ((ProblemDescriptor)descriptor).getPsiElement()) == psiElement) continue;
+          foreignDescriptors.add(descriptor);
+        }
+        if (foreignDescriptors.size() == descriptors.length) return;
+      }
+    }
+    super.ignoreElement(refEntity);
+  }
+
+  @Override
   public void amnesty(RefEntity refEntity) {
     myIgnoreElements.remove(refEntity);
   }
@@ -612,14 +629,13 @@ public class UnusedDeclarationPresentation extends DefaultInspectionToolPresenta
     @Override
     public void invoke(@NotNull Project project, Editor editor, PsiFile file) throws IncorrectOperationException {
       if (myElement != null && myElement.isValid()) {
-        ApplicationManager.getApplication().invokeLater(() -> SafeDeleteHandler
-          .invoke(myElement.getProject(), new PsiElement[]{PsiTreeUtil.getParentOfType(myElement, PsiModifierListOwner.class)}, false));
+        SafeDeleteHandler.invoke(myElement.getProject(), new PsiElement[]{PsiTreeUtil.getParentOfType(myElement, PsiModifierListOwner.class)}, false);
       }
     }
 
     @Override
     public boolean startInWriteAction() {
-      return true;
+      return false;
     }
   }
 

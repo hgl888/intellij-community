@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import com.intellij.openapi.vfs.JarFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.testFramework.IdeaTestUtil
 import com.intellij.testFramework.fixtures.DefaultLightProjectDescriptor
+import groovy.transform.CompileStatic
 import org.jetbrains.annotations.NotNull
 
 import static org.jetbrains.plugins.groovy.config.GroovyFacetUtil.getBundledGroovyJar
@@ -34,6 +35,7 @@ import static org.jetbrains.plugins.groovy.util.TestUtils.*
 /**
  * @author Max Medvedev
  */
+@CompileStatic
 class GroovyLightProjectDescriptor extends DefaultLightProjectDescriptor {
   public static final GroovyLightProjectDescriptor GROOVY_2_1 = new GroovyLightProjectDescriptor(mockGroovy2_1LibraryName)
   public static final GroovyLightProjectDescriptor GROOVY_2_2 = new GroovyLightProjectDescriptor(mockGroovy2_2LibraryName)
@@ -47,12 +49,13 @@ class GroovyLightProjectDescriptor extends DefaultLightProjectDescriptor {
   }
   private final String myLibPath
 
-  protected GroovyLightProjectDescriptor(String libPath) {
+  GroovyLightProjectDescriptor(String libPath) {
     myLibPath = libPath
   }
 
   @Override
   void configureModule(@NotNull Module module, @NotNull ModifiableRootModel model, @NotNull ContentEntry contentEntry) {
+    super.configureModule(module, model, contentEntry)
     final Library.ModifiableModel modifiableModel = model.moduleLibraryTable.createLibrary("GROOVY").modifiableModel
     final VirtualFile groovyJar = JarFileSystem.instance.refreshAndFindFileByPath("${myLibPath}!/")
     assert groovyJar != null

@@ -1,22 +1,12 @@
 package com.jetbrains.jsonSchema.impl;
 
-import com.intellij.codeInsight.completion.CompletionTestCase;
-import com.intellij.codeInsight.lookup.LookupElement;
-import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiFile;
-import com.intellij.testFramework.EditorTestUtil;
+import com.jetbrains.jsonSchema.JsonSchemaHighlightingTest;
 import org.jetbrains.annotations.NotNull;
-import org.junit.Assert;
-
-import java.io.StringReader;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
 
 /**
  * @author Irina.Chernushina on 10/1/2015.
  */
-public class JsonBySchemaCompletionTest extends CompletionTestCase {
+public class JsonBySchemaCompletionTest extends JsonBySchemaCompletionBaseTest {
   public void testTopLevel() throws Exception {
     testImpl("{\"properties\": {\"prima\": {}, \"proto\": {}, \"primus\": {}}}", "{<caret>}", "\"prima\"", "\"primus\"", "\"proto\"");
   }
@@ -99,22 +89,112 @@ public class JsonBySchemaCompletionTest extends CompletionTestCase {
     testImpl(schema, "{\"second\": <caret>}", "33", "44");
   }
 
+  public void testValueCompletion() throws Exception {
+    final String schema = "{\n" +
+                          "  \"properties\": {\n" +
+                          "    \"top\": {\n" +
+                          "      \"enum\": [\"test\", \"me\"]\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    testImpl(schema, "{\"top\": <caret>}", "\"me\"", "\"test\"");
+  }
+
+  public void testTopLevelArrayPropNameCompletion() throws Exception {
+    final String schema = parcelShopSchema();
+    testImpl(schema, "[{<caret>}]", "\"address\"");
+    testImpl(schema, "[{\"address\": {<caret>}}]", "\"fax\"", "\"houseNumber\"");
+    testImpl(schema, "[{\"address\": {\"houseNumber\": <caret>}}]", "1", "2");
+  }
+
+  public void testPatternPropertyCompletion() throws Exception {
+    final String schema = "{\n" +
+                          "  \"patternProperties\": {\n" +
+                          "    \"C\": {\n" +
+                          "      \"enum\": [\"test\", \"em\"]\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    testImpl(schema, "{\"Cyan\": <caret>}", "\"em\"", "\"test\"");
+  }
+
+  public void testRootObjectRedefined() throws Exception {
+    testImpl(JsonSchemaHighlightingTest.rootObjectRedefinedSchema(), "{<caret>}",
+             "\"r1\"", "\"r2\"");
+  }
+
+  public void testSimpleNullCompletion() throws Exception {
+    final String schema = "{\n" +
+                          "  \"properties\": {\n" +
+                          "    \"null\": {\n" +
+                          "      \"type\": \"null\"\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    testImpl(schema, "{\"null\": <caret>}", "null");
+  }
+
+  public void testNullCompletionInEnum() throws Exception {
+    final String schema = "{\n" +
+                          "  \"properties\": {\n" +
+                          "    \"null\": {\n" +
+                          "      \"type\": [\"null\", \"integer\"],\n" +
+                          "      \"enum\": [null, 1, 2]\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    testImpl(schema, "{\"null\": <caret>}", "1", "2", "null");
+  }
+
+  public void testNullCompletionInTypeVariants() throws Exception {
+    final String schema = "{\n" +
+                          "  \"properties\": {\n" +
+                          "    \"null\": {\n" +
+                          "      \"type\": [\"null\", \"boolean\"]\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    testImpl(schema, "{\"null\": <caret>}", "false", "null", "true");
+  }
+
+  @NotNull
+  private static String parcelShopSchema() {
+    return "{\n" +
+                          "  \"$schema\": \"http://json-schema.org/draft-04/schema#\",\n" +
+                          "\n" +
+                          "  \"title\": \"parcelshop search response schema\",\n" +
+                          "\n" +
+                          "  \"definitions\": {\n" +
+                          "    \"address\": {\n" +
+                          "      \"type\": \"object\",\n" +
+                          "      \"properties\": {\n" +
+                          "        \"houseNumber\": { \"type\": \"integer\", \"enum\": [1,2]},\n" +
+                          "        \"fax\": { \"$ref\": \"#/definitions/phone\" }\n" +
+                          "      }\n" +
+                          "    },\n" +
+                          "    \"phone\": {\n" +
+                          "      \"type\": \"object\",\n" +
+                          "      \"properties\": {\n" +
+                          "        \"countryPrefix\": { \"type\": \"string\" },\n" +
+                          "        \"number\": { \"type\": \"string\" }\n" +
+                          "      }\n" +
+                          "    }\n" +
+                          "  },\n" +
+                          "\n" +
+                          "  \"type\": \"array\",\n" +
+                          "\n" +
+                          "  \"items\": {\n" +
+                          "    \"type\": \"object\",\n" +
+                          "    \"properties\": {\n" +
+                          "      \"address\": { \"$ref\": \"#/definitions/address\" }\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+  }
+
+  @SuppressWarnings("TestMethodWithIncorrectSignature")
   private void testImpl(@NotNull final String schema, final @NotNull String text,
                         final @NotNull String... variants) throws Exception {
-    final int position = EditorTestUtil.getCaretPosition(text);
-    Assert.assertTrue(position > 0);
-    final String completionText = text.replace("<caret>", "IntelliJIDEARulezzz");
-
-    final PsiFile file = createFile(myModule, "tslint.json", completionText);
-    final PsiElement element = file.findElementAt(position);
-    Assert.assertNotNull(element);
-
-    final JsonSchemaObject schemaObject = new JsonSchemaReader(null).read(new StringReader(schema), null);
-    Assert.assertNotNull(schemaObject);
-
-    final List<LookupElement> foundVariants = JsonBySchemaObjectCompletionContributor.getCompletionVariants(schemaObject, element);
-    Collections.sort(foundVariants, (o1, o2) -> o1.getLookupString().compareTo(o2.getLookupString()));
-    myItems = foundVariants.toArray(new LookupElement[foundVariants.size()]);
-    assertStringItems(variants);
+    testBySchema(schema, text, ".json", variants);
   }
 }

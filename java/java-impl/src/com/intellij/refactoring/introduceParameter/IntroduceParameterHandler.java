@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: dsl
- * Date: 06.05.2002
- * Time: 13:36:30
- * To change template for new class use
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.refactoring.introduceParameter;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -32,6 +24,8 @@ import com.intellij.codeInsight.navigation.NavigationUtil;
 import com.intellij.ide.util.PsiClassListCellRenderer;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
@@ -477,9 +471,23 @@ public class IntroduceParameterHandler extends IntroduceHandlerBase {
           Util.analyzeExpression(myExpr, new ArrayList<>(), classMemberRefs, new ArrayList<>());
         }
 
+        showDialog(method, methodToSearchFor, occurences, replaceAllOccurrences, delegate, initializerType, mustBeFinal,
+                   classMemberRefs, createNameSuggestionGenerator(myExpr, propName, myProject, enteredName));
+      }
+    }
+
+    private void showDialog(PsiMethod method,
+                            PsiMethod methodToSearchFor,
+                            PsiExpression[] occurences,
+                            boolean replaceAllOccurrences,
+                            boolean delegate,
+                            PsiType initializerType,
+                            boolean mustBeFinal,
+                            List<UsageInfo> classMemberRefs, NameSuggestionsGenerator nameSuggestionGenerator) {
+      TransactionGuard.getInstance().submitTransactionAndWait(() -> {
         final IntroduceParameterDialog dialog =
           new IntroduceParameterDialog(myProject, classMemberRefs, occurences, myLocalVar, myExpr,
-                                       createNameSuggestionGenerator(myExpr, propName, myProject, enteredName),
+                                       nameSuggestionGenerator,
                                        createTypeSelectorManager(occurences, initializerType), methodToSearchFor, method, getParamsToRemove(method, occurences), mustBeFinal);
         dialog.setReplaceAllOccurrences(replaceAllOccurrences);
         dialog.setGenerateDelegate(delegate);
@@ -489,9 +497,9 @@ public class IntroduceParameterHandler extends IntroduceHandlerBase {
               myEditor.getSelectionModel().removeSelection();
             }
           };
-          SwingUtilities.invokeLater(cleanSelectionRunnable);
+          ApplicationManager.getApplication().invokeLater(cleanSelectionRunnable, ModalityState.any());
         }
-      }
+      });
     }
 
     private TypeSelectorManagerImpl createTypeSelectorManager(PsiExpression[] occurences, PsiType initializerType) {
@@ -586,7 +594,7 @@ public class IntroduceParameterHandler extends IntroduceHandlerBase {
           final PsiType returnType = emptyMethod.getReturnType();
           LOG.assertTrue(returnType != null);
           final String title = "Choose Applicable Functional Interface: " + methodSignature + " -> " + returnType.getPresentableText();
-          NavigationUtil.getPsiElementPopup(psiClasses, PsiClassListCellRenderer.INSTANCE, title,
+          NavigationUtil.getPsiElementPopup(psiClasses, new PsiClassListCellRenderer(), title,
                                             new PsiElementProcessor<PsiClass>() {
                                               @Override
                                               public boolean execute(@NotNull PsiClass psiClass) {
@@ -600,8 +608,7 @@ public class IntroduceParameterHandler extends IntroduceHandlerBase {
 
         return true;
       }
-      catch (IncorrectOperationException ignore) {}
-      catch (PrepareFailedException ignore) {}
+      catch (IncorrectOperationException | PrepareFailedException ignore) {}
     }
     return false;
   }

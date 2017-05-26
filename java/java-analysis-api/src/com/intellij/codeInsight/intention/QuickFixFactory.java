@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PropertyMemberType;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -171,6 +172,8 @@ public abstract class QuickFixFactory {
 
   @NotNull public abstract IntentionAction createInsertSuperFix(@NotNull PsiMethod constructor);
 
+  @NotNull public abstract IntentionAction createInsertThisFix(@NotNull PsiMethod constructor);
+  
   @NotNull public abstract IntentionAction createChangeMethodSignatureFromUsageFix(@NotNull PsiMethod targetMethod,
                                       @NotNull PsiExpression[] expressions,
                                       @NotNull PsiSubstitutor substitutor,
@@ -242,6 +245,9 @@ public abstract class QuickFixFactory {
   public abstract IntentionAction createAddToDependencyInjectionAnnotationsFix(@NotNull Project project, @NotNull String qualifiedName, @NotNull String element);
 
   @NotNull
+  public abstract IntentionAction createAddToImplicitlyWrittenFieldsFix(Project project, @NotNull String qualifiedName);
+
+  @NotNull
   public abstract IntentionAction createCreateGetterOrSetterFix(boolean createGetter, boolean createSetter, @NotNull PsiField field);
 
   @NotNull
@@ -249,6 +255,9 @@ public abstract class QuickFixFactory {
 
   @NotNull
   public abstract IntentionAction createEnableOptimizeImportsOnTheFlyFix();
+
+  @NotNull public abstract LocalQuickFixAndIntentionActionOnPsiElement createDeleteFix(@NotNull PsiElement element);
+  @NotNull public abstract LocalQuickFixAndIntentionActionOnPsiElement createDeleteFix(@NotNull PsiElement element, @NotNull @Nls String text);
 
   @NotNull
   public abstract IntentionAction createSafeDeleteFix(@NotNull PsiElement element);
@@ -277,4 +286,16 @@ public abstract class QuickFixFactory {
 
   @NotNull
   public abstract List<IntentionAction> createAddAnnotationAttributeNameFixes(@NotNull PsiNameValuePair pair);
+
+  @NotNull
+  public abstract IntentionAction createCollectionToArrayFix(@NotNull PsiExpression collectionExpression, @NotNull PsiArrayType arrayType);
+
+  @NotNull
+  public abstract IntentionAction createInsertMethodCallFix(@NotNull PsiMethodCallExpression call, PsiMethod method);
+
+  @NotNull
+  public abstract LocalQuickFixAndIntentionActionOnPsiElement createAccessStaticViaInstanceFix(PsiReferenceExpression methodRef, JavaResolveResult result);
+
+  @NotNull
+  public abstract IntentionAction createWrapStringWithFileFix(@Nullable PsiType type, @NotNull PsiExpression expression);
 }

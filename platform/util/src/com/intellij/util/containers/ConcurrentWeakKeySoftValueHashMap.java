@@ -14,12 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: Alexey
- * Date: 18.12.2006
- * Time: 20:18:31
- */
 package com.intellij.util.containers;
 
 import com.intellij.openapi.util.Getter;
@@ -275,7 +269,7 @@ public class ConcurrentWeakKeySoftValueHashMap<K, V> implements ConcurrentMap<K,
     return deref(prevValReference);
   }
 
-  boolean processQueues() {
+  private boolean processQueues() {
     boolean removed = false;
     KeyReference<K,V> keyReference;
     while ((keyReference = (KeyReference<K, V>)myKeyQueue.poll()) != null) {

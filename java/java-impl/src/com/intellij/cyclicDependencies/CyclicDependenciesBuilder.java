@@ -26,17 +26,10 @@ import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.packageDependencies.DependenciesBuilder;
 import com.intellij.packageDependencies.ForwardDependenciesBuilder;
 import com.intellij.psi.*;
-import com.intellij.util.graph.CachingSemiGraph;
-import com.intellij.util.graph.Graph;
-import com.intellij.util.graph.GraphAlgorithms;
-import com.intellij.util.graph.GraphGenerator;
+import com.intellij.util.graph.*;
 
 import java.util.*;
 
-/**
- * User: anna
- * Date: Jan 30, 2005
- */
 public class CyclicDependenciesBuilder{
   private final Project myProject;
   private final AnalysisScope myScope;
@@ -241,9 +234,8 @@ public class CyclicDependenciesBuilder{
     return myPackages;
   }
 
-
   private Graph<PsiPackage> buildGraph() {
-    final Graph<PsiPackage> graph = GraphGenerator.create(CachingSemiGraph.create(new GraphGenerator.SemiGraph<PsiPackage>() {
+    return GraphGenerator.generate(CachingSemiGraph.cache(new InboundSemiGraph<PsiPackage>() {
       public Collection<PsiPackage> getNodes() {
         return getAllScopePackages().values();
       }
@@ -256,7 +248,6 @@ public class CyclicDependenciesBuilder{
         return psiPackages.iterator();
       }
     }));
-    return graph;
   }
 
   public Set<PsiPackage> getPackageHierarhy(String packageName) {
@@ -283,5 +274,4 @@ public class CyclicDependenciesBuilder{
     final PsiPackage psiPackage = getAllScopePackages().get(packName);
     return psiPackage;
   }
-
 }

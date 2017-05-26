@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package com.intellij.codeInsight.daemon.impl.analysis;
 
 import com.intellij.codeInsight.AnnotationTargetUtil;
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.daemon.JavaErrorMessages;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.daemon.impl.HighlightInfoType;
@@ -446,55 +445,6 @@ public class AnnotationsHighlightUtil {
     return ref;
   }
 
-  static HighlightInfo checkForeignInnerClassesUsed(final PsiAnnotation annotation) {
-    final HighlightInfo[] infos = new HighlightInfo[1];
-    final PsiAnnotationOwner owner = annotation.getOwner();
-    if (owner instanceof PsiModifierList) {
-      final PsiElement parent = ((PsiModifierList)owner).getParent();
-      if (parent instanceof PsiClass) {
-        annotation.accept(new JavaRecursiveElementWalkingVisitor() {
-          @Override
-          public void visitElement(PsiElement element) {
-            if (infos[0] != null) return;
-            super.visitElement(element);
-          }
-
-          @Override
-          public void visitClassObjectAccessExpression(PsiClassObjectAccessExpression expression) {
-            super.visitClassObjectAccessExpression(expression);
-            final PsiTypeElement operand = expression.getOperand();
-            final PsiClass classType = PsiUtil.resolveClassInType(operand.getType());
-            if (classType != null) {
-              checkAccessibility(operand.getInnermostComponentReferenceElement(), classType, HighlightUtil.formatClass(classType));
-            }
-          }
-
-          @Override
-          public void visitReferenceExpression(PsiReferenceExpression expression) {
-            super.visitReferenceExpression(expression);
-            final PsiElement resolve = expression.resolve();
-            if (resolve instanceof PsiField) {
-              checkAccessibility(expression, (PsiMember)resolve, HighlightUtil.formatField((PsiField)resolve));
-            }
-          }
-
-          private void checkAccessibility(PsiJavaCodeReferenceElement expression, PsiMember resolve, String memberString) {
-            if (resolve.hasModifierProperty(PsiModifier.PRIVATE) &&
-                PsiTreeUtil.isAncestor(parent, resolve, true)) {
-              String description = JavaErrorMessages.message("private.symbol",
-                                                             memberString,
-                                                             HighlightUtil.formatClass((PsiClass)parent));
-              infos[0] =
-                HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(expression).descriptionAndTooltip(description).create();
-              HighlightUtil.registerAccessQuickFixAction(resolve, expression, infos[0], null);
-            }
-          }
-        });
-      }
-    }
-    return infos[0];
-  }
-
   @Nullable
   static HighlightInfo checkAnnotationType(PsiAnnotation annotation) {
     PsiJavaCodeReferenceElement nameReferenceElement = annotation.getNameReferenceElement();
@@ -571,19 +521,12 @@ public class AnnotationsHighlightUtil {
     return null;
   }
 
-
   @Nullable
-  static HighlightInfo checkPackageAnnotationContainingFile(final PsiPackageStatement statement) {
-    if (statement.getAnnotationList() == null) {
-      return null;
-    }
-    PsiFile file = statement.getContainingFile();
-    if (file != null && !PsiPackage.PACKAGE_INFO_FILE.equals(file.getName())) {
-      String description = JavaErrorMessages.message("invalid.package.annotation.containing.file");
-      HighlightInfo.Builder builder = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR);
-      builder.range(statement.getAnnotationList().getTextRange());
-      builder.descriptionAndTooltip(description);
-      return builder.create();
+  static HighlightInfo checkPackageAnnotationContainingFile(PsiPackageStatement statement, PsiFile file) {
+    PsiModifierList annotationList = statement.getAnnotationList();
+    if (annotationList != null && !PsiPackage.PACKAGE_INFO_FILE.equals(file.getName())) {
+      String message = JavaErrorMessages.message("invalid.package.annotation.containing.file");
+      return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(annotationList.getTextRange()).descriptionAndTooltip(message).create();
     }
     return null;
   }
@@ -848,7 +791,6 @@ public class AnnotationsHighlightUtil {
 
     @Override
     public void invoke(@NotNull Project project, Editor editor, PsiFile file) throws IncorrectOperationException {
-      if (!FileModificationService.getInstance().prepareFileForWrite(file)) return;
       myAnnotation.delete();
     }
 

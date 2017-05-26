@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,22 +15,15 @@
  */
 package com.jetbrains.python.pyi;
 
-import com.google.common.collect.ImmutableSet;
 import com.intellij.openapi.util.Ref;
 import com.intellij.psi.PsiElement;
-import com.intellij.util.Processor;
-import com.jetbrains.python.codeInsight.controlflow.ScopeOwner;
-import com.jetbrains.python.codeInsight.dataflow.scope.ScopeUtil;
 import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.impl.PyCallExpressionHelper;
 import com.jetbrains.python.psi.types.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * @author vlan
@@ -75,14 +68,14 @@ public class PyiTypeProvider extends PyTypeProviderBase {
     final PsiElement pythonStub = PyiUtil.getPythonStub(callable);
     if (pythonStub instanceof PyFunction) {
       final PyFunction functionStub = (PyFunction)pythonStub;
-      if (isOverload(functionStub, context)) {
+      if (PyiUtil.isOverload(functionStub, context)) {
         return getOverloadType(functionStub, context);
       }
       return new PyFunctionTypeImpl(functionStub);
     }
     else if (callable.getContainingFile() instanceof PyiFile && callable instanceof PyFunction) {
       final PyFunction functionStub = (PyFunction)callable;
-      if (isOverload(functionStub, context)) {
+      if (PyiUtil.isOverload(functionStub, context)) {
         return getOverloadType(functionStub, context);
       }
     }
@@ -98,9 +91,8 @@ public class PyiTypeProvider extends PyTypeProviderBase {
       if (pythonStub instanceof PyFunction) {
         return getOverloadedCallType((PyFunction)pythonStub, callSite, context);
       }
-      else if (function.getContainingFile() instanceof PyiFile) {
-        return getOverloadedCallType(function, callSite, context);
-      }
+
+      return getOverloadedCallType(function, callSite, context);
     }
 
     return null;
@@ -110,25 +102,26 @@ public class PyiTypeProvider extends PyTypeProviderBase {
   private static Ref<PyType> getOverloadedCallType(@NotNull PyFunction function,
                                                    @NotNull PyCallSiteExpression callSite,
                                                    @NotNull TypeEvalContext context) {
-    if (isOverload(function, context)) {
-      final List<PyFunction> overloads = getOverloads(function, context);
+    if (PyiUtil.isOverload(function, context)) {
+      final List<PyFunction> overloads = PyiUtil.getOverloads(function, context);
       final List<PyType> allReturnTypes = new ArrayList<>();
       final List<PyType> matchedReturnTypes = new ArrayList<>();
 
       for (PyFunction overload : overloads) {
         final PyType returnType = context.getReturnType(overload);
-        if (!PyTypeChecker.hasGenerics(returnType, context)) {
-          allReturnTypes.add(returnType);
-        }
+        allReturnTypes.add(PyTypeChecker.substitute(returnType, new HashMap<>(), context));
 
         final PyExpression receiver = PyTypeChecker.getReceiver(callSite, overload);
-        final Map<PyExpression, PyNamedParameter> mapping = mapArguments(callSite, overload, context);
-        final Map<PyGenericType, PyType> substitutions = PyTypeChecker.unifyGenericCall(receiver, mapping, context);
-
-        final PyType unifiedType = substitutions != null ? PyTypeChecker.substitute(returnType, substitutions, context) : null;
-        if (unifiedType != null) {
-          matchedReturnTypes.add(unifiedType);
+        final PyCallExpressionHelper.ArgumentMappingResults mapping = mapArguments(callSite, overload, context);
+        if (mapping == null) {
+          continue;
         }
+        final Map<PyGenericType, PyType> substitutions = PyTypeChecker.unifyGenericCall(receiver, mapping.getMappedParameters(), context);
+        if (substitutions == null) {
+          continue;
+        }
+        final PyType unifiedType = PyTypeChecker.substitute(returnType, substitutions, context);
+        matchedReturnTypes.add(unifiedType);
       }
 
       return Ref.create(PyUnionType.union(matchedReturnTypes.isEmpty() ? allReturnTypes : matchedReturnTypes));
@@ -153,7 +146,7 @@ public class PyiTypeProvider extends PyTypeProviderBase {
 
   @Nullable
   private static PyType getOverloadType(@NotNull PyFunction function, @NotNull final TypeEvalContext context) {
-    final List<PyFunction> overloads = getOverloads(function, context);
+    final List<PyFunction> overloads = PyiUtil.getOverloads(function, context);
     if (!overloads.isEmpty()) {
       final List<PyType> overloadTypes = new ArrayList<>();
       for (PyFunction overload : overloads) {
@@ -164,51 +157,18 @@ public class PyiTypeProvider extends PyTypeProviderBase {
     return null;
   }
 
-  @NotNull
-  private static List<PyFunction> getOverloads(@NotNull PyFunction function, final @NotNull TypeEvalContext context) {
-    final ScopeOwner owner = ScopeUtil.getScopeOwner(function);
-    final String name = function.getName();
-    final List<PyFunction> overloads = new ArrayList<>();
-    final Processor<PyFunction> overloadsProcessor = f -> {
-      if (name != null && name.equals(f.getName()) && isOverload(f, context)) {
-        overloads.add(f);
-      }
-      return true;
-    };
-    if (owner instanceof PyClass) {
-      final PyClass cls = (PyClass)owner;
-      if (name != null) {
-        cls.visitMethods(overloadsProcessor, false, context);
-      }
-    }
-    else if (owner instanceof PyFile) {
-      final PyFile file = (PyFile)owner;
-      for (PyFunction f : file.getTopLevelFunctions()) {
-        if (!overloadsProcessor.process(f)) {
-          break;
-        }
-      }
-    }
-    return overloads;
-  }
-
-  private static boolean isOverload(@NotNull PyCallable callable, @NotNull TypeEvalContext context) {
-    if (callable instanceof PyDecoratable) {
-      final PyDecoratable decorated = (PyDecoratable)callable;
-      final ImmutableSet<PyKnownDecoratorUtil.KnownDecorator> decorators =
-        ImmutableSet.copyOf(PyKnownDecoratorUtil.getKnownDecorators(decorated, context));
-      if (decorators.contains(PyKnownDecoratorUtil.KnownDecorator.TYPING_OVERLOAD)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  @NotNull
-  private static Map<PyExpression, PyNamedParameter> mapArguments(@NotNull PyCallSiteExpression callSite,
-                                                                  @NotNull PyFunction function,
-                                                                  @NotNull TypeEvalContext context) {
+  @Nullable
+  private static PyCallExpressionHelper.ArgumentMappingResults mapArguments(@NotNull PyCallSiteExpression callSite,
+                                                                            @NotNull PyFunction function,
+                                                                            @NotNull TypeEvalContext context) {
     final List<PyParameter> parameters = Arrays.asList(function.getParameterList().getParameters());
-    return PyCallExpressionHelper.mapArguments(callSite, function, parameters, context);
+    final PyCallExpressionHelper.ArgumentMappingResults mapping =
+      PyCallExpressionHelper.mapArguments(callSite, function, parameters, context);
+
+    if (!mapping.getUnmappedArguments().isEmpty() || !mapping.getUnmappedParameters().isEmpty()) {
+      return null;
+    }
+
+    return mapping;
   }
 }

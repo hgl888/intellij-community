@@ -16,8 +16,6 @@
 package com.jetbrains.python.console;
 
 import com.google.common.collect.Maps;
-import com.intellij.openapi.application.TransactionGuard;
-import com.intellij.openapi.application.TransactionId;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
@@ -44,7 +42,7 @@ import java.util.Map;
 public class PydevConsoleRunnerFactory extends PythonConsoleRunnerFactory {
   @Override
   @NotNull
-  public PydevConsoleRunnerImpl createConsoleRunner(@NotNull Project project,
+  public PydevConsoleRunner createConsoleRunner(@NotNull Project project,
                                                     @Nullable Module contextModule) {
     Pair<Sdk, Module> sdkAndModule = PydevConsoleRunner.findPythonSdkAndModule(project, contextModule);
 
@@ -72,8 +70,6 @@ public class PydevConsoleRunnerFactory extends PythonConsoleRunnerFactory {
       customStartScript = "\n" + customStartScript;
     }
 
-    String selfPathAppend = PydevConsoleRunner.constructPythonPathCommand(pythonPath, customStartScript);
-
     String workingDir = settingsProvider.getWorkingDirectory();
     if (StringUtil.isEmpty(workingDir)) {
       if (module != null && ModuleRootManager.getInstance(module).getContentRoots().length > 0) {
@@ -92,6 +88,8 @@ public class PydevConsoleRunnerFactory extends PythonConsoleRunnerFactory {
     if (pathMapper != null && workingDir != null) {
       workingDir = pathMapper.convertToRemote(workingDir);
     }
+
+    String selfPathAppend = PydevConsoleRunner.constructPyPathAndWorkingDirCommand(pythonPath, workingDir, customStartScript);
 
     BuildoutFacet facet = null;
     if (module != null) {
@@ -114,8 +112,9 @@ public class PydevConsoleRunnerFactory extends PythonConsoleRunnerFactory {
     putIPythonEnvFlag(project, envs);
 
     Consumer<String> rerunAction = title -> {
-      PydevConsoleRunnerImpl runner = createConsoleRunner(project, module);
-      runner.setConsoleTitle(title);
+      PydevConsoleRunner runner = createConsoleRunner(project, module);
+      if(runner instanceof PydevConsoleRunnerImpl)
+        ((PydevConsoleRunnerImpl)runner).setConsoleTitle(title);
       runner.run();
     };
 
@@ -128,7 +127,7 @@ public class PydevConsoleRunnerFactory extends PythonConsoleRunnerFactory {
   }
 
   @NotNull
-  protected PydevConsoleRunnerImpl createConsoleRunner(Project project,
+  protected PydevConsoleRunner createConsoleRunner(Project project,
                                                        Sdk sdk,
                                                        String workingDir,
                                                        Map<String, String> envs,

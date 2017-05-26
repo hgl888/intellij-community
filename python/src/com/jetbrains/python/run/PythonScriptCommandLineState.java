@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,16 +25,22 @@ import com.intellij.execution.configurations.ParametersList;
 import com.intellij.execution.configurations.ParamsGroup;
 import com.intellij.execution.console.ConsoleExecuteAction;
 import com.intellij.execution.executors.DefaultDebugExecutor;
+import com.intellij.execution.filters.UrlFilter;
+import com.intellij.execution.process.OSProcessHandler;
+import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
+import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.terminal.TerminalExecutionConsole;
 import com.intellij.util.ArrayUtil;
+import com.intellij.util.io.BaseDataReader;
+import com.intellij.util.io.BaseOutputReader;
 import com.jetbrains.python.PythonHelper;
 import com.jetbrains.python.console.PyConsoleOptions;
 import com.jetbrains.python.console.PyConsoleType;
-import com.jetbrains.python.console.PydevConsoleRunner;
 import com.jetbrains.python.console.PydevConsoleRunnerImpl;
 import com.jetbrains.python.console.actions.ShowVarsAction;
 import com.jetbrains.python.sdk.PythonEnvUtil;
@@ -58,10 +64,12 @@ public class PythonScriptCommandLineState extends PythonCommandLineState {
   }
 
   @Override
-  public ExecutionResult execute(Executor executor, final CommandLinePatcher... patchers) throws ExecutionException {
-    if (myConfig.showCommandLineAfterwards()) {
+  public ExecutionResult execute(Executor executor,
+                                 PythonProcessStarter processStarter,
+                                 final CommandLinePatcher... patchers) throws ExecutionException {
+    if (myConfig.showCommandLineAfterwards() && !myConfig.emulateTerminal()) {
       if (executor.getId() == DefaultDebugExecutor.EXECUTOR_ID) {
-        return super.execute(executor, ArrayUtil.append(patchers, new CommandLinePatcher() {
+        return super.execute(executor, processStarter, ArrayUtil.append(patchers, new CommandLinePatcher() {
           @Override
           public void patchCommandLine(GeneralCommandLine commandLine) {
             commandLine.getParametersList().getParamsGroup(PythonCommandLineState.GROUP_DEBUGGER).addParameterAt(1, "--cmd-line");
@@ -69,23 +77,79 @@ public class PythonScriptCommandLineState extends PythonCommandLineState {
         }));
       }
 
-      PydevConsoleRunner runner =
+      PythonScriptWithConsoleRunner runner =
         new PythonScriptWithConsoleRunner(myConfig.getProject(), myConfig.getSdk(), PyConsoleType.PYTHON, myConfig.getWorkingDirectory(),
                                           myConfig.getEnvs(), patchers,
                                           PyConsoleOptions.getInstance(myConfig.getProject()).getPythonConsoleSettings());
 
+      runner.setEnableAfterConnection(false);
       runner.runSync();
       // runner.getProcessHandler() would be null if execution error occurred
       if (runner.getProcessHandler() == null) {
         return null;
       }
+      runner.getPydevConsoleCommunication().setConsoleView(runner.getConsoleView());
       List<AnAction> actions = Lists.newArrayList(createActions(runner.getConsoleView(), runner.getProcessHandler()));
       actions.add(new ShowVarsAction(runner.getConsoleView(), runner.getPydevConsoleCommunication()));
 
       return new DefaultExecutionResult(runner.getConsoleView(), runner.getProcessHandler(), actions.toArray(new AnAction[actions.size()]));
     }
+    else if (myConfig.emulateTerminal()) {
+      setRunWithPty(true);
+
+      final ProcessHandler processHandler = startProcess(processStarter, patchers);
+
+      TerminalExecutionConsole executeConsole = new TerminalExecutionConsole(myConfig.getProject(), processHandler);
+
+      executeConsole.addMessageFilter(myConfig.getProject(), new PythonTracebackFilter(myConfig.getProject()));
+      executeConsole.addMessageFilter(myConfig.getProject(), new UrlFilter());
+
+      processHandler.startNotify();
+
+      return new DefaultExecutionResult(executeConsole, processHandler, AnAction.EMPTY_ARRAY);
+    }
     else {
-      return super.execute(executor, patchers);
+      return super.execute(executor, processStarter, patchers);
+    }
+  }
+
+  @Override
+  public void customizeEnvironmentVars(Map<String, String> envs, boolean passParentEnvs) {
+    if (myConfig.emulateTerminal()) {
+      if (!SystemInfo.isWindows) {
+        envs.put("TERM", "xterm-256color");
+      }
+    }
+  }
+
+  @Override
+  protected ProcessHandler doCreateProcess(GeneralCommandLine commandLine) throws ExecutionException {
+    if (myConfig.emulateTerminal()) {
+      return new OSProcessHandler(commandLine) {
+        @NotNull
+        @Override
+        protected BaseOutputReader.Options readerOptions() {
+          return new BaseOutputReader.Options() {
+            @Override
+            public BaseDataReader.SleepingPolicy policy() {
+              return BaseDataReader.SleepingPolicy.BLOCKING;
+            }
+
+            @Override
+            public boolean splitToLines() {
+              return false;
+            }
+
+            @Override
+            public boolean withSeparators() {
+              return true;
+            }
+          };
+        }
+      };
+    }
+    else {
+      return super.doCreateProcess(commandLine);
     }
   }
 
@@ -116,6 +180,7 @@ public class PythonScriptCommandLineState extends PythonCommandLineState {
   public class PythonScriptWithConsoleRunner extends PydevConsoleRunnerImpl {
 
     private CommandLinePatcher[] myPatchers;
+    private String PYDEV_RUN_IN_CONSOLE_PY = "pydev/pydev_run_in_console.py";
 
     public PythonScriptWithConsoleRunner(@NotNull Project project,
                                          @NotNull Sdk sdk,
@@ -125,7 +190,8 @@ public class PythonScriptCommandLineState extends PythonCommandLineState {
                                          CommandLinePatcher[] patchers,
                                          PyConsoleOptions.PyConsoleSettings consoleSettings,
                                          String... statementsToExecute) {
-      super(project, sdk, consoleType, workingDir, environmentVariables, consoleSettings, (s) -> {}, statementsToExecute);
+      super(project, sdk, consoleType, workingDir, environmentVariables, consoleSettings, (s) -> {
+      }, statementsToExecute);
       myPatchers = patchers;
     }
 
@@ -134,6 +200,11 @@ public class PythonScriptCommandLineState extends PythonCommandLineState {
       AnAction a = new ConsoleExecuteAction(super.getConsoleView(), myConsoleExecuteActionHandler,
                                             myConsoleExecuteActionHandler.getEmptyExecuteAction(), myConsoleExecuteActionHandler);
       registerActionShortcuts(Lists.newArrayList(a), getConsoleView().getConsoleEditor().getComponent());
+    }
+
+    @Override
+    protected String getRunnerFileFromHelpers() {
+      return PYDEV_RUN_IN_CONSOLE_PY;
     }
 
     @Override

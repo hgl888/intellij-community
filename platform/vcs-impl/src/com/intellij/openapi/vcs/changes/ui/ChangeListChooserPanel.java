@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2012 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,22 @@ package com.intellij.openapi.vcs.changes.ui;
 
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.fileTypes.PlainTextLanguage;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vcs.changes.ChangeListCompletionContributor;
 import com.intellij.openapi.vcs.VcsConfiguration;
 import com.intellij.openapi.vcs.changes.ChangeList;
+import com.intellij.openapi.vcs.changes.ChangeListCompletionContributor;
 import com.intellij.openapi.vcs.changes.ChangeListManager;
 import com.intellij.openapi.vcs.changes.LocalChangeList;
 import com.intellij.openapi.vcs.changes.committed.CommittedChangeListRenderer;
 import com.intellij.ui.*;
 import com.intellij.util.NullableConsumer;
 import com.intellij.util.ObjectUtils;
+import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.CalledInAwt;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -232,18 +233,32 @@ public class ChangeListChooserPanel extends JPanel {
 
     public MyEditorComboBox() {
       super(PREF_WIDTH);
+      JBColor fg = new JBColor(0x00b53d, 0x6ba65d);
+      JBColor bg = new JBColor(0xebfcf1, 0x313b32);
+      TextIcon icon = new TextIcon("New", fg, bg, JBUI.scale(2));
+      icon.setFont(RelativeFont.TINY.derive(getFont()));
+      icon.setRound(JBUI.scale(4));
+      JLabel label = new JLabel(icon);
+      JPanel panel = new JPanel(new BorderLayout());
+      panel.setOpaque(true);
+      panel.setBorder(JBUI.Borders.empty(1, 1, 1, 4));
+      panel.add(label, BorderLayout.CENTER);
       myEditorTextField = new LanguageTextField(PlainTextLanguage.INSTANCE, myProject, "");
-      JLabel label = new JLabel(" ");
-      myEditorTextField.addDocumentListener(new DocumentAdapter() {
+      myEditorTextField.addDocumentListener(new DocumentListener() {
         @Override
         public void documentChanged(DocumentEvent e) {
           String changeListName = e.getDocument().getText();
-          label.setText(StringUtil.isEmptyOrSpaces(changeListName)
-                        ? " " : getExistingChangelistByName(changeListName) != null ? " Existing " : " New ");
+          panel.setVisible(!StringUtil.isEmptyOrSpaces(changeListName) && getExistingChangelistByName(changeListName) == null);
         }
       });
       ObjectUtils.assertNotNull(myEditorTextField.getDocument()).putUserData(ChangeListCompletionContributor.COMBO_BOX_KEY, this);
-      setEditor(new ComboBoxCompositeEditor<>(myEditorTextField, label));
+      ComboBoxCompositeEditor<Object, LanguageTextField> compositeEditor = new ComboBoxCompositeEditor<>(myEditorTextField, panel);
+      myEditorTextField.addSettingsProvider((editor) -> {
+        Color editorBackgroundColor = editor.getBackgroundColor();
+        panel.setBackground(editorBackgroundColor);
+        compositeEditor.setBackground(editorBackgroundColor);
+      });
+      setEditor(compositeEditor);
     }
 
     @NotNull

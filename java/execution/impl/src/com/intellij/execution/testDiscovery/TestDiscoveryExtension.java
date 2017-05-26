@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,10 +27,9 @@ import com.intellij.execution.testframework.sm.runner.SMTRunnerEventsAdapter;
 import com.intellij.execution.testframework.sm.runner.SMTRunnerEventsListener;
 import com.intellij.execution.testframework.sm.runner.SMTestProxy;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.options.SettingsEditor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectUtil;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.WriteExternalException;
@@ -48,21 +47,12 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
 public class TestDiscoveryExtension extends RunConfigurationExtension {
-  private static final Logger LOG = Logger.getInstance("#" + TestDiscoveryExtension.class.getName());
-
-  @Nullable
-  public SettingsEditor createEditor(@NotNull RunConfigurationBase configuration) {
-    return null;
-  }
-
-  @Nullable
-  public String getEditorTitle() {
-    return null;
-  }
+  private static final Logger LOG = Logger.getInstance(TestDiscoveryExtension.class);
 
   @NotNull
   @Override
@@ -117,6 +107,7 @@ public class TestDiscoveryExtension extends RunConfigurationExtension {
     }
   }
 
+  @Override
   public void updateJavaParameters(RunConfigurationBase configuration, JavaParameters params, RunnerSettings runnerSettings) {
     if (runnerSettings != null || !isApplicableFor(configuration)) {
       return;
@@ -147,13 +138,14 @@ public class TestDiscoveryExtension extends RunConfigurationExtension {
     throw new WriteExternalException();
   }
 
+  @Override
   protected boolean isApplicableFor(@NotNull final RunConfigurationBase configuration) {
     return configuration instanceof JavaTestConfigurationBase && Registry.is("testDiscovery.enabled");
   }
 
   @NotNull
-  public static String baseTestDiscoveryPathForProject(Project project) {
-    return PathManager.getSystemPath() + File.separator + "testDiscovery" + File.separator + project.getName() + "." + project.getLocationHash();
+  public static Path baseTestDiscoveryPathForProject(Project project) {
+    return ProjectUtil.getProjectCachePath(project, "testDiscovery", true);
   }
 
   private static final Object ourTracesLock = new Object();

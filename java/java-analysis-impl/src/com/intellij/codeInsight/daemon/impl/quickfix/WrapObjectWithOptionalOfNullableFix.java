@@ -15,7 +15,6 @@
  */
 package com.intellij.codeInsight.daemon.impl.quickfix;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.daemon.QuickFixBundle;
 import com.intellij.codeInsight.intention.HighPriorityAction;
 import com.intellij.codeInsight.intention.IntentionAction;
@@ -40,8 +39,6 @@ import java.util.Collection;
  * @author Dmitry Batkovich
  */
 public class WrapObjectWithOptionalOfNullableFix extends MethodArgumentFix implements HighPriorityAction {
-  private static final Logger LOG = Logger.getInstance(WrapObjectWithOptionalOfNullableFix.class);
-
   public static final ArgumentFixerActionFactory REGISTAR = new MyFixerActionFactory();
 
   protected WrapObjectWithOptionalOfNullableFix(final @NotNull PsiExpressionList list,
@@ -67,47 +64,6 @@ public class WrapObjectWithOptionalOfNullableFix extends MethodArgumentFix imple
     return PsiUtil.isLanguageLevel8OrHigher(file) && super.isAvailable(project, editor, file);
   }
 
-  public static class MyIntentionAction extends LocalQuickFixAndIntentionActionOnPsiElement implements HighPriorityAction {
-    @Nullable private final PsiType myType;
-
-    protected MyIntentionAction(@NotNull PsiExpression element, @Nullable PsiType type) {
-      super(element);
-      myType = type;
-    }
-
-    @Nls
-    @NotNull
-    @Override
-    public String getFamilyName() {
-      return QuickFixBundle.message("wrap.with.optional.single.parameter.text");
-    }
-
-    @Override
-    public void invoke(@NotNull Project project,
-                       @NotNull PsiFile file,
-                       @Nullable("is null when called from inspection") Editor editor,
-                       @NotNull PsiElement startElement,
-                       @NotNull PsiElement endElement) {
-      startElement.replace(getModifiedExpression((PsiExpression)getStartElement()));
-    }
-
-    @Override
-    public boolean isAvailable(@NotNull Project project,
-                               @NotNull PsiFile file,
-                               @NotNull PsiElement startElement,
-                               @NotNull PsiElement endElement) {
-      return startElement.isValid() &&
-             startElement.getManager().isInProject(startElement) &&
-             PsiUtil.isLanguageLevel8OrHigher(startElement) && areConvertible(((PsiExpression) startElement).getType(), myType);
-    }
-
-    @NotNull
-    @Override
-    public String getText() {
-      return getFamilyName();
-    }
-  }
-
   public static IntentionAction createFix(@Nullable PsiType type, @NotNull PsiExpression expression) {
     class MyFix extends LocalQuickFixAndIntentionActionOnPsiElement implements HighPriorityAction {
       protected MyFix(@Nullable PsiElement element) {
@@ -127,7 +83,6 @@ public class WrapObjectWithOptionalOfNullableFix extends MethodArgumentFix imple
                          @Nullable("is null when called from inspection") Editor editor,
                          @NotNull PsiElement startElement,
                          @NotNull PsiElement endElement) {
-        if (!FileModificationService.getInstance().prepareFileForWrite(file)) return;
         startElement.replace(getModifiedExpression((PsiExpression)getStartElement()));
       }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,16 +19,13 @@ import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.QuickList;
 import com.intellij.openapi.keymap.KeymapGroup;
 import com.intellij.openapi.util.text.StringUtil;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * User: anna
- * Date: Mar 18, 2005
- */
 public class Group implements KeymapGroup {
   private Group myParent;
   private final String myName;
@@ -62,10 +59,12 @@ public class Group implements KeymapGroup {
     return myIcon;
   }
 
+  @Nullable
   public String getId() {
     return myId;
   }
 
+  @Override
   public void addActionId(String id) {
     myChildren.add(id);
   }
@@ -78,6 +77,7 @@ public class Group implements KeymapGroup {
     myChildren.add(link);
   }
 
+  @Override
   public void addGroup(KeymapGroup keymapGroup) {
     Group group = (Group) keymapGroup;
     myChildren.add(group);
@@ -101,7 +101,9 @@ public class Group implements KeymapGroup {
         myIds.add(((QuickList)child).getActionId());
       }
       else if (child instanceof Group) {
-        myIds.addAll(((Group)child).initIds());
+        Group childGroup = (Group)child;
+        myIds.addAll(childGroup.initIds());
+        if (childGroup.myId != null) myIds.add(childGroup.myId);
       }
     }
     return myIds;

@@ -17,9 +17,9 @@ package com.intellij.slicer;
 
 import com.intellij.analysis.AnalysisScope;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
-import com.intellij.openapi.util.Computable;
 import com.intellij.psi.PsiElement;
 import com.intellij.usageView.UsageInfo;
 import com.intellij.usages.UsageInfo2UsageAdapter;
@@ -35,8 +35,7 @@ public abstract class SliceUsage extends UsageInfo2UsageAdapter {
   private final SliceUsage myParent;
   public final SliceAnalysisParams params;
 
-  public SliceUsage(@NotNull PsiElement element,
-                    @NotNull SliceUsage parent) {
+  public SliceUsage(@NotNull PsiElement element, @NotNull SliceUsage parent) {
     super(new UsageInfo(element));
     myParent = parent;
     params = parent.params;
@@ -51,12 +50,7 @@ public abstract class SliceUsage extends UsageInfo2UsageAdapter {
   }
 
   public void processChildren(@NotNull Processor<SliceUsage> processor) {
-    final PsiElement element = ApplicationManager.getApplication().runReadAction(new Computable<PsiElement>() {
-      @Override
-      public PsiElement compute() {
-        return getElement();
-      }
-    });
+    final PsiElement element = ReadAction.compute(this::getElement);
     ProgressIndicator indicator = ProgressManager.getInstance().getProgressIndicator();
     indicator.checkCanceled();
 
@@ -97,5 +91,5 @@ public abstract class SliceUsage extends UsageInfo2UsageAdapter {
   }
 
   @NotNull
-  protected  abstract  SliceUsage copy();
+  protected abstract SliceUsage copy();
 }

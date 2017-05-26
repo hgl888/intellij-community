@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import com.intellij.openapi.application.*;
 import com.intellij.openapi.application.ex.ApplicationManagerEx;
 import com.intellij.openapi.components.impl.ServiceManagerImpl;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.registry.Registry;
@@ -187,6 +188,10 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
     return myLastFocusedFrame;
   }
 
+  public ActionCallback requestFocusInProject(@NotNull Component c, @Nullable Project project) {
+    return requestFocus(new FocusCommand.ByComponent(c, c, project, new Exception()), false);
+  }
+
   @Override
   @NotNull
   public ActionCallback requestFocus(@NotNull final Component c, final boolean forced) {
@@ -206,12 +211,9 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
     myActivityMonitor.addActivity(FOCUS, ModalityState.any());
     if (!forced) {
 
-      UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-        @Override
-        public void run() {
-          if (!myFocusRequests.contains(command)) {
-            myFocusRequests.add(command);
-          }
+      UIUtil.invokeAndWaitIfNeeded((Runnable)() -> {
+        if (!myFocusRequests.contains(command)) {
+          myFocusRequests.add(command);
         }
       });
 
@@ -359,12 +361,9 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
   private void setCommand(@NotNull final FocusCommand command) {
     myRequestFocusCmd = command;
 
-    UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-      @Override
-      public void run() {
-        if (!myFocusRequests.contains(command)) {
-          myFocusRequests.add(command);
-        }
+    UIUtil.invokeAndWaitIfNeeded((Runnable)() -> {
+      if (!myFocusRequests.contains(command)) {
+        myFocusRequests.add(command);
       }
     });
   }
@@ -382,12 +381,7 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
       processor.finish(myKeyProcessorContext);
     }
 
-    UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-      @Override
-      public void run() {
-        myFocusRequests.remove(cmd);
-      }
-    });
+    UIUtil.invokeAndWaitIfNeeded((Runnable)() -> myFocusRequests.remove(cmd));
 
     if (reject) {
       ActionCallback cb = cmd.getCallback();
@@ -398,12 +392,7 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
   }
 
   private void resetUnforcedCommand(@NotNull final FocusCommand cmd) {
-    UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-      @Override
-      public void run() {
-        myFocusRequests.remove(cmd);
-      }
-    });
+    UIUtil.invokeAndWaitIfNeeded((Runnable)() -> myFocusRequests.remove(cmd));
   }
 
   private static boolean canExecuteOnInactiveApplication(@NotNull FocusCommand cmd) {
@@ -434,6 +423,10 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
   public void dispose() {
     myForcedFocusRequestsAlarm.cancelAllRequests();
     myFocusedComponentAlarm.cancelAllRequests();
+    for (FurtherRequestor requestor : myValidFurtherRequestors) {
+      Disposer.dispose(requestor);
+    }
+    myValidFurtherRequestors.clear();
   }
 
   private class KeyProcessorContext implements KeyEventProcessor.Context {
@@ -459,13 +452,14 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
 
   @Override
   public void doWhenFocusSettlesDown(@NotNull final Runnable runnable) {
+    boolean invokedOnEdt = ApplicationManager.getApplication().isDispatchThread();
     UIUtil.invokeLaterIfNeeded(() -> {
       if (isFlushingIdleRequests()) {
         myIdleRequests.add(runnable);
         return;
       }
 
-      if (myRunContext != null) {
+      if (myRunContext != null || invokedOnEdt && canFlushIdleRequests()) {
         flushRequest(runnable);
         return;
       }
@@ -665,23 +659,20 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
 
   private void invalidateFocusRequestsQueue() {
     assertDispatchThread();
-    UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-      @Override
-      public void run() {
-        if (myFocusRequests.isEmpty()) return;
+    UIUtil.invokeAndWaitIfNeeded((Runnable)() -> {
+      if (myFocusRequests.isEmpty()) return;
 
-        FocusCommand[] requests = myFocusRequests.toArray(new FocusCommand[myFocusRequests.size()]);
-        boolean wasChanged = false;
-        for (FocusCommand each : requests) {
-          if (each.isExpired()) {
-            resetCommand(each, true);
-            wasChanged = true;
-          }
+      FocusCommand[] requests = myFocusRequests.toArray(new FocusCommand[myFocusRequests.size()]);
+      boolean wasChanged = false;
+      for (FocusCommand each : requests) {
+        if (each.isExpired()) {
+          resetCommand(each, true);
+          wasChanged = true;
         }
+      }
 
-        if (wasChanged && myFocusRequests.isEmpty()) {
-          restartIdleAlarm();
-        }
+      if (wasChanged && myFocusRequests.isEmpty()) {
+        restartIdleAlarm();
       }
     });
   }
@@ -736,7 +727,7 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
   }
 
   @Override
-  public void typeAheadUntil(@NotNull ActionCallback callback) {
+  public void typeAheadUntil(@NotNull ActionCallback callback, @NotNull String cause) {
     if (!isTypeaheadEnabled()) return;
 
     final long currentTime = System.currentTimeMillis();
@@ -767,7 +758,7 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
                                             new Exception() {
                                               @Override
                                               public String getMessage() {
-                                                return "Time: " + (System.currentTimeMillis() - currentTime);
+                                                return "Time: " + (System.currentTimeMillis() - currentTime) + "; cause: " + cause;
                                               }
                                             },
                                             true).doWhenProcessed(() -> {
@@ -1022,7 +1013,7 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
     callback.setRejected();
   }
 
-  private class AppListener extends ApplicationActivationListener.Adapter {
+  private class AppListener implements ApplicationActivationListener {
 
     @Override
     public void applicationActivated(final IdeFrame ideFrame) {

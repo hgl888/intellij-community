@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2011 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import com.intellij.execution.configurations.RunConfigurationBase;
 import com.intellij.execution.configurations.RunnerSettings;
 import com.intellij.execution.process.ProcessHandler;
 import com.intellij.openapi.options.SettingsEditor;
-import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.WriteExternalException;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
@@ -51,8 +50,8 @@ public abstract class RunConfigurationExtensionBase<T extends RunConfigurationBa
    * @param runConfiguration the run configuration being deserialized.
    * @param element          the element with persisted settings.
    */
-  protected abstract void readExternal(@NotNull final T runConfiguration,
-                                       @NotNull final Element element) throws InvalidDataException;
+  protected void readExternal(@NotNull final T runConfiguration, @NotNull final Element element) {
+  }
 
   /**
    * Saves the settings of this extension to the run configuration XML element.
@@ -60,8 +59,7 @@ public abstract class RunConfigurationExtensionBase<T extends RunConfigurationBa
    * @param runConfiguration the run configuration being serialized.
    * @param element          the element into which the settings should be persisted,
    */
-  protected void writeExternal(@NotNull final T runConfiguration,
-                               @NotNull final Element element) throws WriteExternalException {
+  protected void writeExternal(@NotNull T runConfiguration, @NotNull Element element) {
     throw new WriteExternalException();
   }
 
@@ -73,7 +71,9 @@ public abstract class RunConfigurationExtensionBase<T extends RunConfigurationBa
    * @return the editor component, or null if this extension doesn't provide any UI for editing the settings.
    */
   @Nullable
-  protected abstract <P extends T> SettingsEditor<P> createEditor(@NotNull final P configuration);
+  protected <P extends T> SettingsEditor<P> createEditor(@NotNull final P configuration) {
+    return null;
+  }
 
   /**
    * Returns the title of the tab in which the settings editor is displayed.
@@ -81,7 +81,9 @@ public abstract class RunConfigurationExtensionBase<T extends RunConfigurationBa
    * @return the editor tab title, or null if this extension doesn't provide any UI for editing the settings.
    */
   @Nullable
-  protected abstract String getEditorTitle();
+  protected String getEditorTitle() {
+    return null;
+  }
 
   /**
    * @param configuration Run configuration
@@ -93,7 +95,6 @@ public abstract class RunConfigurationExtensionBase<T extends RunConfigurationBa
   /**
    *
    * @param applicableConfiguration Applicable run configuration
-   * @param runnerSettings
    * @return True if extension is turned on in configuration extension settings.
    *         E.g. RCov is turned on for given run configuration.
    */

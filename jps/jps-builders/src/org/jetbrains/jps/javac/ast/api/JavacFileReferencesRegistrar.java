@@ -15,14 +15,16 @@
  */
 package org.jetbrains.jps.javac.ast.api;
 
+import gnu.trove.TObjectIntHashMap;
+
 import java.util.List;
-import java.util.Set;
 
 public interface JavacFileReferencesRegistrar {
+  void initialize();
 
-  boolean initialize();
+  boolean isEnabled();
 
   boolean onlyImports();
 
-  void registerFile(String filePath, Set<JavacRefSymbol> refs, List<JavacRefSymbol> defs);
+  void registerFile(String filePath, TObjectIntHashMap<JavacRef> refs, List<JavacDef> defs);
 }

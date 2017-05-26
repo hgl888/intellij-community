@@ -17,6 +17,7 @@
 package com.intellij.ide.util.gotoByName;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.primitives.Ints;
 import com.intellij.Patches;
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.find.findUsages.PsiElement2UsageTargetAdapter;
@@ -38,7 +39,6 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.ex.util.EditorUtil;
 import com.intellij.openapi.fileTypes.UnknownFileType;
 import com.intellij.openapi.fileTypes.ex.FileTypeManagerEx;
-import com.intellij.openapi.keymap.KeymapManager;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
@@ -52,7 +52,6 @@ import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.*;
-import com.intellij.openapi.util.ActionCallback;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.SystemInfo;
@@ -90,18 +89,18 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.text.AttributeSet;
 import javax.swing.text.BadLocationException;
-import javax.swing.text.DefaultEditorKit;
 import javax.swing.text.PlainDocument;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.*;
 import java.util.List;
+
+import static com.intellij.openapi.keymap.KeymapUtil.getActiveKeymapShortcuts;
 
 public abstract class ChooseByNameBase {
   public static final String TEMPORARILY_FOCUSABLE_COMPONENT_KEY = "ChooseByNameBase.TemporarilyFocusableComponent";
@@ -128,7 +127,7 @@ public abstract class ChooseByNameBase {
 
   protected JScrollPane myListScrollPane; // Located in the layered pane
   private final MyListModel<Object> myListModel = new MyListModel<>();
-  protected final JList myList = new JBList(myListModel);
+  protected final JList<Object> myList = new JBList<>(myListModel);
   private final List<Pair<String, Integer>> myHistory = ContainerUtil.newArrayList();
   private final List<Pair<String, Integer>> myFuture = ContainerUtil.newArrayList();
 
@@ -139,7 +138,6 @@ public abstract class ChooseByNameBase {
   private final ListUpdater myListUpdater = new ListUpdater();
 
   private boolean myDisposedFlag = false;
-  private ActionCallback myPostponedOkAction;
 
   private final String[][] myNames = new String[2][];
   private volatile CalcElementsThread myCalcElementsThread;
@@ -163,15 +161,11 @@ public abstract class ChooseByNameBase {
   private ShortcutSet myCheckBoxShortcut;
   protected boolean myInitIsDone;
   static final boolean ourLoadNamesEachTime = FileBasedIndex.ourEnableTracingOfKeyHashToVirtualFileMapping;
-  private boolean myFixLostTyping = true;
   private boolean myAlwaysHasMore = false;
   private Point myFocusPoint;
+  private SelectionSnapshot myCurrentChosenInfo;
 
   public boolean checkDisposed() {
-    if (myDisposedFlag && myPostponedOkAction != null && !myPostponedOkAction.isProcessed()) {
-      myPostponedOkAction.setRejected();
-    }
-
     return myDisposedFlag;
   }
 
@@ -434,30 +428,21 @@ public abstract class ChooseByNameBase {
     final DefaultActionGroup group = new DefaultActionGroup();
     group.add(new ShowFindUsagesAction() {
       @Override
-      public PsiElement[][] getElements() {
-        final List<Object> objects = myListModel.getItems();
-        final List<PsiElement> prefixMatchElements = new ArrayList<>(objects.size());
-        final List<PsiElement> nonPrefixMatchElements = new ArrayList<>(objects.size());
-        List<PsiElement> curElements = prefixMatchElements;
+      public PsiElement[] getElements() {
+        List<Object> objects = myListModel.getItems();
+        List<PsiElement> elements = new ArrayList<>(objects.size());
         for (Object object : objects) {
           if (object instanceof PsiElement) {
-            curElements.add((PsiElement)object);
+            elements.add((PsiElement)object);
           }
           else if (object instanceof DataProvider) {
-            final PsiElement psi = CommonDataKeys.PSI_ELEMENT.getData((DataProvider)object);
-            if (psi != null) {
-              curElements.add(psi);
-            }
-          }
-          else if (object == NON_PREFIX_SEPARATOR) {
-            curElements = nonPrefixMatchElements;
+            ContainerUtil.addIfNotNull(elements, CommonDataKeys.PSI_ELEMENT.getData((DataProvider)object));
           }
         }
-        return new PsiElement[][]{PsiUtilCore.toPsiElementArray(prefixMatchElements),
-          PsiUtilCore.toPsiElementArray(nonPrefixMatchElements)};
+        return PsiUtilCore.toPsiElementArray(elements);
       }
     });
-    final ActionToolbar actionToolbar = ActionManager.getInstance().createActionToolbar(ActionPlaces.UNKNOWN, group, true);
+    final ActionToolbar actionToolbar = ActionManager.getInstance().createActionToolbar("ChooseByNameBase", group, true);
     actionToolbar.setLayoutPolicy(ActionToolbar.NOWRAP_LAYOUT_POLICY);
     actionToolbar.updateActionsImmediately(); // we need valid ActionToolbar.getPreferredSize() to calc size of popup
     final JComponent toolbarComponent = actionToolbar.getComponent();
@@ -471,22 +456,8 @@ public abstract class ChooseByNameBase {
 
     myTextFieldPanel.add(caption2Tools);
 
-    final ActionMap actionMap = new ActionMap();
-    actionMap.setParent(myTextField.getActionMap());
-    actionMap.put(DefaultEditorKit.copyAction, new AbstractAction() {
-      @Override
-      public void actionPerformed(@NotNull ActionEvent e) {
-        if (myTextField.getSelectedText() != null) {
-          actionMap.getParent().get(DefaultEditorKit.copyAction).actionPerformed(e);
-          return;
-        }
-        final Object chosenElement = getChosenElement();
-        if (chosenElement instanceof PsiElement) {
-          CopyReferenceAction.doCopy((PsiElement)chosenElement, myProject);
-        }
-      }
-    });
-    myTextField.setActionMap(actionMap);
+    new MyCopyReferenceAction()
+      .registerCustomShortcutSet(ActionManager.getInstance().getAction(IdeActions.ACTION_COPY).getShortcutSet(), myTextField);
 
     myTextFieldPanel.add(myTextField);
     Font editorFont = EditorUtil.getEditorFont();
@@ -569,8 +540,9 @@ public abstract class ChooseByNameBase {
     myTextField.getDocument().addDocumentListener(new DocumentAdapter() {
       @Override
       protected void textChanged(DocumentEvent e) {
-        clearPostponedOkAction(false);
-        rebuildList(false);
+        SelectionPolicy toSelect = myCurrentChosenInfo != null && myCurrentChosenInfo.hasSamePattern(ChooseByNameBase.this)
+                                   ? myCurrentChosenInfo : SelectMostRelevant.INSTANCE;
+        rebuildList(toSelect, myRebuildDelay, ModalityState.current(), null);
       }
     });
 
@@ -618,19 +590,10 @@ public abstract class ChooseByNameBase {
           case KeyEvent.VK_ENTER:
             if (myList.getSelectedValue() == EXTRA_ELEM) {
               myMaximumListSizeLimit += myListSizeIncreasing;
-              rebuildList(myList.getSelectedIndex(), myRebuildDelay, ModalityState.current(), null);
+              rebuildList(new SelectIndex(myList.getSelectedIndex()), myRebuildDelay, ModalityState.current(), null);
               e.consume();
             }
             break;
-        }
-
-        if (myList.getSelectedValue() == NON_PREFIX_SEPARATOR) {
-          if (keyCode == KeyEvent.VK_UP || keyCode == KeyEvent.VK_PAGE_UP) {
-            ScrollingUtil.moveUp(myList, e.getModifiersEx());
-          }
-          else {
-            ScrollingUtil.moveDown(myList, e.getModifiersEx());
-          }
         }
       }
     });
@@ -659,7 +622,7 @@ public abstract class ChooseByNameBase {
           if (selectedCellBounds != null && selectedCellBounds.contains(e.getPoint())) { // Otherwise it was reselected in the selection listener
             if (myList.getSelectedValue() == EXTRA_ELEM) {
               myMaximumListSizeLimit += myListSizeIncreasing;
-              rebuildList(selectedIndex, myRebuildDelay, ModalityState.current(), null);
+              rebuildList(new SelectIndex(selectedIndex), myRebuildDelay, ModalityState.current(), null);
             }
             else {
               doClose(true);
@@ -672,21 +635,19 @@ public abstract class ChooseByNameBase {
       }
     }.installOn(myList);
 
+    //noinspection unchecked
     myList.setCellRenderer(myModel.getListCellRenderer());
     myList.setFont(editorFont);
 
     myList.addListSelectionListener(new ListSelectionListener() {
-      private int myPreviousSelectionIndex = 0;
-
       @Override
       public void valueChanged(@NotNull ListSelectionEvent e) {
-        if (myList.getSelectedValue() != NON_PREFIX_SEPARATOR) {
-          myPreviousSelectionIndex = myList.getSelectedIndex();
-          chosenElementMightChange();
-          updateDocumentation();
-        }
-        else if (allowMultipleSelection) {
-          myList.setSelectedIndex(myPreviousSelectionIndex);
+        chosenElementMightChange();
+        updateDocumentation();
+
+        List<Object> chosenElements = getChosenElements();
+        if (!chosenElements.isEmpty()) {
+          myCurrentChosenInfo = new SelectionSnapshot(getTrimmedText(), new HashSet<>(chosenElements));
         }
       }
     });
@@ -701,7 +662,7 @@ public abstract class ChooseByNameBase {
     myInitialized = true;
 
     if (modalityState != null) {
-      rebuildList(myInitialIndex, 0, modalityState, null);
+      rebuildList(SelectionPolicyKt.fromIndex(myInitialIndex), 0, modalityState, null);
     }
   }
 
@@ -729,7 +690,7 @@ public abstract class ChooseByNameBase {
   @NotNull
   private static Set<KeyStroke> getShortcuts(@NotNull String actionId) {
     Set<KeyStroke> result = new HashSet<>();
-    for (Shortcut shortcut : KeymapManager.getInstance().getActiveKeymap().getShortcuts(actionId)) {
+    for (Shortcut shortcut : getActiveKeymapShortcuts(actionId).getShortcuts()) {
       if (shortcut instanceof KeyboardShortcut) {
         KeyboardShortcut keyboardShortcut = (KeyboardShortcut)shortcut;
         result.add(keyboardShortcut.getFirstKeyStroke());
@@ -750,7 +711,7 @@ public abstract class ChooseByNameBase {
    */
   public void rebuildList(boolean initial) {
     // TODO this method is public, because the chooser does not listed for the model.
-    rebuildList(initial ? myInitialIndex : 0, myRebuildDelay, ModalityState.current(), null);
+    rebuildList(initial ? SelectionPolicyKt.fromIndex(myInitialIndex) : SelectMostRelevant.INSTANCE, myRebuildDelay, ModalityState.current(), null);
   }
 
   private void updateDocumentation() {
@@ -776,13 +737,11 @@ public abstract class ChooseByNameBase {
   protected void doClose(final boolean ok) {
     if (checkDisposed()) return;
 
-    if (closeForbidden(ok)) return;
-    if (postponeCloseWhenListReady(ok)) return;
+    if (closeForbidden(ok) || getChosenElements().isEmpty()) return;
 
     cancelListUpdater();
     close(ok);
 
-    clearPostponedOkAction(ok);
     myListModel.removeAll();
   }
 
@@ -797,34 +756,13 @@ public abstract class ChooseByNameBase {
     final CalcElementsThread calcElementsThread = myCalcElementsThread;
     if (calcElementsThread != null) {
       calcElementsThread.cancel();
-      backgroundCalculationFinished(Collections.emptyList(), 0);
+      myCalcElementsThread = null;
     }
     myListUpdater.cancelAll();
   }
 
-  private boolean postponeCloseWhenListReady(boolean ok) {
-    if (!isToFixLostTyping()) return false;
-
-    final String text = getTrimmedText();
-    if (ok && myCalcElementsThread != null && !text.isEmpty()) {
-      myPostponedOkAction = new ActionCallback();
-      IdeFocusManager.getInstance(myProject).typeAheadUntil(myPostponedOkAction);
-      return true;
-    }
-
-    return false;
-  }
-
   @NotNull public String getTrimmedText() {
     return StringUtil.trimLeading(StringUtil.notNullize(myTextField.getText()));
-  }
-
-  public void setFixLostTyping(boolean fixLostTyping) {
-    myFixLostTyping = fixLostTyping;
-  }
-
-  protected boolean isToFixLostTyping() {
-    return myFixLostTyping && Registry.is("actionSystem.fixLostTyping");
   }
 
   @NotNull
@@ -949,7 +887,7 @@ public abstract class ChooseByNameBase {
     return layeredPane;
   }
 
-  protected void rebuildList(final int pos,
+  protected void rebuildList(SelectionPolicy pos,
                              final int delay,
                              @NotNull final ModalityState modalityState,
                              @Nullable final Runnable postRunnable) {
@@ -1002,7 +940,7 @@ public abstract class ChooseByNameBase {
     });
   }
 
-  private void backgroundCalculationFinished(Collection<?> result, int toSelect) {
+  private void backgroundCalculationFinished(Collection<?> result, SelectionPolicy toSelect) {
     myCalcElementsThread = null;
     setElementsToList(toSelect, result);
     myList.repaint();
@@ -1024,7 +962,7 @@ public abstract class ChooseByNameBase {
     return myShowListAfterCompletionKeyStroke;
   }
 
-  private void setElementsToList(int pos, @NotNull Collection<?> elements) {
+  private void setElementsToList(SelectionPolicy pos, @NotNull Collection<?> elements) {
     myListUpdater.cancelAll();
     if (checkDisposed()) return;
     if (isCloseByFocusLost() && Registry.is("focus.follows.mouse.workarounds")) {
@@ -1038,25 +976,16 @@ public abstract class ChooseByNameBase {
       myTextField.setForeground(JBColor.red);
       myListUpdater.cancelAll();
       hideList();
-      clearPostponedOkAction(false);
       return;
     }
 
     Object[] oldElements = myListModel.getItems().toArray();
     Object[] newElements = elements.toArray();
     List<ModelDiff.Cmd> commands = ModelDiff.createDiffCmds(myListModel, oldElements, newElements);
-    if (commands == null) {
-      myListUpdater.doPostponedOkIfNeeded();
-      return; // Nothing changed
-    }
 
     myTextField.setForeground(UIUtil.getTextFieldForeground());
-    if (commands.isEmpty()) {
-      if (pos <= 0) {
-        pos = calcSelectedIndex(newElements, getTrimmedText());
-      }
-
-      ScrollingUtil.selectItem(myList, Math.min(pos, myListModel.getSize() - 1));
+    if (commands == null || commands.isEmpty()) {
+      applySelection(pos);
       myList.setVisibleRowCount(Math.min(VISIBLE_LIST_SIZE_LIMIT, myList.getModel().getSize()));
       showList();
       myTextFieldPanel.repositionHint();
@@ -1082,20 +1011,22 @@ public abstract class ChooseByNameBase {
       reversed();
 
     int bestPosition = 0;
+    while (bestPosition < modelElements.length - 1 && isSpecialElement(modelElements[bestPosition])) bestPosition++;
+
     for (int i = 1; i < modelElements.length; i++) {
       final Object modelElement = modelElements[i];
-      if (EXTRA_ELEM.equals(modelElement) || NON_PREFIX_SEPARATOR.equals(modelElement)) continue;
+      if (isSpecialElement(modelElement)) continue;
 
       if (itemComparator.compare(modelElement, modelElements[bestPosition]) < 0) {
         bestPosition = i;
       }
     }
 
-    if (bestPosition < modelElements.length - 1 && modelElements[bestPosition] == NON_PREFIX_SEPARATOR) {
-      bestPosition++;
-    }
-
     return bestPosition;
+  }
+
+  private static boolean isSpecialElement(Object modelElement) {
+    return EXTRA_ELEM.equals(modelElement);
   }
 
   private int getUseCount(String statContext, Object modelElement) {
@@ -1144,7 +1075,7 @@ public abstract class ChooseByNameBase {
       myAlarm.cancelAllRequests();
     }
 
-    public void appendToModel(@NotNull List<ModelDiff.Cmd> commands, final int selectionPos) {
+    public void appendToModel(@NotNull List<ModelDiff.Cmd> commands, SelectionPolicy selection) {
       myAlarm.cancelAllRequests();
       myCommands.addAll(commands);
 
@@ -1168,47 +1099,31 @@ public abstract class ChooseByNameBase {
           if (!myCommands.isEmpty()) {
             myAlarm.addRequest(this, DELAY);
           }
-          else {
-            doPostponedOkIfNeeded();
-          }
           if (!checkDisposed()) {
             showList();
             myTextFieldPanel.repositionHint();
 
             if (!myListModel.isEmpty()) {
-              int pos = selectionPos <= 0 ? calcSelectedIndex(myListModel.getItems().toArray(), ChooseByNameBase.this.getTrimmedText()) : selectionPos;
-              ScrollingUtil.selectItem(myList, Math.min(pos, myListModel.getSize() - 1));
+              applySelection(selection);
             }
           }
         }
       }, DELAY);
     }
 
-    private void doPostponedOkIfNeeded() {
-      if (myPostponedOkAction != null) {
-        if (getChosenElement() != null) {
-          doClose(true);
-        }
-        clearPostponedOkAction(checkDisposed());
-      }
+  }
+
+  private void applySelection(SelectionPolicy selection) {
+    List<Integer> indices = selection.performSelection(this, myListModel);
+    myList.setSelectedIndices(Ints.toArray(indices));
+    if (!indices.isEmpty()) {
+      ScrollingUtil.ensureIndexIsVisible(myList, indices.get(0).intValue(), 0);
     }
   }
 
-  private void clearPostponedOkAction(boolean success) {
-    if (myPostponedOkAction != null) {
-      if (success) {
-        myPostponedOkAction.setDone();
-      }
-      else {
-        myPostponedOkAction.setRejected();
-      }
-    }
-
-    myPostponedOkAction = null;
-  }
-
+  @Deprecated
   public boolean hasPostponedAction() {
-    return myPostponedOkAction != null;
+    return false;
   }
 
   protected abstract void showList();
@@ -1224,7 +1139,7 @@ public abstract class ChooseByNameBase {
   }
 
   protected List<Object> getChosenElements() {
-    return ContainerUtil.filter(myList.getSelectedValues(), o -> o != EXTRA_ELEM && o != NON_PREFIX_SEPARATOR);
+    return ContainerUtil.filter(myList.getSelectedValuesList(), o -> !isSpecialElement(o));
   }
 
   protected void chosenElementMightChange() {
@@ -1271,7 +1186,7 @@ public abstract class ChooseByNameBase {
 
     @Nullable
     private KeyStroke getShortcut(String actionCodeCompletion) {
-      final Shortcut[] shortcuts = KeymapManager.getInstance().getActiveKeymap().getShortcuts(actionCodeCompletion);
+      final Shortcut[] shortcuts = getActiveKeymapShortcuts(actionCodeCompletion).getShortcuts();
       for (final Shortcut shortcut : shortcuts) {
         if (shortcut instanceof KeyboardShortcut) {
           return ((KeyboardShortcut)shortcut).getFirstKeyStroke();
@@ -1305,7 +1220,7 @@ public abstract class ChooseByNameBase {
         final int oldPos = myList.getSelectedIndex();
         myHistory.add(Pair.create(pattern, oldPos));
         final Runnable postRunnable = () -> fillInCommonPrefix(pattern);
-        rebuildList(0, 0, ModalityState.current(), postRunnable);
+        rebuildList(SelectMostRelevant.INSTANCE, 0, ModalityState.current(), postRunnable);
         return;
       }
       if (backStroke != null && keyStroke.equals(backStroke)) {
@@ -1316,7 +1231,7 @@ public abstract class ChooseByNameBase {
           final Pair<String, Integer> last = myHistory.remove(myHistory.size() - 1);
           myTextField.setText(last.first);
           myFuture.add(Pair.create(oldText, oldPos));
-          rebuildList(0, 0, ModalityState.current(), null);
+          rebuildList(SelectMostRelevant.INSTANCE, 0, ModalityState.current(), null);
         }
         return;
       }
@@ -1328,7 +1243,7 @@ public abstract class ChooseByNameBase {
           final Pair<String, Integer> next = myFuture.remove(myFuture.size() - 1);
           myTextField.setText(next.first);
           myHistory.add(Pair.create(oldText, oldPos));
-          rebuildList(0, 0, ModalityState.current(), null);
+          rebuildList(SelectMostRelevant.INSTANCE, 0, ModalityState.current(), null);
         }
         return;
       }
@@ -1407,7 +1322,7 @@ public abstract class ChooseByNameBase {
     }
 
     @Override
-    @Nullable
+    @NotNull
     public Point getBestPopupPosition() {
       return new Point(myTextFieldPanel.getWidth(), getHeight());
     }
@@ -1454,18 +1369,6 @@ public abstract class ChooseByNameBase {
   }
 
   public static final String EXTRA_ELEM = "...";
-  public static final String NON_PREFIX_SEPARATOR = "non-prefix matches:";
-
-  public static Component renderNonPrefixSeparatorComponent(Color backgroundColor) {
-    final JPanel panel = new JPanel(new BorderLayout());
-    final JSeparator separator = new JSeparator(SwingConstants.HORIZONTAL);
-    panel.add(separator, BorderLayout.CENTER);
-    if (!UIUtil.isUnderAquaBasedLookAndFeel()) {
-      panel.setBorder(new EmptyBorder(3, 0, 2, 0));
-    }
-    panel.setBackground(backgroundColor);
-    return panel;
-  }
 
   private class CalcElementsThread extends ReadTask {
     private final String myPattern;
@@ -1646,10 +1549,6 @@ public abstract class ChooseByNameBase {
     myListSizeIncreasing = listSizeIncreasing;
   }
 
-  public boolean isAlwaysHasMore() {
-    return myAlwaysHasMore;
-  }
-
   /**
    * Display <tt>...</tt> item at the end of the list regardless of whether it was filled up or not.
    * This option can be useful in cases, when it can't be said beforehand, that the next call to {@link ChooseByNameItemProvider}
@@ -1673,22 +1572,18 @@ public abstract class ChooseByNameBase {
       final UsageViewPresentation presentation = new UsageViewPresentation();
       final String text = getTrimmedText();
       final String prefixPattern = myFindUsagesTitle + " \'" + text + "\'";
-      final String nonPrefixPattern = myFindUsagesTitle + " \'*" + text + "*\'";
       presentation.setCodeUsagesString(prefixPattern);
       presentation.setUsagesInGeneratedCodeString(prefixPattern + " in generated code");
-      presentation.setDynamicUsagesString(nonPrefixPattern);
       presentation.setTabName(prefixPattern);
       presentation.setTabText(prefixPattern);
       presentation.setTargetsNodeText("Unsorted " + StringUtil.toLowerCase(patternToLowerCase(prefixPattern)));
-      final Object[][] elements = getElements();
+      PsiElement[] elements = getElements();
       final List<PsiElement> targets = new ArrayList<>();
       final Set<Usage> usages = new LinkedHashSet<>();
-      fillUsages(Arrays.asList(elements[0]), usages, targets, false);
-      fillUsages(Arrays.asList(elements[1]), usages, targets, true);
+      fillUsages(Arrays.asList(elements), usages, targets, false);
       if (myListModel.contains(EXTRA_ELEM)) { //start searching for the rest
         final boolean everywhere = myCheckBox.isSelected();
-        final Set<Object> prefixMatchElementsArray = new LinkedHashSet<>();
-        final Set<Object> nonPrefixMatchElementsArray = new LinkedHashSet<>();
+        final Set<Object> collected = new LinkedHashSet<>();
         hideHint();
         ProgressManager.getInstance().run(new Task.Modal(myProject, prefixPattern, true) {
           private ChooseByNameBase.CalcElementsThread myCalcUsagesThread;
@@ -1710,19 +1605,10 @@ public abstract class ChooseByNameBase {
             };
 
             ApplicationManager.getApplication().runReadAction(() -> {
-              boolean anyPlace = isSearchInAnyPlace();
-              setSearchInAnyPlace(false);
-              myCalcUsagesThread.addElementsByPattern(text, prefixMatchElementsArray, indicator, everywhere);
-              setSearchInAnyPlace(anyPlace);
-
-              if (anyPlace && !indicator.isCanceled()) {
-                myCalcUsagesThread.addElementsByPattern(text, nonPrefixMatchElementsArray, indicator, everywhere);
-                nonPrefixMatchElementsArray.removeAll(prefixMatchElementsArray);
-              }
+              myCalcUsagesThread.addElementsByPattern(text, collected, indicator, everywhere);
 
               indicator.setText("Prepare...");
-              fillUsages(prefixMatchElementsArray, usages, targets, false);
-              fillUsages(nonPrefixMatchElementsArray, usages, targets, true);
+              fillUsages(collected, usages, targets, false);
             });
           }
 
@@ -1780,11 +1666,11 @@ public abstract class ChooseByNameBase {
         e.getPresentation().setVisible(false);
         return;
       }
-      final Object[][] elements = getElements();
-      e.getPresentation().setEnabled(elements != null && elements[0].length + elements[1].length > 0);
+      PsiElement[] elements = getElements();
+      e.getPresentation().setEnabled(elements != null && elements.length > 0);
     }
 
-    public abstract Object[][] getElements();
+    public abstract PsiElement[] getElements();
   }
 
   private static class MyUsageInfo2UsageAdapter extends UsageInfo2UsageAdapter {
@@ -1825,5 +1711,17 @@ public abstract class ChooseByNameBase {
 
   public JTextField getTextField() {
     return myTextField;
+  }
+
+  private class MyCopyReferenceAction extends DumbAwareAction {
+    @Override
+    public void update(AnActionEvent e) {
+      e.getPresentation().setEnabled(myTextField.getSelectedText() == null && getChosenElement() instanceof PsiElement);
+    }
+
+    @Override
+    public void actionPerformed(AnActionEvent e) {
+      CopyReferenceAction.doCopy((PsiElement)getChosenElement(), myProject);
+    }
   }
 }

@@ -5,10 +5,10 @@ import java.util.List;
 
 public class Main {
   private static long countNonEmpty(List<String> input) {
-      long count = 0;
+      long count = 0L;
       for (String str : input) {
-          String s = str.trim();
-          if (!s.isEmpty()) {
+          String trim = str.trim();
+          if (!trim.isEmpty()) {
               count++;
           }
       }

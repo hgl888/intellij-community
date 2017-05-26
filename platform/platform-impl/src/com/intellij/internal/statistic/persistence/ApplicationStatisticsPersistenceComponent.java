@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,8 +24,9 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.*;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-import com.intellij.openapi.project.ProjectManagerAdapter;
+import com.intellij.openapi.project.ProjectManagerListener;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.messages.MessageBusConnection;
 import gnu.trove.THashSet;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
@@ -40,8 +41,9 @@ import java.util.concurrent.TimeUnit;
   name = "StatisticsApplicationUsages",
   storages = @Storage(value = "statistics.application.usages.xml", roamingType = RoamingType.DISABLED)
 )
-public class ApplicationStatisticsPersistenceComponent extends ApplicationStatisticsPersistence
-  implements ApplicationComponent, PersistentStateComponent<Element> {
+public class ApplicationStatisticsPersistenceComponent extends ApplicationStatisticsPersistence implements
+                                                                                                PersistentStateComponent<Element>,
+                                                                                                BaseComponent {
   private boolean persistOnClosing = !ApplicationManager.getApplication().isUnitTestMode();
 
   private static final String TOKENIZER = ",";
@@ -157,15 +159,9 @@ public class ApplicationStatisticsPersistenceComponent extends ApplicationStatis
   }
 
   @Override
-  @NonNls
-  @NotNull
-  public String getComponentName() {
-    return "ApplicationStatisticsPersistenceComponent";
-  }
-
-  @Override
   public void initComponent() {
-    ApplicationManager.getApplication().getMessageBus().connect().subscribe(AppLifecycleListener.TOPIC, new AppLifecycleListener.Adapter() {
+    MessageBusConnection connection = ApplicationManager.getApplication().getMessageBus().connect();
+    connection.subscribe(AppLifecycleListener.TOPIC, new AppLifecycleListener() {
       @Override
       public void appClosing() {
         persistOpenedProjects();
@@ -173,7 +169,7 @@ public class ApplicationStatisticsPersistenceComponent extends ApplicationStatis
       }
     });
 
-    ProjectManager.getInstance().addProjectManagerListener(new ProjectManagerAdapter() {
+    connection.subscribe(ProjectManager.TOPIC, new ProjectManagerListener() {
       @Override
       public void projectClosing(Project project) {
         if (persistOnClosing && project != null) {
@@ -193,9 +189,5 @@ public class ApplicationStatisticsPersistenceComponent extends ApplicationStatis
     for (Project project : ProjectManager.getInstance().getOpenProjects()) {
       UsagesCollector.doPersistProjectUsages(project);
     }
-  }
-
-  @Override
-  public void disposeComponent() {
   }
 }

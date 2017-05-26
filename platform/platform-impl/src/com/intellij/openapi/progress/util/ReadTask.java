@@ -15,18 +15,17 @@
  */
 package com.intellij.openapi.progress.util;
 
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
-import com.intellij.openapi.util.Computable;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * A computation that needs to be run in background and inside a read action, and canceled whenever a write action is about to occur. 
  * 
- * @see com.intellij.openapi.progress.util.ProgressIndicatorUtils#scheduleWithWriteActionPriority(ReadTask) 
+ * @see ProgressIndicatorUtils#scheduleWithWriteActionPriority(ReadTask)
  * 
  */
 public abstract class ReadTask {
@@ -64,12 +63,7 @@ public abstract class ReadTask {
    * @param indicator the progress indicator of the background thread
    */
   public Continuation runBackgroundProcess(@NotNull final ProgressIndicator indicator) throws ProcessCanceledException {
-    return ApplicationManager.getApplication().runReadAction(new Computable<Continuation>() {
-      @Override
-      public Continuation compute() {
-        return performInReadAction(indicator);
-      }
-    });
+    return ReadAction.compute(() -> performInReadAction(indicator));
   }
 
   /**

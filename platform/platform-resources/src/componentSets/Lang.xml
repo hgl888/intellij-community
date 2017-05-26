@@ -16,6 +16,10 @@
       <implementation-class>com.intellij.util.indexing.FileBasedIndexImpl</implementation-class>
     </component>
     <component>
+      <interface-class>com.intellij.util.gist.GistManager</interface-class>
+      <implementation-class>com.intellij.util.gist.GistManagerImpl</implementation-class>
+    </component>
+    <component>
       <interface-class>com.intellij.psi.stubs.StubIndex</interface-class>
       <implementation-class>com.intellij.psi.stubs.StubIndexImpl</implementation-class>
     </component>
@@ -74,6 +78,11 @@
       <interface-class>com.intellij.openapi.module.ModuleManager</interface-class>
       <implementation-class>com.intellij.openapi.module.impl.ModuleManagerComponent</implementation-class>
       <loadForDefaultProject/>
+    </component>
+
+    <component>
+      <interface-class>com.intellij.execution.impl.ProjectRunConfigurationInitializer</interface-class>
+      <implementation-class>com.intellij.execution.impl.ProjectRunConfigurationInitializer</implementation-class>
     </component>
 
     <component>
@@ -143,11 +152,15 @@
       <skipForDefaultProject/>
     </component>
     <component>
-      <implementation-class>com.intellij.refactoring.changeSignature.ChangeSignaturePassFactory</implementation-class>
+      <implementation-class>com.intellij.refactoring.changeSignature.inplace.ChangeSignaturePassFactory</implementation-class>
       <skipForDefaultProject/>
     </component>
     <component>
       <implementation-class>com.intellij.codeInsight.daemon.impl.CodeFoldingPassFactory</implementation-class>
+      <skipForDefaultProject/>
+    </component>
+    <component>
+      <implementation-class>com.intellij.codeInsight.hints.ParameterHintsPassFactory</implementation-class>
       <skipForDefaultProject/>
     </component>
     <component>
@@ -197,11 +210,6 @@
     <component>
       <interface-class>com.intellij.openapi.roots.impl.PushedFilePropertiesUpdater</interface-class>
       <implementation-class>com.intellij.openapi.roots.impl.PushedFilePropertiesUpdaterImpl</implementation-class>
-    </component>
-
-    <component>
-      <implementation-class>com.intellij.refactoring.changeSignature.ChangeSignatureGestureDetector</implementation-class>
-      <skipForDefaultProject/>
     </component>
 
     <component>

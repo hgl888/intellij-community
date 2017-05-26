@@ -17,7 +17,6 @@
 package com.intellij.debugger.ui.breakpoints;
 
 import com.intellij.debugger.DebuggerBundle;
-import com.intellij.openapi.util.registry.Registry;
 import com.intellij.ui.IdeBorderFactory;
 import com.intellij.util.ui.DialogUtil;
 import com.intellij.util.ui.JBUI;
@@ -47,7 +46,7 @@ public class MethodBreakpointPropertiesPanel extends XBreakpointCustomProperties
   public JComponent getComponent() {
     JPanel _panel, _panel0;
 
-    myEmulatedCheckBox = new JCheckBox("Emulated");
+    myEmulatedCheckBox = new JCheckBox(DebuggerBundle.message("label.method.breakpoint.properties.panel.emulated"));
     myWatchEntryCheckBox = new JCheckBox(DebuggerBundle.message("label.method.breakpoint.properties.panel.method.entry"));
     myWatchExitCheckBox = new JCheckBox(DebuggerBundle.message("label.method.breakpoint.properties.panel.method.exit"));
     DialogUtil.registerMnemonic(myWatchEntryCheckBox);
@@ -98,8 +97,6 @@ public class MethodBreakpointPropertiesPanel extends XBreakpointCustomProperties
 
   @Override
   public void loadFrom(@NotNull XBreakpoint<JavaMethodBreakpointProperties> breakpoint) {
-    myEmulatedCheckBox.setVisible(
-      Registry.is("debugger.emulate.method.breakpoints") && breakpoint.getType() instanceof JavaMethodBreakpointType);
     myEmulatedCheckBox.setSelected(breakpoint.getProperties().EMULATED);
 
     myWatchEntryCheckBox.setSelected(breakpoint.getProperties().WATCH_ENTRY);

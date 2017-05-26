@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,12 +33,14 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.ActionCallback;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.*;
 import com.intellij.project.ProjectKt;
 import com.intellij.projectImport.ProjectOpenProcessor;
 import com.intellij.ui.AppIcon;
+import com.intellij.util.PathUtil;
 import com.intellij.util.PlatformUtils;
 import com.intellij.util.SystemProperties;
 import org.jdom.JDOMException;
@@ -55,7 +57,7 @@ import java.io.IOException;
  * @author Eugene Belyaev
  */
 public class ProjectUtil {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.ide.impl.ProjectUtil");
+  private static final Logger LOG = Logger.getInstance(ProjectUtil.class);
 
   private ProjectUtil() { }
 
@@ -79,7 +81,7 @@ public class ProjectUtil {
       LOG.info(e);
       return;
     }
-    RecentProjectsManager.getInstance().setLastProjectCreationLocation(path.replace(File.separatorChar, '/'));
+    RecentProjectsManager.getInstance().setLastProjectCreationLocation(PathUtil.toSystemIndependentName(path));
   }
 
   /**
@@ -177,7 +179,7 @@ public class ProjectUtil {
       }
     }
 
-    if (isRemotePath(path) && !RecentProjectsManager.getInstance().hasPath(path)) {
+    if (isRemotePath(path) && !RecentProjectsManager.getInstance().hasPath(PathUtil.toSystemIndependentName(path))) {
       if (!confirmLoadingFromRemotePath(path, "warning.load.project.from.share", "title.load.project.from.share")) {
         return null;
       }
@@ -192,12 +194,7 @@ public class ProjectUtil {
       Messages.showMessageDialog(IdeBundle.message("error.cannot.load.project", e.getMessage()),
                                  IdeBundle.message("title.cannot.load.project"), Messages.getErrorIcon());
     }
-    catch (JDOMException e) {
-      LOG.info(e);
-      Messages.showMessageDialog(IdeBundle.message("error.project.file.is.corrupted"), IdeBundle.message("title.cannot.load.project"),
-                                 Messages.getErrorIcon());
-    }
-    catch (InvalidDataException e) {
+    catch (JDOMException | InvalidDataException e) {
       LOG.info(e);
       Messages.showMessageDialog(IdeBundle.message("error.project.file.is.corrupted"), IdeBundle.message("title.cannot.load.project"),
                                  Messages.getErrorIcon());
@@ -237,7 +234,7 @@ public class ProjectUtil {
   }
 
   @Nullable
-  private static Project findAndFocusExistingProjectForPath(String path) {
+  public static Project findAndFocusExistingProjectForPath(String path) {
     Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
     for (Project project : openProjects) {
       if (!project.isDefault() && isSameProject(path, project)) {
@@ -287,12 +284,7 @@ public class ProjectUtil {
 
     IProjectStore projectStore = ProjectKt.getStateStore(project);
     String existingBaseDirPath = projectStore.getProjectBasePath();
-    if (existingBaseDirPath == null) {
-      // could be null if not yet initialized
-      return false;
-    }
-
-    final File projectFile = new File(projectFilePath);
+    File projectFile = new File(projectFilePath);
     if (projectFile.isDirectory()) {
       return FileUtil.pathsEqual(projectFilePath, existingBaseDirPath);
     }
@@ -304,8 +296,10 @@ public class ProjectUtil {
     File parent = projectFile.getParentFile();
     if (parent.getName().equals(Project.DIRECTORY_STORE_FOLDER)) {
       parent = parent.getParentFile();
+      return parent != null && FileUtil.pathsEqual(parent.getPath(), existingBaseDirPath);
     }
-    return parent != null && FileUtil.pathsEqual(parent.getPath(), existingBaseDirPath);
+    return FileUtil.pathsEqual(parent.getPath(), existingBaseDirPath) &&
+           ProjectFileType.DEFAULT_EXTENSION.equals(FileUtilRt.getExtension(projectFile.getName()));
   }
 
   public static void focusProjectWindow(final Project p, boolean executeIfAppInactive) {

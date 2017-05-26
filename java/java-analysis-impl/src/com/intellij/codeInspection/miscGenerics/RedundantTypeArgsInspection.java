@@ -15,7 +15,6 @@
  */
 package com.intellij.codeInspection.miscGenerics;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.daemon.GroupNames;
 import com.intellij.codeInspection.*;
 import com.intellij.openapi.diagnostic.Logger;
@@ -36,6 +35,7 @@ public class RedundantTypeArgsInspection extends GenericsInspectionToolBase {
   private static final Logger LOG = Logger.getInstance("#com.intellij.codeInspection.miscGenerics.RedundantTypeArgsInspection");
 
   private final static LocalQuickFix ourQuickFixAction = new MyQuickFixAction();
+  public static final String SHORT_NAME = "RedundantTypeArguments";
 
   @Override
   @NotNull
@@ -52,7 +52,7 @@ public class RedundantTypeArgsInspection extends GenericsInspectionToolBase {
   @Override
   @NotNull
   public String getShortName() {
-    return "RedundantTypeArguments";
+    return SHORT_NAME;
   }
 
 
@@ -135,13 +135,13 @@ public class RedundantTypeArgsInspection extends GenericsInspectionToolBase {
     if (qualifierTypeElement != null) {
       final PsiType psiType = qualifierTypeElement.getType();
       if (psiType instanceof PsiClassType && !(((PsiClassType)psiType).isRaw())) {
+        PsiClass aClass = ((PsiClassType)psiType).resolve();
+        if (aClass == null) return;
         final JavaResolveResult result = expression.advancedResolve(false);
         final PsiElement element = result.getElement();
         if (element instanceof PsiTypeParameterListOwner) {
-          final PsiMethodReferenceExpression copy = createMethodReference(expression, qualifierTypeElement);
-          final JavaResolveResult simplifiedResolve = copy.advancedResolve(false);
-          final PsiElement candidate = simplifiedResolve.getElement();
-          if (candidate == element) {
+          PsiMethod method = element instanceof PsiMethod ? (PsiMethod)element : null;
+          if (PsiDiamondTypeUtil.areTypeArgumentsRedundant(((PsiClassType)psiType).getParameters(), expression, false, method, aClass.getTypeParameters())) {
             final PsiJavaCodeReferenceElement referenceElement = qualifierTypeElement.getInnermostComponentReferenceElement();
             LOG.assertTrue(referenceElement != null, qualifierTypeElement);
             final PsiReferenceParameterList parameterList = referenceElement.getParameterList();
@@ -176,7 +176,6 @@ public class RedundantTypeArgsInspection extends GenericsInspectionToolBase {
       final PsiElement element = descriptor.getPsiElement();
       if (!(element instanceof PsiReferenceParameterList)) return;
       final PsiReferenceParameterList typeArgumentList = (PsiReferenceParameterList)element;
-      if (!FileModificationService.getInstance().preparePsiElementForWrite(typeArgumentList)) return;
       try {
         final PsiMethodCallExpression expr =
           (PsiMethodCallExpression)JavaPsiFacade.getInstance(project).getElementFactory().createExpressionFromText("foo()", null);
@@ -200,7 +199,6 @@ public class RedundantTypeArgsInspection extends GenericsInspectionToolBase {
     @Override
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
       final PsiTypeElement typeElement = PsiTreeUtil.getParentOfType(descriptor.getPsiElement(), PsiTypeElement.class);
-      if (!FileModificationService.getInstance().preparePsiElementForWrite(typeElement)) return;
       final PsiMethodReferenceExpression expression = PsiTreeUtil.getParentOfType(typeElement, PsiMethodReferenceExpression.class);
       if (expression != null) {
         expression.replace(createMethodReference(expression, typeElement));

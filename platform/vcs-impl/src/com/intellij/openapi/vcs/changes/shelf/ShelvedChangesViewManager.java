@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,11 @@
 package com.intellij.openapi.vcs.changes.shelf;
 
 import com.intellij.CommonBundle;
+import com.intellij.diff.DiffContentFactoryEx;
+import com.intellij.diff.chains.DiffRequestProducerException;
+import com.intellij.diff.impl.CacheDiffRequestProcessor;
+import com.intellij.diff.requests.DiffRequest;
+import com.intellij.diff.requests.SimpleDiffRequest;
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.DataManager;
 import com.intellij.ide.DeleteProvider;
@@ -33,21 +38,25 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.diff.impl.patch.FilePatch;
 import com.intellij.openapi.diff.impl.patch.PatchSyntaxException;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeManager;
 import com.intellij.openapi.fileTypes.StdFileTypes;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.DumbAwareRunnable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.startup.StartupManager;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Couple;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.*;
-import com.intellij.openapi.vcs.changes.Change;
-import com.intellij.openapi.vcs.changes.CommitContext;
-import com.intellij.openapi.vcs.changes.DnDTargetContentAdapter;
+import com.intellij.openapi.vcs.changes.*;
+import com.intellij.openapi.vcs.changes.actions.ShowDiffPreviewAction;
 import com.intellij.openapi.vcs.changes.issueLinks.IssueLinkRenderer;
 import com.intellij.openapi.vcs.changes.issueLinks.TreeLinkMouseListener;
 import com.intellij.openapi.vcs.changes.patch.RelativePathCalculator;
+import com.intellij.openapi.vcs.changes.patch.tool.PatchDiffRequest;
 import com.intellij.openapi.vcs.changes.ui.ChangeListDragBean;
 import com.intellij.openapi.vcs.changes.ui.ChangesViewContentManager;
 import com.intellij.openapi.vcs.changes.ui.ShelvedChangeListDragBean;
@@ -60,11 +69,14 @@ import com.intellij.ui.*;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.IconUtil;
+import com.intellij.util.IconUtil.IconSizeWrapper;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.Convertor;
 import com.intellij.util.messages.MessageBus;
 import com.intellij.util.text.DateFormatUtil;
+import com.intellij.util.ui.GraphicsUtil;
 import com.intellij.util.ui.tree.TreeUtil;
+import com.intellij.vcsUtil.VcsUtil;
+import org.jetbrains.annotations.CalledInAwt;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -72,6 +84,8 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.event.TreeSelectionEvent;
+import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeModel;
@@ -83,7 +97,11 @@ import java.io.IOException;
 import java.util.*;
 import java.util.List;
 
+import static com.intellij.icons.AllIcons.Vcs.Patch_applied;
+import static com.intellij.openapi.actionSystem.Anchor.AFTER;
+import static com.intellij.openapi.vcs.changes.shelf.DiffShelvedChangesAction.createAppliedTextPatch;
 import static com.intellij.util.FontUtil.spaceAndThinSpace;
+import static com.intellij.util.ObjectUtils.assertNotNull;
 import static com.intellij.util.containers.ContainerUtil.notNullize;
 
 public class ShelvedChangesViewManager implements ProjectComponent {
@@ -107,6 +125,7 @@ public class ShelvedChangesViewManager implements ProjectComponent {
   private static final Object ROOT_NODE_VALUE = new Object();
   private DefaultMutableTreeNode myRoot;
   private final Map<Couple<String>, String> myMoveRenameInfo;
+  private PreviewDiffSplitterComponent mySplitterComponent;
 
   public static ShelvedChangesViewManager getInstance(Project project) {
     return PeriodicalTasksCloser.getInstance().safeGetComponent(project, ShelvedChangesViewManager.class);
@@ -118,6 +137,7 @@ public class ShelvedChangesViewManager implements ProjectComponent {
     myContentManager = contentManager;
     myShelveChangesManager = shelveChangesManager;
     bus.connect().subscribe(ShelveChangesManager.SHELF_TOPIC, new ChangeListener() {
+      @Override
       public void stateChanged(ChangeEvent e) {
         myUpdatePending = true;
         ApplicationManager.getApplication().invokeLater(() -> updateChangesContent(), ModalityState.NON_MODAL);
@@ -143,32 +163,39 @@ public class ShelvedChangesViewManager implements ProjectComponent {
     new DoubleClickListener() {
       @Override
       protected boolean onDoubleClick(MouseEvent e) {
-        DiffShelvedChangesAction.showShelvedChangesDiff(DataManager.getInstance().getDataContext(myTree));
+        DataContext dc = DataManager.getInstance().getDataContext(myTree);
+        if (getShelveChanges(dc).isEmpty() && getBinaryShelveChanges(dc).isEmpty()) return false;
+        DiffShelvedChangesAction.showShelvedChangesDiff(dc);
         return true;
       }
     }.installOn(myTree);
 
-    new TreeSpeedSearch(myTree, new Convertor<TreePath, String>() {
-      public String convert(TreePath o) {
-        final Object lc = o.getLastPathComponent();
-        final Object lastComponent = lc == null ? null : ((DefaultMutableTreeNode) lc).getUserObject();
-        if (lastComponent instanceof ShelvedChangeList) {
-          return ((ShelvedChangeList) lastComponent).DESCRIPTION;
-        } else if (lastComponent instanceof ShelvedChange) {
-          final ShelvedChange shelvedChange = (ShelvedChange)lastComponent;
-          return shelvedChange.getBeforeFileName() == null ? shelvedChange.getAfterFileName() : shelvedChange.getBeforeFileName();
-        } else if (lastComponent instanceof ShelvedBinaryFile) {
-          final ShelvedBinaryFile sbf = (ShelvedBinaryFile) lastComponent;
-          final String value = sbf.BEFORE_PATH == null ? sbf.AFTER_PATH : sbf.BEFORE_PATH;
-          int idx = value.lastIndexOf("/");
-          idx = (idx == -1) ? value.lastIndexOf("\\") : idx;
-          return idx > 0 ? value.substring(idx + 1) : value;
-        }
-        return null;
+    new TreeSpeedSearch(myTree, o -> {
+      final Object lc = o.getLastPathComponent();
+      final Object lastComponent = lc == null ? null : ((DefaultMutableTreeNode) lc).getUserObject();
+      if (lastComponent instanceof ShelvedChangeList) {
+        return ((ShelvedChangeList) lastComponent).DESCRIPTION;
+      } else if (lastComponent instanceof ShelvedChange) {
+        final ShelvedChange shelvedChange = (ShelvedChange)lastComponent;
+        return shelvedChange.getBeforeFileName() == null ? shelvedChange.getAfterFileName() : shelvedChange.getBeforeFileName();
+      } else if (lastComponent instanceof ShelvedBinaryFile) {
+        final ShelvedBinaryFile sbf = (ShelvedBinaryFile) lastComponent;
+        final String value = sbf.BEFORE_PATH == null ? sbf.AFTER_PATH : sbf.BEFORE_PATH;
+        int idx = value.lastIndexOf("/");
+        idx = (idx == -1) ? value.lastIndexOf("\\") : idx;
+        return idx > 0 ? value.substring(idx + 1) : value;
       }
+      return null;
     }, true);
+    myTree.addTreeSelectionListener(new TreeSelectionListener() {
+      @Override
+      public void valueChanged(TreeSelectionEvent e) {
+        mySplitterComponent.updatePreview();
+      }
+    });
   }
 
+  @Override
   public void projectOpened() {
     StartupManager startupManager = StartupManager.getInstance(myProject);
     if (startupManager == null) {
@@ -178,18 +205,10 @@ public class ShelvedChangesViewManager implements ProjectComponent {
     startupManager.registerPostStartupActivity((DumbAwareRunnable)() -> updateChangesContent());
   }
 
-  public void projectClosed() {
-  }
-
+  @Override
   @NonNls @NotNull
   public String getComponentName() {
     return "ShelvedChangesViewManager";
-  }
-
-  public void initComponent() {
-  }
-
-  public void disposeComponent() {
   }
 
   private void updateChangesContent() {
@@ -205,6 +224,7 @@ public class ShelvedChangesViewManager implements ProjectComponent {
     }
     else {
       if (myContent == null) {
+        myTree.updateUI();
         JPanel rootPanel = createRootPanel();
         myContent = new MyShelfContent(rootPanel, VcsBundle.message("shelf.tab"), false);
         myContent.setCloseable(false);
@@ -227,12 +247,26 @@ public class ShelvedChangesViewManager implements ProjectComponent {
 
     DefaultActionGroup actionGroup = new DefaultActionGroup();
     actionGroup.addAll((ActionGroup)ActionManager.getInstance().getAction("ShelvedChangesToolbar"));
-    actionGroup.add(ActionManager.getInstance().getAction("ShelvedChangesToolbarGear"));
-    ActionToolbar toolbar = ActionManager.getInstance().createActionToolbar(ActionPlaces.UNKNOWN, actionGroup, false);
+    ShowDiffPreviewAction diffPreviewAction = new ShowDiffPreviewAction() {
+      @Override
+      public void setSelected(AnActionEvent e, boolean state) {
+        super.setSelected(e, state);
+        assertNotNull(mySplitterComponent).setDetailsOn(state);
+        VcsConfiguration.getInstance(myProject).SHELVE_DETAILS_PREVIEW_SHOWN = state;
+      }
+    };
+    actionGroup.add(diffPreviewAction, new Constraints(AFTER, "ShelvedChanges.ShowHideDeleted"));
+
+    MyShelvedPreviewProcessor changeProcessor = new MyShelvedPreviewProcessor(myProject);
+    mySplitterComponent =
+      new PreviewDiffSplitterComponent(pane, changeProcessor, "ShelvedChangesViewManager.DETAILS_SPLITTER_PROPORTION",
+                                       VcsConfiguration.getInstance(myProject).SHELVE_DETAILS_PREVIEW_SHOWN);
+    diffPreviewAction.setSelected(null, mySplitterComponent.isDetailsOn());
+    ActionToolbar toolbar = ActionManager.getInstance().createActionToolbar("ShelvedChanges", actionGroup, false);
 
     JPanel rootPanel = new JPanel(new BorderLayout());
     rootPanel.add(toolbar.getComponent(), BorderLayout.WEST);
-    rootPanel.add(pane, BorderLayout.CENTER);
+    rootPanel.add(mySplitterComponent, BorderLayout.CENTER);
     DataManager.registerDataProvider(rootPanel, myTree);
 
     return rootPanel;
@@ -452,6 +486,7 @@ public class ShelvedChangesViewManager implements ProjectComponent {
       return ourInstance;
     }
 
+    @Override
     public int compare(final Object o1, final Object o2) {
       final String path1 = getPath(o1);
       final String path2 = getPath(o2);
@@ -483,7 +518,14 @@ public class ShelvedChangesViewManager implements ProjectComponent {
     private final IssueLinkRenderer myIssueLinkRenderer;
     private final Map<Couple<String>, String> myMoveRenameInfo;
     private static final Icon PatchIcon = StdFileTypes.PATCH.getIcon();
-    private static final Icon DisabledPatchIcon = AllIcons.Nodes.DisabledPointcut;
+    private static final Icon AppliedPatchIcon =
+      new IconSizeWrapper(Patch_applied, Patch_applied.getIconWidth(), Patch_applied.getIconHeight()) {
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+          GraphicsUtil.paintWithAlpha(g, 0.6f);
+          super.paintIcon(c, g, x, y);
+        }
+      };
     private static final Icon DisabledToDeleteIcon = IconUtil.desaturate(AllIcons.Actions.GC);
 
     public ShelfTreeCellRenderer(Project project, final Map<Couple<String>, String> moveRenameInfo) {
@@ -491,6 +533,7 @@ public class ShelvedChangesViewManager implements ProjectComponent {
       myIssueLinkRenderer = new IssueLinkRenderer(project, this);
     }
 
+    @Override
     public void customizeCellRenderer(@NotNull JTree tree, Object value, boolean selected, boolean expanded, boolean leaf, int row, boolean hasFocus) {
       DefaultMutableTreeNode node = (DefaultMutableTreeNode) value;
       Object nodeValue = node.getUserObject();
@@ -498,7 +541,7 @@ public class ShelvedChangesViewManager implements ProjectComponent {
         ShelvedChangeList changeListData = (ShelvedChangeList) nodeValue;
         if (changeListData.isRecycled()) {
           myIssueLinkRenderer.appendTextWithLinks(changeListData.DESCRIPTION, SimpleTextAttributes.GRAYED_BOLD_ATTRIBUTES);
-          setIcon(changeListData.isMarkedToDelete() ? DisabledToDeleteIcon : DisabledPatchIcon);
+          setIcon(changeListData.isMarkedToDelete() ? DisabledToDeleteIcon : AppliedPatchIcon);
         }
         else {
           myIssueLinkRenderer.appendTextWithLinks(changeListData.DESCRIPTION);
@@ -551,6 +594,7 @@ public class ShelvedChangesViewManager implements ProjectComponent {
 
   private class MyShelveDeleteProvider implements DeleteProvider {
 
+    @Override
     public void deleteElement(@NotNull DataContext dataContext) {
       final Project project = CommonDataKeys.PROJECT.getData(dataContext);
       if (project == null) return;
@@ -636,10 +680,7 @@ public class ShelvedChangesViewManager implements ProjectComponent {
         try {
           patches.add(change.loadFilePatch(myProject, commitContext));
         }
-        catch (IOException e) {
-          exceptions.add(new VcsException(e));
-        }
-        catch (PatchSyntaxException e) {
+        catch (IOException | PatchSyntaxException e) {
           exceptions.add(new VcsException(e));
         }
       }
@@ -653,6 +694,7 @@ public class ShelvedChangesViewManager implements ProjectComponent {
       }
     }
 
+    @Override
     public boolean canDeleteElement(@NotNull DataContext dataContext) {
       return !getShelvedLists(dataContext).isEmpty();
     }
@@ -698,5 +740,99 @@ public class ShelvedChangesViewManager implements ProjectComponent {
     String imageText = "Unshelve changes";
     Image image = DnDAwareTree.getDragImage(myTree, imageText, null).getFirst();
     return new DnDImage(image, new Point(-image.getWidth(null), -image.getHeight(null)));
+  }
+
+  private class MyShelvedPreviewProcessor extends CacheDiffRequestProcessor<ShelvedWrapper> implements DiffPreviewUpdateProcessor {
+
+    @NotNull private final DiffShelvedChangesAction.PatchesPreloader myPreloader;
+    @Nullable private ShelvedWrapper myCurrentShelvedElement;
+
+    public MyShelvedPreviewProcessor(@NotNull Project project) {
+      super(project);
+      myPreloader = new DiffShelvedChangesAction.PatchesPreloader(project);
+      Disposer.register(project, this);
+    }
+
+    @NotNull
+    @Override
+    protected String getRequestName(@NotNull ShelvedWrapper provider) {
+      return provider.getRequestName();
+    }
+
+    @Override
+    protected ShelvedWrapper getCurrentRequestProvider() {
+      return myCurrentShelvedElement;
+    }
+
+    @CalledInAwt
+    @Override
+    public void clear() {
+      myCurrentShelvedElement = null;
+      updateRequest();
+    }
+
+    @CalledInAwt
+    public void refresh() {
+      DataContext dc = DataManager.getInstance().getDataContext(myTree);
+      List<ShelvedChange> selectedChanges = getShelveChanges(dc);
+      List<ShelvedBinaryFile> selectedBinaryChanges = getBinaryShelveChanges(dc);
+
+      if (selectedChanges.isEmpty() && selectedBinaryChanges.isEmpty()) {
+        clear();
+        return;
+      }
+
+      if (myCurrentShelvedElement != null) {
+        if (keepBinarySelection(selectedBinaryChanges, myCurrentShelvedElement.getBinaryFile()) ||
+            keepShelvedSelection(selectedChanges, myCurrentShelvedElement.getShelvedChange())) {
+          dropCachesIfNeededAndUpdate(myCurrentShelvedElement);  
+          return;
+        }
+      }
+      //getFirstSelected
+      myCurrentShelvedElement = !selectedChanges.isEmpty()
+                                ? new ShelvedWrapper(selectedChanges.get(0))
+                                : new ShelvedWrapper(selectedBinaryChanges.get(0));
+      dropCachesIfNeededAndUpdate(myCurrentShelvedElement);
+    }
+
+    private void dropCachesIfNeededAndUpdate(@NotNull ShelvedWrapper currentShelvedElement) {
+      ShelvedChange shelvedChange = currentShelvedElement.getShelvedChange();
+      boolean dropCaches = shelvedChange != null && myPreloader.isPatchFileChanged(shelvedChange.getPatchPath());
+      if (dropCaches) {
+        dropCaches();
+      }
+      updateRequest(dropCaches);
+    }
+
+    boolean keepShelvedSelection(@NotNull List<ShelvedChange> selectedChanges, @Nullable ShelvedChange currentShelvedChange) {
+      return currentShelvedChange != null && selectedChanges.contains(currentShelvedChange);
+    }
+
+    boolean keepBinarySelection(@NotNull List<ShelvedBinaryFile> selectedBinaryChanges, @Nullable ShelvedBinaryFile currentBinary) {
+      return currentBinary != null && selectedBinaryChanges.contains(currentBinary);
+    }
+
+    @NotNull
+    @Override
+    protected DiffRequest loadRequest(@NotNull ShelvedWrapper provider, @NotNull ProgressIndicator indicator)
+      throws ProcessCanceledException, DiffRequestProducerException {
+      try {
+        ShelvedChange shelvedChange = provider.getShelvedChange();
+        if (shelvedChange != null) {
+          return new PatchDiffRequest(createAppliedTextPatch(myPreloader.getPatch(shelvedChange, new CommitContext())));
+        }
+
+        DiffContentFactoryEx factory = DiffContentFactoryEx.getInstanceEx();
+        ShelvedBinaryFile binaryFile = assertNotNull(provider.getBinaryFile());
+        byte[] binaryContent = binaryFile.createBinaryContentRevision(myProject).getBinaryContent();
+        FileType fileType = VcsUtil.getFilePath(binaryFile.SHELVED_PATH).getFileType();
+        return new SimpleDiffRequest(getRequestName(provider), factory.createEmpty(),
+                                     factory.createBinary(myProject, binaryContent, fileType, getRequestName(provider)), null, null);
+      }
+      catch (VcsException | IOException e) {
+        throw new DiffRequestProducerException("Can't show diff for '" + getRequestName(provider) + "'", e);
+      }
+    }
   }
 }

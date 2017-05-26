@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * User: anna
- * Date: 28-Nov-2008
- */
 package org.jetbrains.idea.eclipse;
 
 import com.intellij.openapi.application.PluginPathManager;
@@ -25,8 +21,8 @@ import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.StdModuleTypes;
+import com.intellij.openapi.module.impl.ModuleManagerImpl;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ModifiableRootModel;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.ModuleRootModel;
 import com.intellij.openapi.roots.ModuleRootModificationUtil;
@@ -34,12 +30,9 @@ import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.IdeaTestCase;
-import com.intellij.util.Consumer;
-import org.jdom.Document;
 import org.jdom.Element;
 import org.jdom.JDOMException;
 import org.jetbrains.annotations.NotNull;
@@ -49,6 +42,8 @@ import org.jetbrains.idea.eclipse.conversion.EclipseClasspathWriter;
 
 import java.io.File;
 import java.io.IOException;
+
+import static com.intellij.testFramework.assertions.Assertions.assertThat;
 
 public class EclipseClasspathTest extends IdeaTestCase {
   @Override
@@ -63,7 +58,6 @@ public class EclipseClasspathTest extends IdeaTestCase {
     final VirtualFile vTestRoot = LocalFileSystem.getInstance().findFileByIoFile(currentTestRoot);
     copyDirContentsTo(vTestRoot, getProject().getBaseDir());
   }
-
 
   private void doTest() throws Exception {
     doTest("/test", getProject());
@@ -80,14 +74,11 @@ public class EclipseClasspathTest extends IdeaTestCase {
     if (!SystemInfo.isWindows) {
       fileText = fileText.replaceAll(EclipseXml.FILE_PROTOCOL + "/", EclipseXml.FILE_PROTOCOL);
     }
-    final Element classpathElement = JDOMUtil.loadDocument(fileText).getRootElement();
+    final Element classpathElement = JDOMUtil.load(fileText);
 
-    final Module module = WriteCommandAction.runWriteCommandAction(null, new Computable<Module>() {
-      @Override
-      public Module compute() {
-        String imlPath = path + "/" + EclipseProjectFinder.findProjectName(path) + IdeaXml.IML_EXT;
-        return ModuleManager.getInstance(project).newModule(imlPath, StdModuleTypes.JAVA.getId());
-      }
+    final Module module = WriteCommandAction.runWriteCommandAction(null, (Computable<Module>)() -> {
+      String imlPath = path + "/" + EclipseProjectFinder.findProjectName(path) + ModuleManagerImpl.IML_EXTENSION;
+      return ModuleManager.getInstance(project).newModule(imlPath, StdModuleTypes.JAVA.getId());
     });
 
     ModuleRootModificationUtil.updateModel(module, model -> {
@@ -112,20 +103,15 @@ public class EclipseClasspathTest extends IdeaTestCase {
       fileText1 = fileText1.replaceAll(EclipseXml.FILE_PROTOCOL + "/", EclipseXml.FILE_PROTOCOL);
     }
 
-    Element classpathElement1 = JDOMUtil.loadDocument(fileText1).getRootElement();
+    Element classpathElement1 = JDOMUtil.load(fileText1);
     ModuleRootModel model = ModuleRootManager.getInstance(module);
     Element resultClasspathElement = new EclipseClasspathWriter().writeClasspath(classpathElement1, model);
-
-    String resulted = new String(JDOMUtil.printDocument(new Document(resultClasspathElement), "\n"));
-    assertTrue(resulted.replaceAll(StringUtil.escapeToRegexp(module.getProject().getBaseDir().getPath()), "\\$ROOT\\$"),
-               JDOMUtil.areElementsEqual(classpathElement1, resultClasspathElement));
+    assertThat(resultClasspathElement).isEqualTo(resultClasspathElement);
   }
-
 
   public void testAbsolutePaths() throws Exception {
     doTest("/parent/parent/test", getProject());
   }
-
 
   public void testWorkspaceOnly() throws Exception {
     doTest();

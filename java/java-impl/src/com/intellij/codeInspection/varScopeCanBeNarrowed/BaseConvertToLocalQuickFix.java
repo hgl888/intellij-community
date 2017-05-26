@@ -15,17 +15,16 @@
  */
 package com.intellij.codeInspection.varScopeCanBeNarrowed;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInspection.InspectionsBundle;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.psi.*;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -99,7 +98,6 @@ public abstract class BaseConvertToLocalQuickFix<V extends PsiVariable> implemen
   protected PsiElement moveDeclaration(Project project, V variable, final Collection<PsiReference> references, boolean delete) {
     final PsiCodeBlock anchorBlock = findAnchorBlock(references);
     if (anchorBlock == null) return null; //was assert, but need to fix the case when obsolete inspection highlighting is left
-    if (!FileModificationService.getInstance().preparePsiElementsForWrite(anchorBlock)) return null;
 
     final PsiElement firstElement = getLowestOffsetElement(references);
     final String localName = suggestLocalName(project, variable, anchorBlock);
@@ -146,20 +144,15 @@ public abstract class BaseConvertToLocalQuickFix<V extends PsiVariable> implemen
                                     final boolean delete, @NotNull final NotNullFunction<PsiDeclarationStatement, PsiElement> action) {
     final PsiElementFactory elementFactory = JavaPsiFacade.getElementFactory(project);
 
-    return ApplicationManager.getApplication().runWriteAction(
-      new Computable<PsiElement>() {
-        @Override
-        public PsiElement compute() {
-          final PsiElement newDeclaration = moveDeclaration(elementFactory, localName, variable, initializer, action, references);
-          if (delete) {
-            beforeDelete(project, variable, newDeclaration);
-            variable.normalizeDeclaration();
-            variable.delete();
-          }
-          return newDeclaration;
-        }
+    return WriteAction.compute(() -> {
+      final PsiElement newDeclaration = moveDeclaration(elementFactory, localName, variable, initializer, action, references);
+      if (delete) {
+        beforeDelete(project, variable, newDeclaration);
+        variable.normalizeDeclaration();
+        variable.delete();
       }
-    );
+      return newDeclaration;
+    });
   }
 
   protected PsiElement moveDeclaration(PsiElementFactory elementFactory,

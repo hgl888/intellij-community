@@ -55,24 +55,18 @@ public class SearchUtil {
   private SearchUtil() { }
 
   public static void processProjectConfigurables(Project project, Map<SearchableConfigurable, Set<OptionDescription>> options) {
-    processConfigurables(ShowSettingsUtilImpl.getConfigurables(project, false), options);
+    processConfigurables(ShowSettingsUtilImpl.getConfigurables(project, true), options);
   }
 
   private static void processConfigurables(Configurable[] configurables, Map<SearchableConfigurable, Set<OptionDescription>> options) {
     for (Configurable configurable : configurables) {
       if (configurable instanceof SearchableConfigurable) {
-        Set<OptionDescription> configurableOptions = new TreeSet<>();
-
-        if (configurable instanceof Configurable.Composite) {
-          final Configurable[] children = ((Configurable.Composite)configurable).getConfigurables();
-          processConfigurables(children, options);
-        }
-
         //ignore invisible root nodes
         if (configurable instanceof SearchableConfigurable.Parent && !((SearchableConfigurable.Parent)configurable).isVisible()) {
           continue;
         }
 
+        Set<OptionDescription> configurableOptions = new TreeSet<>();
         options.put((SearchableConfigurable)configurable, configurableOptions);
 
         if (configurable instanceof MasterDetails) {
@@ -138,6 +132,19 @@ public class SearchUtil {
         final Component tabComponent = tabbedPane.getComponentAt(i);
         if (tabComponent instanceof JComponent) {
           processComponent((JComponent)tabComponent, configurableOptions, title);
+        }
+      }
+    }
+    else if (component instanceof TabbedPaneWrapper.TabbedPaneHolder) {
+      final TabbedPaneWrapper tabbedPane = ((TabbedPaneWrapper.TabbedPaneHolder)component).getTabbedPaneWrapper();
+      final int tabCount = tabbedPane.getTabCount();
+      for (int i = 0; i < tabCount; i++) {
+        String tabTitle = tabbedPane.getTitleAt(i);
+        final String title = path != null ? path + '.' + tabTitle : tabTitle;
+        processUILabel(title, configurableOptions, title);
+        final JComponent tabComponent = tabbedPane.getComponentAt(i);
+        if (tabComponent != null) {
+          processComponent(tabComponent, configurableOptions, title);
         }
       }
     }

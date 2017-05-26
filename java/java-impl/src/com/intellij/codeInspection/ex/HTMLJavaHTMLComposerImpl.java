@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * User: anna
- * Date: 21-Dec-2007
- */
 package com.intellij.codeInspection.ex;
 
 import com.intellij.codeInspection.HTMLComposer;
@@ -26,7 +22,6 @@ import com.intellij.codeInspection.InspectionsBundle;
 import com.intellij.codeInspection.reference.*;
 import com.intellij.psi.*;
 import com.intellij.xml.util.XmlStringUtil;
-import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -302,12 +297,7 @@ public class HTMLJavaHTMLComposerImpl extends HTMLJavaHTMLComposer {
 
     buf.append(HTMLComposerImpl.A_HREF_OPENING);
 
-    if (myComposer.myExporter == null) {
-      buf.append(((RefElementImpl)refElement).getURL());
-    }
-    else {
-      buf.append(myComposer.myExporter.getURL(refElement));
-    }
+    buf.append(((RefElementImpl)refElement).getURL());
 
     buf.append("\"");
 

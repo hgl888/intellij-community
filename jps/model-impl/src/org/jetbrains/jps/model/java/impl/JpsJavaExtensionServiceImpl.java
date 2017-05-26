@@ -18,6 +18,7 @@ package org.jetbrains.jps.model.java.impl;
 import com.intellij.openapi.util.io.FileUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.jps.model.java.compiler.JpsCompilerExcludes;
 import org.jetbrains.jps.model.java.impl.runConfiguration.JpsApplicationRunConfigurationPropertiesImpl;
 import org.jetbrains.jps.model.java.runConfiguration.JpsApplicationRunConfigurationProperties;
 import org.jetbrains.jps.model.java.runConfiguration.JpsApplicationRunConfigurationState;
@@ -97,7 +98,7 @@ public class JpsJavaExtensionServiceImpl extends JpsJavaExtensionService {
   @NotNull
   @Override
   public List<JpsDependencyElement> getDependencies(JpsModule module, JpsJavaClasspathKind classpathKind, boolean exportedOnly) {
-    final List<JpsDependencyElement> result = new ArrayList<JpsDependencyElement>();
+    final List<JpsDependencyElement> result = new ArrayList<>();
     for (JpsDependencyElement dependencyElement : module.getDependenciesList().getDependencies()) {
       final JpsJavaDependencyExtension extension = getDependencyExtension(dependencyElement);
       if (extension == null || extension.getScope().isIncludedIn(classpathKind) && (!exportedOnly || extension.isExported())) {
@@ -237,9 +238,10 @@ public class JpsJavaExtensionServiceImpl extends JpsJavaExtensionService {
 
   @NotNull
   @Override
-  public JavaModuleIndex getJavaModuleIndex(@NotNull File storageRoot) {
+  public JavaModuleIndex getJavaModuleIndex(@NotNull JpsProject project, @NotNull File storageRoot) {
     if (myModuleIndex == null) {
-      myModuleIndex = JavaModuleIndexImpl.load(storageRoot);
+      JpsCompilerExcludes excludes = getOrCreateCompilerConfiguration(project).getCompilerExcludes();
+      myModuleIndex = JavaModuleIndexImpl.load(storageRoot, excludes);
     }
     return myModuleIndex;
   }

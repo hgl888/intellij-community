@@ -68,12 +68,30 @@ public class SuspiciousMethodCallUtil {
     if (mapClass != null) {
       PsiMethod remove = MethodSignatureUtil.findMethodBySignature(mapClass, removeSignature, false);
       addMethod(remove, 0, patternMethods, indices);
+
       MethodSignature getSignature = MethodSignatureUtil.createMethodSignature("get", javaLangObject, PsiTypeParameter.EMPTY_ARRAY, PsiSubstitutor.EMPTY);
       PsiMethod get = MethodSignatureUtil.findMethodBySignature(mapClass, getSignature, false);
       addMethod(get, 0, patternMethods, indices);
+
+      PsiTypeParameter[] typeParameters = mapClass.getTypeParameters();
+      if (typeParameters.length > 0) {
+        MethodSignature getOrDefaultSignature = MethodSignatureUtil.createMethodSignature("getOrDefault",
+                                                                                          new PsiType[] {PsiType.getJavaLangObject(manager, searchScope),
+                                                                                            PsiSubstitutor.EMPTY.substitute(typeParameters[1])}, PsiTypeParameter.EMPTY_ARRAY, PsiSubstitutor.EMPTY);
+        PsiMethod getOrDefault = MethodSignatureUtil.findMethodBySignature(mapClass, getOrDefaultSignature, false);
+        addMethod(getOrDefault, 0, patternMethods, indices);
+      }
+
+      MethodSignature removeWithDefaultSignature = MethodSignatureUtil.createMethodSignature("remove",
+                                                                                             new PsiType[] {PsiType.getJavaLangObject(manager, searchScope), PsiType.getJavaLangObject(manager, searchScope)},
+                                                                                             PsiTypeParameter.EMPTY_ARRAY, PsiSubstitutor.EMPTY);
+      PsiMethod removeWithDefault = MethodSignatureUtil.findMethodBySignature(mapClass, removeWithDefaultSignature, false);
+      addMethod(removeWithDefault, 0, patternMethods, indices);
+
       MethodSignature containsKeySignature = MethodSignatureUtil.createMethodSignature("containsKey", javaLangObject, PsiTypeParameter.EMPTY_ARRAY, PsiSubstitutor.EMPTY);
       PsiMethod containsKey = MethodSignatureUtil.findMethodBySignature(mapClass, containsKeySignature, false);
       addMethod(containsKey, 0, patternMethods, indices);
+
       MethodSignature containsValueSignature = MethodSignatureUtil.createMethodSignature("containsValue", javaLangObject, PsiTypeParameter.EMPTY_ARRAY, PsiSubstitutor.EMPTY);
       PsiMethod containsValue = MethodSignatureUtil.findMethodBySignature(mapClass, containsValueSignature, false);
       addMethod(containsValue, 1, patternMethods, indices);
@@ -111,29 +129,39 @@ public class SuspiciousMethodCallUtil {
                                                       @NotNull List<PsiMethod> patternMethods,
                                                       @NotNull IntArrayList indices) {
     final PsiReferenceExpression methodExpression = methodCall.getMethodExpression();
+
+    if (arg instanceof PsiConditionalExpression &&
+        argType != null &&
+        argType.equalsToText(CommonClassNames.JAVA_LANG_OBJECT) &&
+        PsiPolyExpressionUtil.isPolyExpression(arg)) {
+      return null;
+    }
+    return getSuspiciousMethodCallMessage(methodExpression, argType, reportConvertibleMethodCalls, patternMethods, indices);
+  }
+
+  @Nullable
+  public static String getSuspiciousMethodCallMessage(PsiReferenceExpression methodExpression,
+                                                      PsiType argType,
+                                                      boolean reportConvertibleMethodCalls,
+                                                      @NotNull List<PsiMethod> patternMethods,
+                                                      @NotNull IntArrayList indices) {
     final PsiExpression qualifier = methodExpression.getQualifierExpression();
     if (qualifier == null || qualifier instanceof PsiThisExpression || qualifier instanceof PsiSuperExpression) return null;
     if (argType instanceof PsiPrimitiveType) {
-      argType = ((PsiPrimitiveType)argType).getBoxedType(methodCall);
+      argType = ((PsiPrimitiveType)argType).getBoxedType(methodExpression);
     }
 
     if (argType == null) return null;
 
-    if (arg instanceof PsiConditionalExpression &&
-        PsiPolyExpressionUtil.isPolyExpression(arg) &&
-        argType.equalsToText(CommonClassNames.JAVA_LANG_OBJECT)) {
-      return null;
-    }
-
     final JavaResolveResult resolveResult = methodExpression.advancedResolve(false);
     PsiMethod calleeMethod = (PsiMethod)resolveResult.getElement();
     if (calleeMethod == null) return null;
-    PsiMethod contextMethod = PsiTreeUtil.getParentOfType(methodCall, PsiMethod.class);
+    PsiMethod contextMethod = PsiTreeUtil.getParentOfType(methodExpression, PsiMethod.class);
 
     //noinspection SynchronizationOnLocalVariableOrMethodParameter
     synchronized (patternMethods) {
       if (patternMethods.isEmpty()) {
-        setupPatternMethods(methodCall.getManager(), methodCall.getResolveScope(), patternMethods, indices);
+        setupPatternMethods(methodExpression.getManager(), methodExpression.getResolveScope(), patternMethods, indices);
       }
     }
 
@@ -171,8 +199,8 @@ public class SuspiciousMethodCallUtil {
             final PsiType qualifierItemType = JavaGenericsUtil.getCollectionItemType(qualifierType, calleeMethod.getResolveScope());
             if (qualifierItemType != null && itemType != null && !qualifierItemType.isAssignableFrom(itemType)) {
               return InspectionsBundle.message("inspection.suspicious.collections.method.calls.problem.descriptor",
-                                                  PsiFormatUtil.formatType(qualifierType, 0, PsiSubstitutor.EMPTY),
-                                                  PsiFormatUtil.formatType(itemType, 0, PsiSubstitutor.EMPTY));
+                                               PsiFormatUtil.formatType(qualifierType, 0, PsiSubstitutor.EMPTY),
+                                               PsiFormatUtil.formatType(itemType, 0, PsiSubstitutor.EMPTY));
             }
           }
           return null;

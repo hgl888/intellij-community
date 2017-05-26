@@ -17,6 +17,7 @@ package com.intellij.openapi.wm.impl;
 
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.ActionCallback;
 import com.intellij.openapi.util.Expirable;
 import com.intellij.openapi.util.ExpirableRunnable;
@@ -51,6 +52,11 @@ public class IdeFocusManagerImpl extends IdeFocusManager {
   }
 
   @Override
+  public ActionCallback requestFocusInProject(@NotNull Component c, @Nullable Project project) {
+    return getGlobalInstance().requestFocusInProject(c, project);
+  }
+
+  @Override
   public JComponent getFocusTargetFor(@NotNull final JComponent comp) {
     return getGlobalInstance().getFocusTargetFor(comp);
   }
@@ -82,8 +88,8 @@ public class IdeFocusManagerImpl extends IdeFocusManager {
   }
 
   @Override
-  public void typeAheadUntil(ActionCallback done) {
-    getGlobalInstance().typeAheadUntil(done);
+  public void typeAheadUntil(@NotNull ActionCallback callback, @NotNull String cause) {
+    getGlobalInstance().typeAheadUntil(callback, cause);
   }
 
 

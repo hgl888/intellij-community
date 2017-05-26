@@ -40,6 +40,7 @@ import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.source.resolve.JavaResolveUtil;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.*;
 import com.intellij.refactoring.util.RefactoringChangeUtil;
 import org.jetbrains.annotations.NotNull;
@@ -161,7 +162,7 @@ public class HighlightClassUtil {
     Module module = ModuleUtilCore.findModuleForPsiElement(aClass);
     if (module == null) return null;
 
-    PsiClass[] classes = JavaPsiFacade.getInstance(aClass.getProject()).findClasses(qualifiedName, aClass.getResolveScope());
+    PsiClass[] classes = JavaPsiFacade.getInstance(aClass.getProject()).findClasses(qualifiedName, GlobalSearchScope.moduleScope(module).intersectWith(aClass.getResolveScope()));
     if (classes.length < numOfClassesToFind) return null;
     final ModuleFileIndex fileIndex = ModuleRootManager.getInstance(module).getFileIndex();
     final VirtualFile virtualFile = PsiUtilCore.getVirtualFile(aClass);
@@ -278,7 +279,7 @@ public class HighlightClassUtil {
       if (directory instanceof PsiDirectory) {
         String simpleName = aClass.getName();
         PsiDirectory subDirectory = ((PsiDirectory)directory).findSubdirectory(simpleName);
-        if (subDirectory != null && simpleName.equals(subDirectory.getName())) {
+        if (subDirectory != null && simpleName.equals(subDirectory.getName()) && PsiTreeUtil.findChildOfType(subDirectory, PsiJavaFile.class) != null) {
           String message = JavaErrorMessages.message("class.clashes.with.package", name);
           TextRange range = HighlightNamesUtil.getClassDeclarationTextRange(aClass);
           return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(range).descriptionAndTooltip(message).create();
@@ -304,13 +305,15 @@ public class HighlightClassUtil {
     HighlightInfo result = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(keyword).descriptionAndTooltip(message).create();
 
     QuickFixAction.registerQuickFixAction(result, QUICK_FIX_FACTORY.createModifierListFix(field, PsiModifier.STATIC, false, false));
-
-    PsiClass aClass = field.getContainingClass();
-    if (aClass != null) {
-      QuickFixAction.registerQuickFixAction(result, QUICK_FIX_FACTORY.createModifierListFix(aClass, PsiModifier.STATIC, true, false));
-    }
+    registerMakeInnerClassStatic(result, field.getContainingClass());
 
     return result;
+  }
+
+  private static void registerMakeInnerClassStatic(HighlightInfo result, PsiClass aClass) {
+    if (aClass != null && aClass.getContainingClass() != null) {
+      QuickFixAction.registerQuickFixAction(result, QUICK_FIX_FACTORY.createModifierListFix(aClass, PsiModifier.STATIC, true, false));
+    }
   }
 
   @Nullable
@@ -323,7 +326,7 @@ public class HighlightClassUtil {
     String message = JavaErrorMessages.message("static.declaration.in.inner.class");
     HighlightInfo result = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(keyword).descriptionAndTooltip(message).create();
     QuickFixAction.registerQuickFixAction(result, QUICK_FIX_FACTORY.createModifierListFix(method, PsiModifier.STATIC, false, false));
-    QuickFixAction.registerQuickFixAction(result, QUICK_FIX_FACTORY.createModifierListFix((PsiClass)keyword.getParent().getParent().getParent(), PsiModifier.STATIC, true, false));
+    registerMakeInnerClassStatic(result, (PsiClass)keyword.getParent().getParent().getParent());
     return result;
   }
 
@@ -337,8 +340,7 @@ public class HighlightClassUtil {
     String message = JavaErrorMessages.message("static.declaration.in.inner.class");
     HighlightInfo result = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(keyword).descriptionAndTooltip(message).create();
     QuickFixAction.registerQuickFixAction(result, QUICK_FIX_FACTORY.createModifierListFix(initializer, PsiModifier.STATIC, false, false));
-    PsiClass owner = (PsiClass)keyword.getParent().getParent().getParent();
-    QuickFixAction.registerQuickFixAction(result, QUICK_FIX_FACTORY.createModifierListFix(owner, PsiModifier.STATIC, true, false));
+    registerMakeInnerClassStatic(result, (PsiClass)keyword.getParent().getParent().getParent());
     return result;
   }
 
@@ -389,9 +391,7 @@ public class HighlightClassUtil {
       QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createModifierListFix(aClass, PsiModifier.STATIC, false, false));
     }
     PsiClass containingClass = aClass.getContainingClass();
-    if (containingClass != null) {
-      QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createModifierListFix(containingClass, PsiModifier.STATIC, true, false));
-    }
+    registerMakeInnerClassStatic(info, containingClass);
     return info;
   }
 
@@ -526,70 +526,24 @@ public class HighlightClassUtil {
     PsiMethod[] constructors = baseClass.getConstructors();
     if (constructors.length == 0) return null;
 
-    final HighlightInfo highlightInfo = constructors.length > 1 ? checkAmbiguityOfImplicitConstructorCall(constructors, range, aClass, baseClass) : null;
-    if (highlightInfo != null) {
-      return highlightInfo;
-    }
-
-    for (PsiMethod constructor : constructors) {
-      if (resolveHelper.isAccessible(constructor, aClass, null)) {
-        if (constructor.getParameterList().getParametersCount() == 0 ||
-            constructor.getParameterList().getParametersCount() == 1 && constructor.isVarArgs()
-          ) {
-          // it is an error if base ctr throws exceptions
-          String description = checkDefaultConstructorThrowsException(constructor, handledExceptions);
-          if (description != null) {
-            HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(range).descriptionAndTooltip(description).create();
-            QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createCreateConstructorMatchingSuperFix(aClass));
-            return info;
-          }
-          if (refCountHolder != null) {
-            refCountHolder.registerLocallyReferenced(constructor);
-          }
-          return null;
-        }
-      }
-    }
-
-    String description = JavaErrorMessages.message("no.default.constructor.available", HighlightUtil.formatClass(baseClass));
-
-    HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(range).descriptionAndTooltip(description).create();
-    QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createCreateConstructorMatchingSuperFix(aClass));
-
-    return info;
-  }
-
-  @Nullable
-  private static HighlightInfo checkAmbiguityOfImplicitConstructorCall(@NotNull PsiMethod[] constructors,
-                                                                       @NotNull TextRange range,
-                                                                       @NotNull PsiClass subClass,
-                                                                       @NotNull PsiClass superClass) {
-    Project project = subClass.getProject();
-    PsiElement resolved = JavaResolveUtil.resolveImaginarySuperCallInThisPlace(subClass, project, superClass);
-    if (resolved != null) {
-      return null;
-    }
-
-    // find two ambiguous var-args-only constructors
-    List<PsiMethod> varargConstructors = Arrays.stream(constructors)
-      .filter(constructor -> constructor.getParameterList().getParameters().length == 1)
-      .filter(constructor -> constructor.getParameterList().getParameters()[0].isVarArgs())
-      .filter(constructor -> PsiResolveHelper.SERVICE.getInstance(project).isAccessible(constructor, subClass, subClass))
+    PsiElement resolved = JavaResolveUtil.resolveImaginarySuperCallInThisPlace(aClass, aClass.getProject(), baseClass);
+    List<PsiMethod> constructorCandidates = (resolved != null ? Collections.singletonList((PsiMethod)resolved)
+                                                              : Arrays.asList(constructors))
+      .stream()
+      .filter(constructor -> {
+        PsiParameter[] parameters = constructor.getParameterList().getParameters();
+        return (parameters.length == 0 || parameters.length == 1 && parameters[0].isVarArgs()) &&
+               resolveHelper.isAccessible(constructor, aClass, null);
+      })
       .limit(2).collect(Collectors.toList());
 
-    //List<PsiMethod> varargConstructors = Arrays.stream(constructors)
-    //  .map(constructor -> Pair.create(constructor, constructor.getParameterList().getParameters()))
-    //  .filter(p -> p.second.length == 1 && p.second[0].isVarArgs() && PsiResolveHelper.SERVICE.getInstance(project).isAccessible(p.first, subClass, subClass))
-    //  .map(p -> p.first)
-    //  .limit(2).collect(Collectors.toList());
-    //
-    if (varargConstructors.size() == 2) {
-      final String m1 = PsiFormatUtil.formatMethod(varargConstructors.get(0), PsiSubstitutor.EMPTY,
+    if (constructorCandidates.size() >= 2) {// two ambiguous var-args-only constructors
+      final String m1 = PsiFormatUtil.formatMethod(constructorCandidates.get(0), PsiSubstitutor.EMPTY,
                                                    PsiFormatUtilBase.SHOW_CONTAINING_CLASS |
                                                    PsiFormatUtilBase.SHOW_NAME |
                                                    PsiFormatUtilBase.SHOW_PARAMETERS,
                                                    PsiFormatUtilBase.SHOW_TYPE);
-      final String m2 = PsiFormatUtil.formatMethod(varargConstructors.get(1), PsiSubstitutor.EMPTY,
+      final String m2 = PsiFormatUtil.formatMethod(constructorCandidates.get(1), PsiSubstitutor.EMPTY,
                                                    PsiFormatUtilBase.SHOW_CONTAINING_CLASS |
                                                    PsiFormatUtilBase.SHOW_NAME |
                                                    PsiFormatUtilBase.SHOW_PARAMETERS,
@@ -599,7 +553,27 @@ public class HighlightClassUtil {
         .descriptionAndTooltip(JavaErrorMessages.message("ambiguous.method.call", m1, m2))
         .create();
     }
-    return null;
+
+    if (!constructorCandidates.isEmpty()) {
+      PsiMethod constructor = constructorCandidates.get(0);
+      String description = checkDefaultConstructorThrowsException(constructor, handledExceptions);
+      if (description != null) {
+        HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(range).descriptionAndTooltip(description).create();
+        QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createCreateConstructorMatchingSuperFix(aClass));
+        return info;
+      }
+      if (refCountHolder != null) {
+        refCountHolder.registerLocallyReferenced(constructor);
+      }
+      return null;
+    }
+
+    String description = JavaErrorMessages.message("no.default.constructor.available", HighlightUtil.formatClass(baseClass));
+
+    HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(range).descriptionAndTooltip(description).create();
+    QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createCreateConstructorMatchingSuperFix(aClass));
+
+    return info;
   }
 
   @Nullable
@@ -810,7 +784,8 @@ public class HighlightClassUtil {
           if (!PsiUtil.isInnerClass(base)) return;
 
           if (resolve == resolved && baseClass != null && (!PsiTreeUtil.isAncestor(baseClass, extendRef, true) || aClass.hasModifierProperty(PsiModifier.STATIC)) &&
-              !InheritanceUtil.hasEnclosingInstanceInScope(baseClass, extendRef, !aClass.hasModifierProperty(PsiModifier.STATIC), true) && !qualifiedNewCalledInConstructors(aClass)) {
+              !InheritanceUtil.hasEnclosingInstanceInScope(baseClass, extendRef, psiClass -> psiClass != aClass, true) &&
+              !qualifiedNewCalledInConstructors(aClass)) {
             String description = JavaErrorMessages.message("no.enclosing.instance.in.scope", HighlightUtil.formatClass(baseClass));
             infos[0] = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(extendRef).descriptionAndTooltip(description).create();
           }
@@ -924,9 +899,7 @@ public class HighlightClassUtil {
       String description = JavaErrorMessages.message("is.not.an.enclosing.class", HighlightUtil.formatClass(outerClass));
       HighlightInfo highlightInfo =
         HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(elementToHighlight).descriptionAndTooltip(description).create();
-      if (aClass != null) {
-        QuickFixAction.registerQuickFixAction(highlightInfo, QUICK_FIX_FACTORY.createModifierListFix(aClass, PsiModifier.STATIC, true, false));
-      }
+      registerMakeInnerClassStatic(highlightInfo, aClass);
       return highlightInfo;
     }
     PsiModifierListOwner staticParent = PsiUtil.getEnclosingStaticElement(place, outerClass);

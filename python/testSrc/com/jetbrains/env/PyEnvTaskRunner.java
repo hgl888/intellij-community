@@ -23,6 +23,7 @@ import java.util.Set;
  * @author traff
  */
 public class PyEnvTaskRunner {
+  private static final Logger LOG = Logger.getInstance(PyEnvTaskRunner.class);
   private final List<String> myRoots;
 
   public PyEnvTaskRunner(List<String> roots) {
@@ -35,12 +36,30 @@ public class PyEnvTaskRunner {
 
     List<String> passedRoots = Lists.newArrayList();
 
+    final Set<String> requiredTags = Sets.union(testTask.getTags(), Sets.newHashSet(tagsRequiedByTest));
+
+    final Set<String> tagsToCover = null;
+
     for (String root : myRoots) {
 
-      final Set<String> requredTags = Sets.union(testTask.getTags(), Sets.newHashSet(tagsRequiedByTest));
-      if (!isSuitableForTask(PyEnvTestCase.loadEnvTags(root), requredTags) || !shouldRun(root, testTask)) {
+      List<String> envTags = PyEnvTestCase.loadEnvTags(root);
+      final boolean suitableForTask = isSuitableForTask(envTags, requiredTags);
+      final boolean shouldRun = shouldRun(root, testTask);
+      if (!suitableForTask || !shouldRun) {
+        LOG.warn(String.format("Skipping %s (compatible with tags: %s, should run:%s)", root, suitableForTask, shouldRun));
         continue;
       }
+
+      if (tagsToCover != null && envTags.size() > 0 && !isNeededToRun(tagsToCover, envTags)) {
+        LOG.warn(String.format("Skipping %s (test already was executed on a similar environment)", root));
+        continue;
+      }
+
+      if (tagsToCover != null) {
+        tagsToCover.removeAll(envTags);
+      }
+
+      LOG.warn(String.format("Running on root %s", root));
 
       try {
         testTask.setUp(testName);
@@ -66,19 +85,18 @@ public class PyEnvTaskRunner {
           passedRoots.add(root);
         }
         else {
-          System.err.println(String.format("Skipping root %s", root));
+          LOG.warn(String.format("Skipping root %s", root));
         }
       }
       catch (final Throwable e) {
-        final Logger logger = Logger.getInstance(PyEnvTaskRunner.class);
         // Direct output of enteredTheMatrix may break idea or TC since can't distinguish test output from real test result
         // Exception is thrown anyway, so we escape message before logging
         if (e.getMessage().contains("enteredTheMatrix")) {
           // .error( may lead to new exception with out of stacktrace.
-          logger.warn(PyEnvTestCase.escapeTestMessage(e.getMessage()));
+          LOG.warn(PyEnvTestCase.escapeTestMessage(e.getMessage()));
         }
         else {
-          logger.error(e);
+          LOG.error(e);
         }
         throw new RuntimeException(
           PyEnvTestCase.joinStrings(passedRoots, "Tests passed environments: ") + "Test failed on " + getEnvType() + " environment " + root,
@@ -102,6 +120,16 @@ public class PyEnvTaskRunner {
                                  "\n" +
                                  PyEnvTestCase.joinStrings(testTask.getTags(), "Required tags in tags.txt in root: "));
     }
+  }
+
+  private static boolean isNeededToRun(@NotNull Set<String> tagsToCover, @NotNull List<String> envTags) {
+    for (String tag : envTags) {
+      if (tagsToCover.contains(tag)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -155,7 +183,6 @@ public class PyEnvTaskRunner {
 
     return necessaryTags.isEmpty();
   }
-
 
   public static boolean isJython(@NotNull String sdkHome) {
     return sdkHome.toLowerCase().contains("jython");

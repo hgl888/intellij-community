@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,15 +31,12 @@ import org.jetbrains.jps.model.module.JpsDependenciesList;
 import org.jetbrains.jps.model.module.JpsModule;
 import org.jetbrains.jps.model.module.JpsModuleSourceRoot;
 import org.jetbrains.jps.model.serialization.JpsMacroExpander;
+import org.jetbrains.jps.model.serialization.java.JpsJavaModelSerializerExtension;
 import org.jetbrains.jps.model.serialization.library.JpsSdkTableSerializer;
 
 import java.io.File;
 import java.util.Map;
 
-/**
-* User: anna
-* Date: 11/8/12
-*/
 class JpsIdeaSpecificSettings extends AbstractIdeaSpecificSettings<JpsModule, String, JpsSdkType<?>> {
   private JpsMacroExpander myExpander;
 
@@ -110,8 +107,8 @@ class JpsIdeaSpecificSettings extends AbstractIdeaSpecificSettings<JpsModule, St
       extension.setTestOutputUrl(testOutputElement.getAttributeValue(IdeaXml.URL_ATTR));
     }
 
-    final String inheritedOutput = root.getAttributeValue(IdeaXml.INHERIT_COMPILER_OUTPUT_ATTR);
-    if (inheritedOutput != null && Boolean.valueOf(inheritedOutput).booleanValue()) {
+    final String inheritedOutput = root.getAttributeValue(JpsJavaModelSerializerExtension.INHERIT_COMPILER_OUTPUT_ATTRIBUTE);
+    if (inheritedOutput != null && Boolean.parseBoolean(inheritedOutput)) {
       extension.setInheritOutput(true);
     }
     extension.setExcludeOutput(root.getChild(IdeaXml.EXCLUDE_OUTPUT_TAG) != null);

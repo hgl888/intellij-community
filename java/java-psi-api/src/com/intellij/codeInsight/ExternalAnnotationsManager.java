@@ -25,10 +25,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-/**
- * @authot anna
- * @since 26-Jun-2007
- */
 public abstract class ExternalAnnotationsManager {
   public static final String ANNOTATIONS_XML = "annotations.xml";
 
@@ -60,9 +56,10 @@ public abstract class ExternalAnnotationsManager {
   public abstract void annotateExternally(@NotNull PsiModifierListOwner listOwner,
                                           @NotNull String annotationFQName,
                                           @NotNull PsiFile fromFile,
-                                          @Nullable PsiNameValuePair[] value);
+                                          @Nullable PsiNameValuePair[] value) throws CanceledConfigurationException;
 
   public abstract boolean deannotate(@NotNull PsiModifierListOwner listOwner, @NotNull String annotationFQN);
+  public void elementRenamedOrMoved(@NotNull PsiModifierListOwner element, @NotNull String oldExternalName) { }
 
   // Method used in Kotlin plugin when it is necessary to leave external annotation, but modify its arguments
   public abstract boolean editExternalAnnotation(@NotNull PsiModifierListOwner listOwner,
@@ -73,4 +70,10 @@ public abstract class ExternalAnnotationsManager {
 
   @Nullable
   public abstract List<PsiFile> findExternalAnnotationsFiles(@NotNull PsiModifierListOwner listOwner);
+
+  public static class CanceledConfigurationException extends RuntimeException {
+    public static final CanceledConfigurationException INSTANCE = new CanceledConfigurationException();
+
+    private CanceledConfigurationException() {}
+  }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.ModuleUtil;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ModuleRootAdapter;
 import com.intellij.openapi.roots.ModuleRootEvent;
+import com.intellij.openapi.roots.ModuleRootListener;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.util.MultiValuesMap;
 import com.intellij.openapi.vfs.VfsUtil;
@@ -59,7 +59,7 @@ public class LogicalRootsManagerImpl extends LogicalRootsManager {
         //updateCache(moduleManager);
       }
     });
-    connection.subscribe(ProjectTopics.PROJECT_ROOTS, new ModuleRootAdapter() {
+    connection.subscribe(ProjectTopics.PROJECT_ROOTS, new ModuleRootListener() {
       @Override
       public void rootsChanged(ModuleRootEvent event) {
         bus.asyncPublisher(LOGICAL_ROOTS).logicalRootsChanged();
@@ -129,12 +129,7 @@ public class LogicalRootsManagerImpl extends LogicalRootsManager {
 
   @Override
   public List<LogicalRoot> getLogicalRootsOfType(@NotNull final Module module, @NotNull final LogicalRootType... types) {
-    return ContainerUtil.concat(types, new Function<LogicalRootType, Collection<? extends LogicalRoot>>() {
-      @Override
-      public Collection<? extends LogicalRoot> fun(final LogicalRootType s) {
-        return getLogicalRootsOfType(module, s);
-      }
-    });
+    return ContainerUtil.concat(types, s -> getLogicalRootsOfType(module, s));
   }
 
   @Override

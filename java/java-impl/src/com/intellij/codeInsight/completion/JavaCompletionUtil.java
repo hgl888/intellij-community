@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,7 +54,6 @@ import com.intellij.psi.util.*;
 import com.intellij.psi.util.proximity.ReferenceListWeigher;
 import com.intellij.ui.JBColor;
 import com.intellij.util.IncorrectOperationException;
-import com.intellij.util.NullableFunction;
 import com.intellij.util.PairFunction;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
@@ -75,18 +74,15 @@ public class JavaCompletionUtil {
   public static final Key<PairFunction<PsiExpression, CompletionParameters, PsiType>> DYNAMIC_TYPE_EVALUATOR = Key.create("DYNAMIC_TYPE_EVALUATOR");
 
   private static final Key<PsiType> QUALIFIER_TYPE_ATTR = Key.create("qualifierType"); // SmartPsiElementPointer to PsiType of "qualifier"
-  static final NullableLazyKey<ExpectedTypeInfo[], CompletionLocation> EXPECTED_TYPES = NullableLazyKey.create("expectedTypes", new NullableFunction<CompletionLocation, ExpectedTypeInfo[]>() {
-    @Override
-    @Nullable
-    public ExpectedTypeInfo[] fun(final CompletionLocation location) {
-      if (PsiJavaPatterns.psiElement().beforeLeaf(PsiJavaPatterns.psiElement().withText("."))
-        .accepts(location.getCompletionParameters().getPosition())) {
-        return ExpectedTypeInfo.EMPTY_ARRAY;
-      }
+  static final NullableLazyKey<ExpectedTypeInfo[], CompletionLocation> EXPECTED_TYPES = NullableLazyKey.create("expectedTypes",
+                                                                                                               location -> {
+                                                                                                                 if (PsiJavaPatterns.psiElement().beforeLeaf(PsiJavaPatterns.psiElement().withText("."))
+                                                                                                                   .accepts(location.getCompletionParameters().getPosition())) {
+                                                                                                                   return ExpectedTypeInfo.EMPTY_ARRAY;
+                                                                                                                 }
 
-      return JavaSmartCompletionContributor.getExpectedTypes(location.getCompletionParameters());
-    }
-  });
+                                                                                                                 return JavaSmartCompletionContributor.getExpectedTypes(location.getCompletionParameters());
+                                                                                                               });
 
   public static final Key<Boolean> SUPER_METHOD_PARAMETERS = Key.create("SUPER_METHOD_PARAMETERS");
 
@@ -333,7 +329,7 @@ public class JavaCompletionUtil {
         final StaticMemberProcessor memberProcessor = new JavaStaticMemberProcessor(parameters);
         memberProcessor.processMembersOfRegisteredClasses(matcher, (member, psiClass) -> {
           if (!mentioned.contains(member) && processor.satisfies(member, ResolveState.initial())) {
-            set.add(memberProcessor.createLookupElement(member, psiClass, true));
+            ContainerUtil.addIfNotNull(set, memberProcessor.createLookupElement(member, psiClass, true));
           }
         });
       }
@@ -481,7 +477,7 @@ public class JavaCompletionUtil {
 
   private static boolean shouldMarkRed(@NotNull Object object, @NotNull PsiElement place) {
     if (!(object instanceof PsiMember)) return false;
-    if (Java15APIUsageInspectionBase.isForbiddenApiUsage((PsiMember)object, PsiUtil.getLanguageLevel(place))) return true;
+    if (Java15APIUsageInspectionBase.getLastIncompatibleLanguageLevel((PsiMember)object, PsiUtil.getLanguageLevel(place)) != null) return true;
 
     if (object instanceof PsiEnumConstant) {
       return findConstantsUsedInSwitch(place).contains(CompletionUtil.getOriginalOrSelf((PsiEnumConstant)object));
@@ -806,12 +802,16 @@ public class JavaCompletionUtil {
         PsiElement composite = leaf == null ? null : leaf.getParent();
         if (composite instanceof PsiMethodReferenceExpression && LambdaHighlightingUtil.insertSemicolon(composite.getParent())) {
           insertAdditionalSemicolon = false;
-        } else if (composite instanceof PsiReferenceExpression) {
+        }
+        else if (composite instanceof PsiReferenceExpression) {
           PsiElement parent = composite.getParent();
           if (parent instanceof PsiMethodCallExpression) {
             parent = parent.getParent();
           }
           if (parent instanceof PsiLambdaExpression && !LambdaHighlightingUtil.insertSemicolonAfter((PsiLambdaExpression)parent)) {
+            insertAdditionalSemicolon = false;
+          }
+          if (parent instanceof PsiMethodReferenceExpression && LambdaHighlightingUtil.insertSemicolon(parent.getParent())) {
             insertAdditionalSemicolon = false;
           }
         }
@@ -886,7 +886,9 @@ public class JavaCompletionUtil {
     context.getDocument().insertString(offset, open);
     context.getEditor().getCaretModel().moveToOffset(offset + open.length());
     context.getDocument().insertString(offset + open.length(), escapeXmlIfNeeded(context, ">"));
-    context.setAddCompletionChar(false);
+    if (context.getCompletionChar() != Lookup.COMPLETE_STATEMENT_SELECT_CHAR) {
+      context.setAddCompletionChar(false);
+    }
     return true;
   }
 

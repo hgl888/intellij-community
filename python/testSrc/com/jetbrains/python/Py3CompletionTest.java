@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@ import com.intellij.codeInsight.completion.impl.CamelHumpMatcher;
 import com.intellij.testFramework.LightProjectDescriptor;
 import com.jetbrains.python.fixtures.PyTestCase;
 import com.jetbrains.python.psi.LanguageLevel;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -62,7 +64,7 @@ public class Py3CompletionTest extends PyTestCase {
   }
 
   private void doTest() {
-    CamelHumpMatcher.forceStartMatching(getTestRootDisposable());
+    CamelHumpMatcher.forceStartMatching(myFixture.getTestRootDisposable());
     final String testName = getTestName(true);
     myFixture.configureByFile(testName + ".py");
     myFixture.completeBasic();
@@ -76,7 +78,8 @@ public class Py3CompletionTest extends PyTestCase {
     myFixture.checkResultByFile(getTestName(true) + "/a.after.py");
   }
 
-  private List<String> doTestByText(String text) {
+  @Nullable
+  private List<String> doTestByText(@NotNull String text) {
     myFixture.configureByText(PythonFileType.INSTANCE, text);
     myFixture.completeBasic();
     return myFixture.getLookupElementStrings();
@@ -144,7 +147,7 @@ public class Py3CompletionTest extends PyTestCase {
 
   // PY-15390
   public void testMatMul() {
-    runWithLanguageLevel(LanguageLevel.PYTHON35, () -> doTest());
+    runWithLanguageLevel(LanguageLevel.PYTHON35, this::doTest);
   }
 
   // PY-11214
@@ -153,11 +156,11 @@ public class Py3CompletionTest extends PyTestCase {
   }
 
   public void testAsync() {
-    runWithLanguageLevel(LanguageLevel.PYTHON35, () -> doTest());
+    runWithLanguageLevel(LanguageLevel.PYTHON35, this::doTest);
   }
 
   public void testAwait() {
-    runWithLanguageLevel(LanguageLevel.PYTHON35, () -> doTest());
+    runWithLanguageLevel(LanguageLevel.PYTHON35, this::doTest);
   }
 
   // PY-17828
@@ -165,23 +168,33 @@ public class Py3CompletionTest extends PyTestCase {
     runWithLanguageLevel(LanguageLevel.PYTHON30, this::doTest);
   }
 
-  // PY-20770
-  public void testAsyncGenerator() {
-    runWithLanguageLevel(
-      LanguageLevel.PYTHON36,
-      () -> {
-        final String asyncGenerator = "async def asyncgen():\n" +
-                                      "    yield 42\n";
+  // PY-20279
+  public void testImplicitDunderClass() {
+    doTestByText("class First:\n" +
+                 "    def foo(self):\n" +
+                 "        print(__cl<caret>)");
+    myFixture.checkResult("class First:\n" +
+                          "    def foo(self):\n" +
+                          "        print(__class__)");
 
-        assertContainsElements(doTestByText(asyncGenerator +
-                                            "asyncgen().__a<caret>\n"),
-                               PyNames.AITER, PyNames.ANEXT);
+    doTestByText("class First:\n" +
+                 "    @staticmethod\n" +
+                 "    def foo():\n" +
+                 "        print(__cl<caret>)");
+    myFixture.checkResult("class First:\n" +
+                          "    @staticmethod\n" +
+                          "    def foo():\n" +
+                          "        print(__class__)");
 
-        assertContainsElements(doTestByText(asyncGenerator +
-                                            "asyncgen().a<caret>\n"),
-                               "ag_await", "ag_frame", "ag_running", "ag_code", "aclose", "asend", "athrow");
-      }
-    );
+    doTestByText("class First:\n" +
+                 "    print(__cl<caret>)");
+    myFixture.checkResult("class First:\n" +
+                          "    print(__cl)");
+
+    doTestByText("def abc():\n" +
+                 "    print(__cl<caret>)");
+    myFixture.checkResult("def abc():\n" +
+                          "    print(__cl)");
   }
 
   // PY-11208
@@ -203,6 +216,58 @@ public class Py3CompletionTest extends PyTestCase {
   public void testGenericTypeInheritor() {
     myFixture.copyDirectoryToProject("../typing", "");
     runWithLanguageLevel(LanguageLevel.PYTHON35, this::doTest);
+  }
+
+  // PY-19702
+  public void testMetaclassAttributeOnDefinition() {
+    final List<String> suggested = doTestByText("class Meta(type):\n" +
+                                                "    def __init__(self, what, bases, dict):\n" +
+                                                "        self.meta_attr = \"attr\"\n" +
+                                                "        super().__init__(what, bases, dict)\n" +
+                                                "class A(metaclass=Meta):\n" +
+                                                "    pass\n" +
+                                                "print(A.<caret>)");
+
+    assertNotNull(suggested);
+    assertContainsElements(suggested, "meta_attr");
+  }
+
+  // PY-19702
+  public void testMetaclassAttributeOnInstance() {
+    final List<String> suggested = doTestByText("class Meta(type):\n" +
+                                                "    def __init__(self, what, bases, dict):\n" +
+                                                "        self.meta_attr = \"attr\"\n" +
+                                                "        super().__init__(what, bases, dict)\n" +
+                                                "class A(metaclass=Meta):\n" +
+                                                "    pass\n" +
+                                                "print(A().<caret>)");
+
+    assertNotNull(suggested);
+    assertContainsElements(suggested, "meta_attr");
+  }
+
+  public void testMetaclassMethodOnDefinition() {
+    final List<String> suggested = doTestByText("class Meta(type):\n" +
+                                                "    def meta_method(cls):\n" +
+                                                "        pass\n" +
+                                                "class A(metaclass=Meta):\n" +
+                                                "    pass\n" +
+                                                "print(A.<caret>)");
+
+    assertNotNull(suggested);
+    assertContainsElements(suggested, "meta_method");
+  }
+
+  public void testMetaclassMethodOnInstance() {
+    final List<String> suggested = doTestByText("class Meta(type):\n" +
+                                                "    def meta_method(cls):\n" +
+                                                "        pass\n" +
+                                                "class A(metaclass=Meta):\n" +
+                                                "    pass\n" +
+                                                "print(A().<caret>)");
+
+    assertNotNull(suggested);
+    assertDoesntContain(suggested, "meta_method");
   }
 
   @Override

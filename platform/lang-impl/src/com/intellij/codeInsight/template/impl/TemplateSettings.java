@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.intellij.codeInsight.template.impl;
 
 import com.intellij.AbstractBundle;
 import com.intellij.codeInsight.template.Template;
+import com.intellij.codeInsight.template.TemplateContextType;
 import com.intellij.openapi.application.ex.DecodeDefaultsUtil;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.ServiceManager;
@@ -30,12 +31,13 @@ import com.intellij.openapi.options.SchemeState;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.JDOMUtil;
-import com.intellij.openapi.util.WriteExternalException;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.JdomKt;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.util.xmlb.Converter;
 import com.intellij.util.xmlb.annotations.OptionTag;
+import kotlin.Lazy;
 import org.jdom.Element;
 import org.jdom.JDOMException;
 import org.jetbrains.annotations.NonNls;
@@ -83,7 +85,7 @@ public class TemplateSettings implements PersistentStateComponent<TemplateSettin
   @NonNls private static final String DEFAULT_VALUE = "defaultValue";
   @NonNls private static final String ALWAYS_STOP_AT = "alwaysStopAt";
 
-  @NonNls private static final String CONTEXT = "context";
+  @NonNls static final String CONTEXT = "context";
   @NonNls private static final String TO_REFORMAT = "toReformat";
   @NonNls private static final String TO_SHORTEN_FQ_NAMES = "toShortenFQNames";
   @NonNls private static final String USE_STATIC_IMPORT = "useStaticImport";
@@ -193,12 +195,20 @@ public class TemplateSettings implements PersistentStateComponent<TemplateSettin
       @Nullable
       @Override
       public TemplateGroup readScheme(@NotNull Element element, boolean duringLoad) {
-        return readTemplateFile(element, element.getAttributeValue("group"), false, false, getClass().getClassLoader());
+        TemplateGroup group = readTemplateFile(element, element.getAttributeValue("group"), false, false, getClass().getClassLoader());
+        if (group != null) {
+          group.setModified(false);
+        }
+        return group;
       }
 
       @NotNull
       @Override
       public SchemeState getState(@NotNull TemplateGroup template) {
+        if (template.isModified()) {
+          return SchemeState.POSSIBLY_CHANGED;
+        }
+
         for (TemplateImpl t : template.getElements()) {
           if (differsFromDefault(t)) {
             return SchemeState.POSSIBLY_CHANGED;
@@ -211,14 +221,26 @@ public class TemplateSettings implements PersistentStateComponent<TemplateSettin
       @Override
       public Element writeScheme(@NotNull TemplateGroup template) {
         Element templateSetElement = new Element(TEMPLATE_SET);
-        templateSetElement.setAttribute(GROUP, template.getName());
 
-        for (TemplateImpl t : template.getElements()) {
-          if (differsFromDefault(t)) {
-            templateSetElement.addContent(serializeTemplate(t));
+        List<TemplateImpl> elements = template.getElements();
+        if (!elements.isEmpty()) {
+          boolean isGroupAttributeAdded = false;
+          Lazy<Map<String, TemplateContextType>> idToType = TemplateContext.getIdToType();
+          for (TemplateImpl t : elements) {
+            TemplateImpl defaultTemplate = getDefaultTemplate(t);
+            if (defaultTemplate == null || !t.equals(defaultTemplate) || !t.contextsEqual(defaultTemplate)) {
+              if (!isGroupAttributeAdded) {
+                isGroupAttributeAdded = true;
+                // add attribute only if not empty to avoid empty file (due to group attribute element will be not considered as empty)
+                templateSetElement.setAttribute(GROUP, template.getName());
+              }
+
+              templateSetElement.addContent(serializeTemplate(t, defaultTemplate, idToType));
+            }
           }
         }
 
+        template.setModified(false);
         return templateSetElement;
       }
 
@@ -410,8 +432,9 @@ public class TemplateSettings implements PersistentStateComponent<TemplateSettin
     }
   }
 
-  private static TemplateImpl createTemplate(String key, String string, String group, String description, String shortcut, String id) {
-    TemplateImpl template = new TemplateImpl(key, string, group);
+  @NotNull
+  private static TemplateImpl createTemplate(@NotNull String key, String string, @NotNull String group, String description, @Nullable String shortcut, String id) {
+    TemplateImpl template = new TemplateImpl(key, string, group, false);
     template.setId(id);
     template.setDescription(description);
     if (TAB.equals(shortcut)) {
@@ -476,7 +499,9 @@ public class TemplateSettings implements PersistentStateComponent<TemplateSettin
     }
 
     String groupName = element.getAttributeValue(GROUP);
-    if (groupName == null || groupName.isEmpty()) groupName = defGroupName;
+    if (StringUtil.isEmpty(groupName)) {
+      groupName = defGroupName;
+    }
 
     TemplateGroup result = new TemplateGroup(groupName, element.getAttributeValue("REPLACE"));
 
@@ -488,7 +513,7 @@ public class TemplateSettings implements PersistentStateComponent<TemplateSettin
         template = readTemplateFromElement(groupName, child, classLoader);
       }
       catch (Exception e) {
-        LOG.info("failed to load template " + element.getAttributeValue(NAME), e);
+        LOG.warn("failed to load template " + element.getAttributeValue(NAME), e);
         continue;
       }
 
@@ -549,6 +574,7 @@ public class TemplateSettings implements PersistentStateComponent<TemplateSettin
     else {
       description = element.getAttributeValue(DESCRIPTION);
     }
+
     String shortcut = element.getAttributeValue(SHORTCUT);
     TemplateImpl template = createTemplate(name, value, groupName, description, shortcut, id);
 
@@ -578,7 +604,7 @@ public class TemplateSettings implements PersistentStateComponent<TemplateSettin
   }
 
   @NotNull
-  static Element serializeTemplate(@NotNull TemplateImpl template) {
+  static Element serializeTemplate(@NotNull TemplateImpl template, @Nullable TemplateImpl defaultTemplate, @NotNull Lazy<Map<String, TemplateContextType>> idToType) {
     Element element = new Element(TEMPLATE);
     final String id = template.getId();
     if (id != null) {
@@ -588,9 +614,11 @@ public class TemplateSettings implements PersistentStateComponent<TemplateSettin
     element.setAttribute(VALUE, template.getString());
     if (template.getShortcutChar() == TAB_CHAR) {
       element.setAttribute(SHORTCUT, TAB);
-    } else if (template.getShortcutChar() == ENTER_CHAR) {
+    }
+    else if (template.getShortcutChar() == ENTER_CHAR) {
       element.setAttribute(SHORTCUT, ENTER);
-    } else if (template.getShortcutChar() == SPACE_CHAR) {
+    }
+    else if (template.getShortcutChar() == SPACE_CHAR) {
       element.setAttribute(SHORTCUT, SPACE);
     }
     if (template.getDescription() != null) {
@@ -599,8 +627,7 @@ public class TemplateSettings implements PersistentStateComponent<TemplateSettin
     element.setAttribute(TO_REFORMAT, Boolean.toString(template.isToReformat()));
     element.setAttribute(TO_SHORTEN_FQ_NAMES, Boolean.toString(template.isToShortenLongNames()));
     if (template.getValue(Template.Property.USE_STATIC_IMPORT_IF_POSSIBLE)
-        != Template.getDefaultValue(Template.Property.USE_STATIC_IMPORT_IF_POSSIBLE))
-    {
+        != Template.getDefaultValue(Template.Property.USE_STATIC_IMPORT_IF_POSSIBLE)) {
       element.setAttribute(USE_STATIC_IMPORT, Boolean.toString(template.getValue(Template.Property.USE_STATIC_IMPORT_IF_POSSIBLE)));
     }
     if (template.isDeactivated()) {
@@ -616,11 +643,9 @@ public class TemplateSettings implements PersistentStateComponent<TemplateSettin
       element.addContent(variableElement);
     }
 
-    try {
-      Element contextElement = new Element(CONTEXT);
-      template.getTemplateContext().writeTemplateContext(contextElement);
+    Element contextElement = template.getTemplateContext().writeTemplateContext(defaultTemplate == null ? null : defaultTemplate.getTemplateContext(), idToType);
+    if (contextElement != null) {
       element.addContent(contextElement);
-    } catch (WriteExternalException ignore) {
     }
     return element;
   }

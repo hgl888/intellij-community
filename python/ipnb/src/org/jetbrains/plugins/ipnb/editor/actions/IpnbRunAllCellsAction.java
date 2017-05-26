@@ -2,10 +2,12 @@ package org.jetbrains.plugins.ipnb.editor.actions;
 
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DataContext;
+import com.intellij.openapi.actionSystem.Presentation;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.ipnb.configuration.IpnbConnectionManager;
@@ -45,8 +47,10 @@ public class IpnbRunAllCellsAction extends IpnbRunCellBaseAction {
           if (!serverStarted) {
             return;
           }
-          UIUtil.invokeLaterIfNeeded(() -> connectionManager.startConnection(null, path, finalUrl, false));
-          runCells(cells, ipnbFilePanel);
+          UIUtil.invokeLaterIfNeeded(() -> {
+            connectionManager.startConnection(null, path, finalUrl, false);
+            runCells(cells, ipnbFilePanel);
+          });
         });
       }
       else {
@@ -60,7 +64,20 @@ public class IpnbRunAllCellsAction extends IpnbRunCellBaseAction {
       cell.runCell(true);
       ipnbFilePanel.revalidate();
       ipnbFilePanel.repaint();
-      ipnbFilePanel.requestFocus();
+      IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> {
+        IdeFocusManager.getGlobalInstance().requestFocus(ipnbFilePanel, true);
+      });
     }
+  }
+
+  @Override
+  public void update(AnActionEvent e) {
+    final DataContext context = e.getDataContext();
+    final IpnbFileEditor ipnbEditor = IpnbFileEditor.DATA_KEY.getData(context);
+    final Presentation presentation = e.getPresentation();
+    if (ipnbEditor == null) {
+      presentation.setEnabledAndVisible(false);
+    }
+    presentation.setEnabledAndVisible(true);
   }
 }

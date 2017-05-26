@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import com.intellij.openapi.ui.DialogBuilder;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.util.Ref;
 import com.intellij.packaging.artifacts.*;
+import com.intellij.task.*;
 import com.intellij.util.concurrency.Semaphore;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.JBUI;
@@ -104,7 +105,7 @@ public abstract class BuildArtifactsBeforeRunTaskProviderBase<T extends BuildArt
     return false;
   }
 
-  public T createTask(RunConfiguration runConfiguration) {
+  public T createTask(@NotNull RunConfiguration runConfiguration) {
     if (myProject.isDefault()) return null;
     return doCreateTask(myProject);
   }
@@ -136,9 +137,10 @@ public abstract class BuildArtifactsBeforeRunTaskProviderBase<T extends BuildArt
       }
     }.execute();
 
-    final CompileStatusNotification callback = new CompileStatusNotification() {
-      public void finished(boolean aborted, int errors, int warnings, CompileContext compileContext) {
-        result.set(!aborted && errors == 0);
+    final ProjectTaskNotification callback = new ProjectTaskNotification() {
+      @Override
+      public void finished(@NotNull ProjectTaskResult executionResult) {
+        result.set(!executionResult.isAborted() && executionResult.getErrors() == 0);
         finished.up();
       }
     };
@@ -147,11 +149,12 @@ public abstract class BuildArtifactsBeforeRunTaskProviderBase<T extends BuildArt
       if (myProject.isDisposed()) {
         return;
       }
-      final CompilerManager manager = CompilerManager.getInstance(myProject);
-      final CompileScope scope = createCompileScope(myProject, artifacts);
-      ExecutionManagerImpl.EXECUTION_SESSION_ID_KEY.set(scope, ExecutionManagerImpl.EXECUTION_SESSION_ID_KEY.get(env));
+      ProjectTaskManager projectTaskManager = ProjectTaskManager.getInstance(myProject);
+      ProjectTask artifactsBuildProjectTask =
+        projectTaskManager.createArtifactsBuildTask(true, artifacts.toArray(new Artifact[artifacts.size()]));
       finished.down();
-      manager.make(scope, CompilerFilter.ALL, callback);
+      Object sessionId = ExecutionManagerImpl.EXECUTION_SESSION_ID_KEY.get(env);
+      projectTaskManager.run(new ProjectTaskContext(sessionId), artifactsBuildProjectTask, callback);
     }, ModalityState.NON_MODAL);
 
     finished.waitFor();

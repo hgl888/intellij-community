@@ -39,24 +39,24 @@ public class PythonFormattedStringReferenceProvider extends PsiReferenceProvider
 
   private static PySubstitutionChunkReference[] getReferencesFromFormatString(@NotNull final PyStringLiteralExpression element) {
     final List<PyStringFormatParser.SubstitutionChunk> chunks = PyStringFormatParser.filterSubstitutions(
-      PyStringFormatParser.parseNewStyleFormat(element.getStringValue()));
-    return getReferencesFromChunks(element, chunks, false);
+      PyStringFormatParser.parseNewStyleFormat(element.getText()));
+    return getReferencesFromChunks(element, chunks);
   }
 
   private static PySubstitutionChunkReference[] getReferencesFromPercentString(@NotNull final PyStringLiteralExpression element) {
     final List<PyStringFormatParser.SubstitutionChunk>
-      chunks = PyStringFormatParser.filterSubstitutions(PyStringFormatParser.parsePercentFormat(element.getStringValue()));
-    return getReferencesFromChunks(element, chunks, true);
+      chunks = PyStringFormatParser.filterSubstitutions(PyStringFormatParser.parsePercentFormat(element.getText()));
+    return getReferencesFromChunks(element, chunks);
   }
 
   @NotNull
   public static PySubstitutionChunkReference[] getReferencesFromChunks(@NotNull final PyStringLiteralExpression element,
-                                                                       @NotNull final List<PyStringFormatParser.SubstitutionChunk> chunks,
-                                                                       boolean isPercent) {
+                                                        @NotNull final List<PyStringFormatParser.SubstitutionChunk> chunks) {
+
     final PySubstitutionChunkReference[] result = new PySubstitutionChunkReference[chunks.size()];
       for (int i = 0; i < chunks.size(); i++) {
         final PyStringFormatParser.SubstitutionChunk chunk = chunks.get(i);
-        result[i] = new PySubstitutionChunkReference(element, chunk, i, isPercent);
+        result[i] = new PySubstitutionChunkReference(element, chunk, i);
       }
     return result;
   }

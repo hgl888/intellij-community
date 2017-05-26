@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ public class MissingPackageInfoInspection extends MissingPackageInfoInspectionBa
     return new LocalMissingPackageInfoInspection(this);
   }
 
-  private class LocalMissingPackageInfoInspection extends LocalMissingPackageInfoInspectionBase {
+  private static class LocalMissingPackageInfoInspection extends LocalMissingPackageInfoInspectionBase {
 
     public LocalMissingPackageInfoInspection(MissingPackageInfoInspectionBase settingsDelegate) {
       super(settingsDelegate);
@@ -57,18 +57,15 @@ public class MissingPackageInfoInspection extends MissingPackageInfoInspectionBa
         }
 
         @Override
-        protected boolean prepareForWriting() {
+        public boolean startInWriteAction() {
           return false;
         }
 
         @Override
         protected void doFix(Project project, ProblemDescriptor descriptor) {
-          DataManager.getInstance().getDataContextFromFocus().doWhenDone(new Consumer<DataContext>() {
-            @Override
-            public void consume(DataContext context) {
-              final AnActionEvent event = new AnActionEvent(null, context, "", new Presentation(), ActionManager.getInstance(), 0);
-              new CreatePackageInfoAction().actionPerformed(event);
-            }
+          DataManager.getInstance().getDataContextFromFocus().doWhenDone((Consumer<DataContext>)context -> {
+            final AnActionEvent event = new AnActionEvent(null, context, "", new Presentation(), ActionManager.getInstance(), 0);
+            new CreatePackageInfoAction().actionPerformed(event);
           });
         }
       };

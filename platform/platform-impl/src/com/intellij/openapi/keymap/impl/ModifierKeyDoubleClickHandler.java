@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
 import com.intellij.openapi.actionSystem.ex.AnActionListener;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.ApplicationComponent;
-import com.intellij.openapi.keymap.KeymapManager;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Clock;
 import com.intellij.openapi.util.Couple;
 import com.intellij.openapi.util.Disposer;
@@ -41,6 +41,8 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static com.intellij.openapi.keymap.KeymapUtil.getActiveKeymapShortcuts;
+
 /**
  * Support for keyboard shortcuts like Control-double-click or Control-double-click+A
  *
@@ -48,7 +50,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * functionality (invoked on double Shift), so if you need to change them, please make sure
  * SearchEverywhere behaviour remains intact.
  */
-public class ModifierKeyDoubleClickHandler extends ApplicationComponent.Adapter {
+public class ModifierKeyDoubleClickHandler implements Disposable, ApplicationComponent {
+  private static final Logger LOG = Logger.getInstance(ModifierKeyDoubleClickHandler.class);
   private static final TIntIntHashMap KEY_CODE_TO_MODIFIER_MAP = new TIntIntHashMap();
   static {
     KEY_CODE_TO_MODIFIER_MAP.put(KeyEvent.VK_ALT, InputEvent.ALT_MASK);
@@ -77,7 +80,7 @@ public class ModifierKeyDoubleClickHandler extends ApplicationComponent.Adapter 
   }
 
   @Override
-  public void disposeComponent() {
+  public void dispose() {
     for (MyDispatcher dispatcher : myDispatchers.values()) {
       Disposer.dispose(dispatcher);
     }
@@ -152,11 +155,11 @@ public class ModifierKeyDoubleClickHandler extends ApplicationComponent.Adapter 
     }
 
     @Override
-    public boolean dispatch(AWTEvent event) {
+    public boolean dispatch(@NotNull AWTEvent event) {
       if (event instanceof KeyEvent) {
         final KeyEvent keyEvent = (KeyEvent)event;
         final int keyCode = keyEvent.getKeyCode();
-
+        LOG.debug("", this, event);
         if (keyCode == myModifierKeyCode) {
           if (hasOtherModifiers(keyEvent)) {
             resetState();
@@ -173,7 +176,7 @@ public class ModifierKeyDoubleClickHandler extends ApplicationComponent.Adapter 
           handleModifier((KeyEvent)event);
           return false;
         } else if (ourPressed.first.get() && ourReleased.first.get() && ourPressed.second.get() && myActionKeyCode != -1) {
-          if (keyCode == myActionKeyCode) {
+          if (keyCode == myActionKeyCode && !hasOtherModifiers(keyEvent)) {
             if (event.getID() == KeyEvent.KEY_PRESSED) {
               return run(keyEvent);
             }
@@ -265,7 +268,7 @@ public class ModifierKeyDoubleClickHandler extends ApplicationComponent.Adapter 
     }
 
     private boolean shouldSkipIfActionHasShortcut() {
-      return mySkipIfActionHasShortcut && KeymapManager.getInstance().getActiveKeymap().getShortcuts(myActionId).length > 0;
+      return mySkipIfActionHasShortcut && getActiveKeymapShortcuts(myActionId).getShortcuts().length > 0;
     }
 
     @Override
@@ -275,6 +278,12 @@ public class ModifierKeyDoubleClickHandler extends ApplicationComponent.Adapter 
 
     @Override
     public void dispose() {
+    }
+
+    @Override
+    public String toString() {
+      return "modifier double-click dispatcher [modifierKeyCode=" + myModifierKeyCode +
+             ",actionKeyCode=" + myActionKeyCode + ",actionId=" + myActionId + "]";
     }
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,10 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.startup.StartupManager;
 import com.intellij.openapi.ui.popup.Balloon;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.ShutDownTracker;
+import com.intellij.openapi.util.TextRange;
+import com.intellij.openapi.util.Trinity;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.*;
 import com.intellij.ui.BalloonLayoutData;
@@ -64,7 +67,7 @@ public class EventLog {
   private static final String A_CLOSING = "</a>";
   private static final Pattern TAG_PATTERN = Pattern.compile("<[^>]*>");
   private static final Pattern A_PATTERN = Pattern.compile("<a ([^>]* )?href=[\"\']([^>]*)[\"\'][^>]*>");
-  private static final Set<String> NEW_LINES = ContainerUtil.newHashSet("<br>", "</br>", "<br/>", "<p>", "</p>", "<p/>");
+  private static final Set<String> NEW_LINES = ContainerUtil.newHashSet("<br>", "</br>", "<br/>", "<p>", "</p>", "<p/>", "<pre>", "</pre>");
   private static final String DEFAULT_CATEGORY = "";
 
   private final LogModel myModel = new LogModel(null, ApplicationManager.getApplication());
@@ -154,7 +157,7 @@ public class EventLog {
     hasHtml |= parseHtmlContent(addIndents(content, indent), notification, logDoc, showMore, links, lineSeparators);
 
     List<AnAction> actions = notification.getActions();
-    if (NotificationsManagerImpl.newEnabled() && !actions.isEmpty()) {
+    if (!actions.isEmpty()) {
       String text = "<p>" + StringUtil.join(actions, new Function<AnAction, String>() {
         private int index;
 
@@ -304,7 +307,7 @@ public class EventLog {
           String linkText = content.substring(tagMatcher.end(), linkEnd).replaceAll(TAG_PATTERN.pattern(), "");
           int linkStart = document.getTextLength();
           appendText(document, linkText);
-          links.put(document.createRangeMarker(new TextRange(linkStart, document.getTextLength())),
+          links.put(document.createRangeMarker(linkStart, document.getTextLength()),
                     new NotificationHyperlinkInfo(notification, href));
           content = content.substring(linkEnd + A_CLOSING.length());
           continue;
@@ -516,12 +519,9 @@ public class EventLog {
     }
 
     private void doPrintNotification(@NotNull final Notification notification, @NotNull final EventLogConsole console) {
-      StartupManager.getInstance(myProject).runWhenProjectIsInitialized(new DumbAwareRunnable() {
-        @Override
-        public void run() {
-          if (!ShutDownTracker.isShutdownHookRunning() && !myProject.isDisposed()) {
-            ApplicationManager.getApplication().runReadAction(() -> console.doPrintNotification(notification));
-          }
+      StartupManager.getInstance(myProject).runWhenProjectIsInitialized((DumbAwareRunnable)() -> {
+        if (!ShutDownTracker.isShutdownHookRunning() && !myProject.isDisposed()) {
+          ApplicationManager.getApplication().runReadAction(() -> console.doPrintNotification(notification));
         }
       });
     }
@@ -635,15 +635,8 @@ public class EventLog {
       if (target != null) {
         IdeFrame frame = WindowManager.getInstance().getIdeFrame(project);
         assert frame != null;
-        Ref<Object> layoutDataRef = null;
-        if (NotificationsManagerImpl.newEnabled()) {
-          BalloonLayoutData layoutData = new BalloonLayoutData();
-          layoutData.groupId = "";
-          layoutData.showFullContent = true;
-          layoutData.showSettingButton = false;
-          layoutDataRef = new Ref<>(layoutData);
-        }
-        Balloon balloon = NotificationsManagerImpl.createBalloon(frame, myNotification, true, true, layoutDataRef, project);
+        Balloon balloon =
+          NotificationsManagerImpl.createBalloon(frame, myNotification, true, true, BalloonLayoutData.fullContent(), project);
         balloon.show(target, Balloon.Position.above);
       }
     }

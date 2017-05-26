@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: amrk
- * Date: Jul 2, 2005
- * Time: 12:16:02 AM
- */
 package com.theoryinpractice.testng.configuration;
 
 import com.intellij.diagnostic.logging.LogConfigurationPanel;
@@ -33,13 +27,11 @@ import com.intellij.execution.testframework.TestSearchScope;
 import com.intellij.execution.testframework.sm.runner.SMTRunnerConsoleProperties;
 import com.intellij.execution.util.JavaParametersUtil;
 import com.intellij.execution.util.ProgramParametersUtil;
-import com.intellij.openapi.components.PathMacroManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.options.SettingsEditor;
 import com.intellij.openapi.options.SettingsEditorGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.DefaultJDOMExternalizer;
-import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.WriteExternalException;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
@@ -70,11 +62,7 @@ public class TestNGConfiguration extends JavaTestConfigurationBase {
   protected transient Project project;
   public boolean ALTERNATIVE_JRE_PATH_ENABLED;
   public String ALTERNATIVE_JRE_PATH;
-  
 
-
-  public static final String DEFAULT_PACKAGE_NAME = ExecutionBundle.message("default.package.presentable.name");
-  public static final String DEFAULT_PACKAGE_CONFIGURATION_NAME = ExecutionBundle.message("default.package.configuration.name");
   private final RefactoringListeners.Accessor<PsiPackage> myPackage = new RefactoringListeners.Accessor<PsiPackage>() {
     public void setName(final String qualifiedName) {
       final boolean generatedName = isGeneratedName();
@@ -224,10 +212,20 @@ public class TestNGConfiguration extends JavaTestConfigurationBase {
     return !data.TEST_OBJECT.equals(TestType.PACKAGE.getType()) ? null : data.getPackageName();
   }
 
-  public void setClassConfiguration(PsiClass psiclass) {
+  public void beClassConfiguration(PsiClass psiclass) {
     setModule(data.setMainClass(psiclass));
     data.TEST_OBJECT = TestType.CLASS.getType();
     setGeneratedName();
+  }
+
+  @Override
+  public boolean isConfiguredByElement(PsiElement element) {
+    return TestNGTestObject.fromConfig(this).isConfiguredByElement(element);
+  }
+
+  @Override
+  public String prepareParameterizedParameter(String paramSetName) {
+    return TestNGConfigurationProducer.getInvocationNumber(paramSetName);
   }
 
   public void setPackageConfiguration(Module module, PsiPackage pkg) {
@@ -237,12 +235,24 @@ public class TestNGConfiguration extends JavaTestConfigurationBase {
     setGeneratedName();
   }
 
+  public void beMethodConfiguration(Location<PsiMethod> location) {
+    setModule(data.setTestMethod(location));
+    setGeneratedName();
+  }
+
+  @Deprecated
+  public void setClassConfiguration(PsiClass psiclass) {
+    setModule(data.setMainClass(psiclass));
+    data.TEST_OBJECT = TestType.CLASS.getType();
+    setGeneratedName();
+  }
+
+  @Deprecated
   public void setMethodConfiguration(Location<PsiMethod> location) {
     setModule(data.setTestMethod(location));
     setGeneratedName();
   }
-  
-  
+
   public void bePatternConfiguration(List<PsiClass> classes, PsiMethod method) {
     data.TEST_OBJECT = TestType.PATTERN.getType();
     final String suffix;
@@ -292,8 +302,7 @@ public class TestNGConfiguration extends JavaTestConfigurationBase {
   }
 
   @Override
-  public void readExternal(Element element) throws InvalidDataException {
-    PathMacroManager.getInstance(getProject()).expandPaths(element);
+  public void readExternal(Element element) {
     super.readExternal(element);
     JavaRunConfigurationExtensionManager.getInstance().readExternal(this, element);
     readModule(element);
@@ -323,8 +332,7 @@ public class TestNGConfiguration extends JavaTestConfigurationBase {
     final Element patternsElement = element.getChild(PATTERNS_EL_NAME);
     if (patternsElement != null) {
       final LinkedHashSet<String> tests = new LinkedHashSet<>();
-      for (Object o : patternsElement.getChildren(PATTERN_EL_NAME)) {
-        Element patternElement = (Element)o;
+      for (Element patternElement : patternsElement.getChildren(PATTERN_EL_NAME)) {
         tests.add(patternElement.getAttributeValue(TEST_CLASS_ATT_NAME));
       }
       getPersistantData().setPatterns(tests);
@@ -446,7 +454,7 @@ public class TestNGConfiguration extends JavaTestConfigurationBase {
   }
 
   public void beFromSourcePosition(PsiLocation<PsiMethod> position) {
-    setMethodConfiguration(position);
+    beMethodConfiguration(position);
     getPersistantData().TEST_OBJECT = TestType.SOURCE.getType();
   }
 }

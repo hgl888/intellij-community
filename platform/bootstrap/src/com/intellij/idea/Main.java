@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,14 @@ import com.intellij.ide.Bootstrap;
 import com.intellij.openapi.application.JetBrainsProtocolHandler;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.SystemInfo;
-import com.intellij.util.ui.JBUI;
-import com.intellij.util.ui.UIUtil;
 
 import javax.swing.*;
 import java.awt.*;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.Arrays;
+import java.util.List;
 
 public class Main {
   public static final int NO_GRAPHICS = 1;
@@ -48,6 +48,8 @@ public class Main {
   private static boolean isHeadless;
   private static boolean isCommandLine;
   private static boolean hasGraphics = true;
+  private static final List<String> HEADLESS_COMMANDS = Arrays.asList("ant", "duplocate", "traverseUI", "buildAppcodeCache", "format",
+                                                                     "keymap", "update", "inspections", "intentions");
 
   private Main() { }
 
@@ -109,12 +111,8 @@ public class Main {
     }
 
     String firstArg = args[0];
-    return Comparing.strEqual(firstArg, "ant") ||
-           Comparing.strEqual(firstArg, "duplocate") ||
-           Comparing.strEqual(firstArg, "traverseUI") ||
-           Comparing.strEqual(firstArg, "buildAppcodeCache") ||
-           Comparing.strEqual(firstArg, "format") ||
-           (firstArg.length() < 20 && firstArg.endsWith("inspect"));
+    return HEADLESS_COMMANDS.contains(firstArg)
+           || firstArg.length() < 20 && firstArg.endsWith("inspect");
   }
 
   private static boolean isCommandLine(String[] args) {
@@ -135,7 +133,6 @@ public class Main {
     return args.length > 0 && Comparing.strEqual(args[0], "traverseUI");
   }
 
-  @SuppressWarnings("ThrowableResultOfMethodCallIgnored")
   public static void showMessage(String title, Throwable t) {
     StringWriter message = new StringWriter();
 
@@ -180,14 +177,14 @@ public class Main {
         JTextPane textPane = new JTextPane();
         textPane.setEditable(false);
         textPane.setText(message.replaceAll("\t", "    "));
-        textPane.setBackground(UIUtil.getPanelBackground());
+        textPane.setBackground(UIManager.getColor("Panel.background"));
         textPane.setCaretPosition(0);
         JScrollPane scrollPane = new JScrollPane(
           textPane, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         scrollPane.setBorder(null);
 
-        int maxHeight = Math.min(JBUI.scale(600), Toolkit.getDefaultToolkit().getScreenSize().height - 150);
-        int maxWidth = Math.min(JBUI.scale(600), Toolkit.getDefaultToolkit().getScreenSize().width - 150);
+        int maxHeight = Toolkit.getDefaultToolkit().getScreenSize().height / 2;
+        int maxWidth = Toolkit.getDefaultToolkit().getScreenSize().width / 2;
         Dimension component = scrollPane.getPreferredSize();
         if (component.height > maxHeight || component.width > maxWidth) {
           scrollPane.setPreferredSize(new Dimension(Math.min(maxWidth, component.width), Math.min(maxHeight, component.height)));

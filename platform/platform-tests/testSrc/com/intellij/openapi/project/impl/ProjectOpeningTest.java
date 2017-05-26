@@ -56,7 +56,6 @@ public class ProjectOpeningTest extends PlatformTestCase {
       closeProject(project);
     }
   }
-  /*
 
   public void testCancelOnLoadingModules() throws Exception {
     File foo = PlatformTestCase.createTempDir("foo");
@@ -67,25 +66,24 @@ public class ProjectOpeningTest extends PlatformTestCase {
       project.save();
       closeProject(project);
 
-      ApplicationManager.getApplication().getMessageBus().connect().subscribe(ProjectLifecycleListener.TOPIC, new ProjectLifecycleListener() {
+      ApplicationManager.getApplication().getMessageBus().connect(getTestRootDisposable()).subscribe(ProjectLifecycleListener.TOPIC, new ProjectLifecycleListener() {
         @Override
         public void projectComponentsInitialized(@NotNull Project project) {
           ProgressIndicator indicator = ProgressManager.getInstance().getProgressIndicator();
           assertNotNull(indicator);
           indicator.cancel();
+          indicator.checkCanceled();
         }
       });
 
-      manager.loadAndOpenProject(foo.getPath());
-      assertFalse(manager.openProject(project));
+      project = manager.loadAndOpenProject(foo.getPath());
       assertFalse(project.isOpen());
+      assertTrue(project.isDisposed());
     }
     finally {
       closeProject(project);
     }
   }
-
-  */
 
   public void testIsSameProjectForDirectoryBasedProject() throws IOException {
     File projectDir = createTempDir("project");
@@ -98,6 +96,8 @@ public class ProjectOpeningTest extends PlatformTestCase {
     assertTrue(ProjectUtil.isSameProject(iprFilePath.getAbsolutePath(), dirBasedProject));
     File miscXmlFilePath = new File(projectDir, ".idea/misc.xml");
     assertTrue(ProjectUtil.isSameProject(miscXmlFilePath.getAbsolutePath(), dirBasedProject));
+    File someOtherFilePath = new File(projectDir, "misc.xml");
+    assertFalse(ProjectUtil.isSameProject(someOtherFilePath.getAbsolutePath(), dirBasedProject));
   }
 
   public void testIsSameProjectForFileBasedProject() throws IOException {

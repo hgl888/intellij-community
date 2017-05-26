@@ -25,7 +25,7 @@ import com.intellij.openapi.editor.impl.AbstractEditorTest;
 import com.intellij.openapi.editor.impl.EditorImpl;
 import com.intellij.openapi.editor.impl.SoftWrapModelImpl;
 import com.intellij.openapi.editor.markup.TextAttributes;
-import com.intellij.openapi.util.Ref;
+import com.intellij.openapi.fileTypes.PlainTextLanguage;
 import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
 import com.intellij.testFramework.EditorTestUtil;
 import com.intellij.testFramework.TestFileType;
@@ -866,7 +866,10 @@ public class SoftWrapApplianceOnDocumentModificationTest extends AbstractEditorT
     VisualPosition caretPositionBefore = getEditor().getCaretModel().getVisualPosition();
 
     // Change tab size.
-    final CommonCodeStyleSettings.IndentOptions indentOptions = getCurrentCodeStyleSettings().getIndentOptions();
+    final CommonCodeStyleSettings.IndentOptions indentOptions = getCurrentCodeStyleSettings()
+      .getCommonSettings(PlainTextLanguage.INSTANCE)
+      .getIndentOptions();
+
     assertNotNull(indentOptions);
     indentOptions.TAB_SIZE++;
 
@@ -1007,24 +1010,8 @@ public class SoftWrapApplianceOnDocumentModificationTest extends AbstractEditorT
     final String text = "12345678 abcdefgh";
     init(15, 10, text);
     myEditor.getCaretModel().moveToOffset(text.length());
-    final Ref<Boolean> fail = new Ref<>(true);
-    SoftWrapApplianceManager applianceManager = ((SoftWrapModelImpl)myEditor.getSoftWrapModel()).getApplianceManager();
-    SoftWrapAwareDocumentParsingListener listener = new SoftWrapAwareDocumentParsingListenerAdapter() {
-      @Override
-      public void beforeSoftWrapLineFeed(@NotNull EditorPosition position) {
-        if (position.x == text.indexOf("a") * 10) {
-          fail.set(false);
-        }
-      }
-    };
-    applianceManager.addListener(listener);
-    try {
-      backspace();
-    }
-    finally {
-      applianceManager.removeListener(listener);
-    }
-    assertFalse(fail.get());
+    backspace();
+    verifySoftWrapPositions(9);
   }
 
   public void testCaretInsideFoldRegionOnCollapse() throws IOException {

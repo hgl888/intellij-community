@@ -43,7 +43,7 @@ import java.util.Set;
 public class PyInstalledPackagesPanel extends InstalledPackagesPanel {
   private boolean myHasManagement = false;
 
-  public PyInstalledPackagesPanel(Project project, PackagesNotificationPanel area) {
+  public PyInstalledPackagesPanel(@NotNull Project project, @NotNull PackagesNotificationPanel area) {
     super(project, area);
   }
 
@@ -95,7 +95,7 @@ public class PyInstalledPackagesPanel extends InstalledPackagesPanel {
       try {
         myHasManagement = PyPackageManager.getInstance(selectedSdk).hasManagement();
         if (!myHasManagement) {
-          throw new PyExecutionException("Python packaging tools not found", "pip", Collections.<String>emptyList(), "", "", 0,
+          throw new PyExecutionException("Python packaging tools not found", "pip", Collections.emptyList(), "", "", 0,
                                          ImmutableList.of(new PyInstallPackageManagementFix()));
         }
       }

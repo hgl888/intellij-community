@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,13 @@ package com.intellij.refactoring.rename;
 import com.intellij.lang.findUsages.DescriptiveNameUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFrame;
@@ -184,12 +184,8 @@ public class RenameProcessor extends BaseRefactoringProcessor {
         final Runnable runnable = () -> {
           for (final Map.Entry<PsiElement, String> entry : renames.entrySet()) {
             final UsageInfo[] usages =
-              ApplicationManager.getApplication().runReadAction(new Computable<UsageInfo[]>() {
-                @Override
-                public UsageInfo[] compute() {
-                  return RenameUtil.findUsages(entry.getKey(), entry.getValue(), mySearchInComments, mySearchTextOccurrences, myAllRenames);
-                }
-              });
+              ReadAction.compute(
+                () -> RenameUtil.findUsages(entry.getKey(), entry.getValue(), mySearchInComments, mySearchTextOccurrences, myAllRenames));
             Collections.addAll(variableUsages, usages);
           }
         };
@@ -198,6 +194,26 @@ public class RenameProcessor extends BaseRefactoringProcessor {
           return false;
         }
       }
+    }
+
+    final int[] choice = myAllRenames.size() > 1 ? new int[]{-1} : null;
+    try {
+      for (Iterator<Map.Entry<PsiElement, String>> iterator = myAllRenames.entrySet().iterator(); iterator.hasNext(); ) {
+        Map.Entry<PsiElement, String> entry = iterator.next();
+        if (entry.getKey() instanceof PsiFile) {
+          final PsiFile file = (PsiFile)entry.getKey();
+          final PsiDirectory containingDirectory = file.getContainingDirectory();
+          if (CopyFilesOrDirectoriesHandler.checkFileExist(containingDirectory, choice, file, entry.getValue(), "Rename")) {
+            iterator.remove();
+            continue;
+          }
+        }
+        RenameUtil.checkRename(entry.getKey(), entry.getValue());
+      }
+    }
+    catch (IncorrectOperationException e) {
+      CommonRefactoringUtil.showErrorMessage(RefactoringBundle.message("rename.title"), e.getMessage(), getHelpID(), myProject);
+      return false;
     }
 
     final Set<UsageInfo> usagesSet = ContainerUtil.newLinkedHashSet(usagesIn);
@@ -350,31 +366,6 @@ public class RenameProcessor extends BaseRefactoringProcessor {
 
   @Override
   public void performRefactoring(@NotNull UsageInfo[] usages) {
-    final int[] choice = myAllRenames.size() > 1 ? new int[]{-1} : null;
-    String message = null;
-    try {
-      for (Iterator<Map.Entry<PsiElement, String>> iterator = myAllRenames.entrySet().iterator(); iterator.hasNext(); ) {
-        Map.Entry<PsiElement, String> entry = iterator.next();
-        if (entry.getKey() instanceof PsiFile) {
-          final PsiFile file = (PsiFile)entry.getKey();
-          final PsiDirectory containingDirectory = file.getContainingDirectory();
-          if (CopyFilesOrDirectoriesHandler.checkFileExist(containingDirectory, choice, file, entry.getValue(), "Rename")) {
-            iterator.remove();
-            continue;
-          }
-        }
-        RenameUtil.checkRename(entry.getKey(), entry.getValue());
-      }
-    }
-    catch (IncorrectOperationException e) {
-      message = e.getMessage();
-    }
-
-    if (message != null) {
-      CommonRefactoringUtil.showErrorMessage(RefactoringBundle.message("rename.title"), message, getHelpID(), myProject);
-      return;
-    }
-
     List<Runnable> postRenameCallbacks = new ArrayList<>();
 
     final MultiMap<PsiElement, UsageInfo> classified = classifyUsages(myAllRenames.keySet(), usages);

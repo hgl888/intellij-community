@@ -126,8 +126,13 @@ public class GenericsHighlightUtil {
         if (errorMessage != null) {
           final PsiType expectedType = detectExpectedType(referenceParameterList);
           if (!(inferenceResult.failedToInfer() && expectedType instanceof PsiClassType && ((PsiClassType)expectedType).isRaw())) {
-            return HighlightInfo
+            HighlightInfo highlightInfo = HighlightInfo
               .newHighlightInfo(HighlightInfoType.ERROR).range(referenceParameterList).descriptionAndTooltip(errorMessage).create();
+            if (inferenceResult == PsiDiamondType.DiamondInferenceResult.ANONYMOUS_INNER_RESULT && 
+                !PsiUtil.isLanguageLevel9OrHigher(referenceParameterList)) {
+              QuickFixAction.registerQuickFixAction(highlightInfo, QUICK_FIX_FACTORY.createIncreaseLanguageLevelFix(LanguageLevel.JDK_1_9));
+            }
+            return highlightInfo;
           }
         }
       }
@@ -458,6 +463,7 @@ public class GenericsHighlightUtil {
 
       if (!hasConcrete && defaults != null) {
         final PsiMethod defaultMethod = defaults.get(0);
+        if (MethodSignatureUtil.findMethodBySuperMethod(aClass, defaultMethod, false) != null) continue;
         final PsiClass defaultMethodContainingClass = defaultMethod.getContainingClass();
         if (defaultMethodContainingClass == null) continue;
         final PsiMethod unrelatedMethod = abstracts != null ? abstracts.get(0) : defaults.get(1);
@@ -634,7 +640,7 @@ public class GenericsHighlightUtil {
     }
 
     if (superMethod.hasModifierProperty(PsiModifier.STATIC) && superContainingClass != null &&
-        superContainingClass.isInterface() && PsiUtil.isLanguageLevel8OrHigher(superContainingClass)) {
+        superContainingClass.isInterface() && !checkEqualsSuper && PsiUtil.isLanguageLevel8OrHigher(superContainingClass)) {
       return null;
     }
 
@@ -1330,10 +1336,18 @@ public class GenericsHighlightUtil {
           final PsiElement resolve = ref.resolve();
           final PsiClass containingClass = resolve != null ? ((PsiClass)resolve).getContainingClass() : null;
           if (containingClass == null) return null;
-          if (psiClass.isInheritor(containingClass, true) ||
-              unqualifiedNestedClassReferenceAccessedViaContainingClassInheritance((PsiClass)typeClass, ((PsiClass)resolve).getExtendsList()) ||
-              unqualifiedNestedClassReferenceAccessedViaContainingClassInheritance((PsiClass)typeClass, ((PsiClass)resolve).getImplementsList())) {
-            return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).descriptionAndTooltip(((PsiClass)resolve).getName() + " is not accessible in current context").range(ref).create();
+          PsiClass hiddenClass = null;
+          if (psiClass.isInheritor(containingClass, true)) {
+            hiddenClass = (PsiClass)resolve;
+          }
+          else {
+            hiddenClass = unqualifiedNestedClassReferenceAccessedViaContainingClassInheritance((PsiClass)typeClass, ((PsiClass)resolve).getExtendsList());
+            if (hiddenClass == null) {
+              hiddenClass = unqualifiedNestedClassReferenceAccessedViaContainingClassInheritance((PsiClass)typeClass, ((PsiClass)resolve).getImplementsList());
+            }
+          }
+          if (hiddenClass != null) {
+            return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).descriptionAndTooltip(hiddenClass.getName() + " is not accessible in current context").range(ref).create();
           }
         }
       }
@@ -1341,8 +1355,8 @@ public class GenericsHighlightUtil {
     return null;
   }
 
-  private static boolean unqualifiedNestedClassReferenceAccessedViaContainingClassInheritance(PsiClass containingClass,
-                                                                                              PsiReferenceList referenceList) {
+  private static PsiClass unqualifiedNestedClassReferenceAccessedViaContainingClassInheritance(PsiClass containingClass,
+                                                                                               PsiReferenceList referenceList) {
     if (referenceList != null) {
       for (PsiJavaCodeReferenceElement referenceElement : referenceList.getReferenceElements()) {
         if (!referenceElement.isQualified()) {
@@ -1352,13 +1366,13 @@ public class GenericsHighlightUtil {
             if (superContainingClass != null && 
                 InheritanceUtil.isInheritorOrSelf(containingClass, superContainingClass, true) && 
                 !PsiTreeUtil.isAncestor(superContainingClass, containingClass, true)) {
-              return true;
+              return (PsiClass)superClass;
             }
           }
         }
       }
     }
-    return false;
+    return null;
   }
 
   private static void registerVariableParameterizedTypeFixes(@Nullable HighlightInfo highlightInfo,

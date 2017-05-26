@@ -51,7 +51,7 @@ public abstract class PsiManager extends UserDataHolderBase {
    * Returns the PSI file corresponding to the specified virtual file.
    *
    * @param file the file for which the PSI is requested.
-   * @return the PSI file, or null if <code>file</code> is a directory, an invalid virtual file,
+   * @return the PSI file, or null if {@code file} is a directory, an invalid virtual file,
    * or the current project is a dummy or default project.
    */
   @Nullable
@@ -71,8 +71,12 @@ public abstract class PsiManager extends UserDataHolderBase {
 
   /**
    * Checks if the specified two PSI elements (possibly invalid) represent the same source element
-   * (for example, a class with the same full-qualified name). Can be used to match two versions of the
-   * PSI tree with each other after a reparse.
+   * or can are considered equivalent for resolve purposes. Can be used to match two versions of the
+   * PSI tree with each other after a reparse.<p/>
+   *
+   * For example, Java classes with the same full-qualified name are equivalent, which is useful when working
+   * with both library source and class roots. Source and compiled classes are definitely different ({@code equals()} returns false),
+   * but for reference resolve or inheritance checks they're equivalent.
    *
    * @param element1 the first element to check for equivalence
    * @param element2 the second element to check for equivalence
@@ -142,9 +146,15 @@ public abstract class PsiManager extends UserDataHolderBase {
 
   /**
    * Clears the resolve caches of the PSI manager. Can be used to reduce memory consumption
-   * in batch operations sequentially processing multiple files.
+   * in batch operations sequentially processing multiple files. Can be invoked from any thread.
    */
   public abstract void dropResolveCaches();
+
+  /**
+   * Clears all {@link com.intellij.psi.util.CachedValue} depending on {@link PsiModificationTracker#MODIFICATION_COUNT} and resolve caches.
+   * Can be used to reduce memory consumption in batch operations sequentially processing multiple files. Should be invoked on Swing thread.
+   */
+  public abstract void dropPsiCaches();
 
   /**
    * Checks if the specified PSI element belongs to the sources of the project.

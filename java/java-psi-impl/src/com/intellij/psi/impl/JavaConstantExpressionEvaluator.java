@@ -52,12 +52,7 @@ public class JavaConstantExpressionEvaluator extends JavaRecursiveElementWalking
           throwExceptionOnOverflow ? CONSTANT_VALUE_WITH_OVERFLOW_MAP_KEY : CONSTANT_VALUE_WO_OVERFLOW_MAP_KEY;
         return CachedValuesManager.getManager(myProject).getCachedValue(myProject, key, PROVIDER, false);
       }
-    } : new Factory<ConcurrentMap<PsiElement, Object>>() {
-      @Override
-      public ConcurrentMap<PsiElement, Object> create() {
-        return auxEvaluator.getCacheMap(throwExceptionOnOverflow);
-      }
-    };
+    } : () -> auxEvaluator.getCacheMap(throwExceptionOnOverflow);
     myProject = project;
     myConstantExpressionVisitor = new ConstantExpressionVisitor(visitedVars, throwExceptionOnOverflow, auxEvaluator);
   }
@@ -69,6 +64,9 @@ public class JavaConstantExpressionEvaluator extends JavaRecursiveElementWalking
       Object result = myConstantExpressionVisitor.handle(element);
       cache(element, result);
     }
+    else {
+      myConstantExpressionVisitor.store(element, value == NO_VALUE ? null : value);
+    }
   }
 
   @Override
@@ -79,16 +77,13 @@ public class JavaConstantExpressionEvaluator extends JavaRecursiveElementWalking
       // will cache back in elementFinished()
     }
     else {
-      ConstantExpressionVisitor.store(element, value == NO_VALUE ? null : value);
+      myConstantExpressionVisitor.store(element, value == NO_VALUE ? null : value);
     }
   }
 
-  private static final CachedValueProvider<ConcurrentMap<PsiElement,Object>> PROVIDER = new CachedValueProvider<ConcurrentMap<PsiElement,Object>>() {
-    @Override
-    public Result<ConcurrentMap<PsiElement,Object>> compute() {
-      ConcurrentMap<PsiElement, Object> value = ContainerUtil.createConcurrentSoftMap();
-      return Result.create(value, PsiModificationTracker.MODIFICATION_COUNT);
-    }
+  private static final CachedValueProvider<ConcurrentMap<PsiElement,Object>> PROVIDER = () -> {
+    ConcurrentMap<PsiElement, Object> value = ContainerUtil.createConcurrentSoftMap();
+    return CachedValueProvider.Result.create(value, PsiModificationTracker.MODIFICATION_COUNT);
   };
 
   private Object getCached(@NotNull PsiElement element) {
@@ -130,7 +125,7 @@ public class JavaConstantExpressionEvaluator extends JavaRecursiveElementWalking
         PsiElement operand = ((PsiPrefixExpression)expression).getOperand();
         if (operand == null) return null;
         Object value = evaluator.myConstantExpressionVisitor.handle(operand);
-        ConstantExpressionVisitor.store(operand, value);
+        evaluator.myConstantExpressionVisitor.store(operand, value);
       }
       return evaluator.myConstantExpressionVisitor.handle(expression);
     }

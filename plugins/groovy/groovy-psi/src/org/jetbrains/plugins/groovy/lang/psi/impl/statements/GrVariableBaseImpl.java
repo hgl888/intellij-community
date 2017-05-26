@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package org.jetbrains.plugins.groovy.lang.psi.impl.statements;
 
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.NullableComputable;
 import com.intellij.openapi.util.RecursionGuard;
 import com.intellij.openapi.util.RecursionManager;
 import com.intellij.psi.*;
@@ -29,7 +28,6 @@ import com.intellij.psi.stubs.IStubElementType;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.IncorrectOperationException;
-import icons.JetgroovyIcons;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -50,8 +48,6 @@ import org.jetbrains.plugins.groovy.lang.psi.impl.PsiImplUtil;
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.TypesUtil;
 import org.jetbrains.plugins.groovy.lang.psi.stubs.GrVariableStubBase;
 import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil;
-
-import javax.swing.*;
 
 /**
  * @author ilyas
@@ -168,7 +164,7 @@ public abstract class GrVariableBaseImpl<T extends GrVariableStubBase> extends G
     }
 
     if (initializer != null) {
-      PsiType initializerType = ourGuard.doPreventingRecursion(this, true, (NullableComputable<PsiType>)() -> initializer.getType());
+      PsiType initializerType = ourGuard.doPreventingRecursion(this, true, initializer::getType);
       if (declaredType == null) return initializerType;
 
       if (initializerType instanceof PsiClassType && TypesUtil.isAssignable(declaredType, initializerType, this)) {
@@ -296,17 +292,11 @@ public abstract class GrVariableBaseImpl<T extends GrVariableStubBase> extends G
     return null;
   }
 
-  @Override
-  @Nullable
-  public Icon getIcon(int flags) {
-    return JetgroovyIcons.Groovy.Variable;
-  }
-
   @Nullable
   private GrVariableDeclaration getDeclaration() {
     PsiElement parent = getParent();
     if (parent instanceof GrVariableDeclaration) {
-      return ((GrVariableDeclaration)parent);
+      return (GrVariableDeclaration)parent;
     }
     return null;
   }

@@ -18,7 +18,6 @@ package org.jetbrains.java.generate.psi;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.JavaSdkVersion;
 import com.intellij.openapi.projectRoots.JavaVersionService;
-import com.intellij.openapi.projectRoots.JdkVersionUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.CodeStyleManager;
@@ -46,7 +45,7 @@ public class PsiAdapter {
      * Returns true if a field is constant.
      * <p/>
      * This is identified as the name of the field is only in uppercase and it has
-     * a <code>static</code> modifier.
+     * a {@code static} modifier.
      *
      * @param field field to check if it's a constant
      * @return true if constant.
@@ -452,8 +451,8 @@ public class PsiAdapter {
     /**
      * Is the method a getter method?
      * <p/>
-     * The name of the method must start with <code>get</code> or <code>is</code>.
-     * And if the method is a <code>isXXX</code> then the method must return a java.lang.Boolean or boolean.
+     * The name of the method must start with {@code get} or {@code is}.
+     * And if the method is a {@code isXXX} then the method must return a java.lang.Boolean or boolean.
      *
      *
      * @param method  the method
@@ -477,7 +476,7 @@ public class PsiAdapter {
      * The method must be a getter method for a field.
      * Returns null if this method is not a getter.
      * <p/>
-     * The fieldname is the part of the name that is after the <code>get</code> or <code>is</code> part
+     * The fieldname is the part of the name that is after the {@code get} or {@code is} part
      * of the name.
      * <p/>
      * Example: methodName=getName will return fieldname=name
@@ -643,6 +642,7 @@ public class PsiAdapter {
      * @param clazz the class
      * @return the names.
      */
+    @NotNull
     public static String[] getImplementsClassnames(PsiClass clazz) {
         PsiClass[] interfaces = clazz.getInterfaces();
 

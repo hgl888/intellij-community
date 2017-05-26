@@ -1,22 +1,24 @@
+import com.intellij.openapi.project.DefaultProjectFactory;
 import com.intellij.openapi.util.Ref;
 import junit.framework.TestCase;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.plugins.ipnb.configuration.IpnbConnectionManager;
 import org.jetbrains.plugins.ipnb.format.cells.output.IpnbOutOutputCell;
 import org.jetbrains.plugins.ipnb.format.cells.output.IpnbOutputCell;
 import org.jetbrains.plugins.ipnb.protocol.IpnbConnection;
 import org.jetbrains.plugins.ipnb.protocol.IpnbConnectionListenerBase;
+import org.junit.Assume;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.List;
 
 /**
- *
  * * Message Spec
- *   http://ipython.org/ipython-doc/dev/development/messaging.html
- *
+ * http://ipython.org/ipython-doc/dev/development/messaging.html
+ * <p>
  * * Notebook REST API
- *   https://github.com/ipython/ipython/wiki/IPEP-16%3A-Notebook-multi-directory-dashboard-and-URL-mapping
+ * https://github.com/ipython/ipython/wiki/IPEP-16%3A-Notebook-multi-directory-dashboard-and-URL-mapping
  *
  * @author vlan
  */
@@ -24,6 +26,7 @@ public class WebSocketConnectionTest extends TestCase {
   @Override
   protected void setUp() throws Exception {
     //WebSocketImpl.DEBUG = true;
+    Assume.assumeTrue(IpnbConnectionManager.pingHost(getTestServerURI()));
   }
 
   public void testStartAndShutdownKernel() throws URISyntaxException, IOException, InterruptedException {
@@ -33,7 +36,7 @@ public class WebSocketConnectionTest extends TestCase {
         assertTrue(connection.getKernelId().length() > 0);
         connection.shutdown();
       }
-    });
+    }, null, DefaultProjectFactory.getInstance().getDefaultProject(), "");
     connection.close();
   }
 
@@ -60,7 +63,7 @@ public class WebSocketConnectionTest extends TestCase {
           connection.shutdown();
         }
       }
-    });
+    }, null, DefaultProjectFactory.getInstance().getDefaultProject(), "");
     connection.close();
     assertTrue(evaluated.get());
   }
@@ -94,7 +97,7 @@ public class WebSocketConnectionTest extends TestCase {
           connection.shutdown();
         }
       }
-    });
+    }, null, DefaultProjectFactory.getInstance().getDefaultProject(), "");
     connection.close();
     assertTrue(evaluated.get());
   }

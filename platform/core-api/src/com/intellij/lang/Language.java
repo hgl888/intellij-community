@@ -93,7 +93,7 @@ public abstract class Language extends UserDataHolderBase {
       }
       List<Language> languagesByMimeType = ourRegisteredMimeTypes.get(mimeType);
       if (languagesByMimeType == null) {
-        languagesByMimeType = ConcurrencyUtil.cacheOrGet(ourRegisteredMimeTypes, mimeType, ContainerUtil.<Language>createConcurrentList());
+        languagesByMimeType = ConcurrencyUtil.cacheOrGet(ourRegisteredMimeTypes, mimeType, ContainerUtil.createConcurrentList());
       }
       languagesByMimeType.add(this);
     }
@@ -109,12 +109,12 @@ public abstract class Language extends UserDataHolderBase {
   @NotNull
   public static Collection<Language> getRegisteredLanguages() {
     final Collection<Language> languages = ourRegisteredLanguages.values();
-    return Collections.unmodifiableCollection(new ArrayList<Language>(languages));
+    return Collections.unmodifiableCollection(new ArrayList<>(languages));
   }
 
   /**
-   * @param klass <code>java.lang.Class</code> of the particular language. Serves key purpose.
-   * @return instance of the <code>klass</code> language registered if any.
+   * @param klass {@code java.lang.Class} of the particular language. Serves key purpose.
+   * @return instance of the {@code klass} language registered if any.
    */
   public static <T extends Language> T findInstance(@NotNull Class<T> klass) {
     @SuppressWarnings("unchecked") T t = (T)ourRegisteredLanguages.get(klass);
@@ -123,12 +123,12 @@ public abstract class Language extends UserDataHolderBase {
 
   /**
    * @param mimeType of the particular language.
-   * @return collection of all languages for the given <code>mimeType</code>.
+   * @return collection of all languages for the given {@code mimeType}.
    */
   @NotNull
   public static Collection<Language> findInstancesByMimeType(@Nullable String mimeType) {
     List<Language> result = mimeType == null ? null : ourRegisteredMimeTypes.get(mimeType);
-    return result == null ? Collections.<Language>emptyList() : Collections.unmodifiableCollection(result);
+    return result == null ? Collections.emptyList() : Collections.unmodifiableCollection(result);
   }
 
   @Override

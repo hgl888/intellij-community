@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@ package com.intellij.openapi.project;
 import com.intellij.openapi.components.ComponentManager;
 import com.intellij.openapi.extensions.AreaInstance;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.SystemDependent;
+import com.intellij.util.SystemIndependent;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -44,29 +46,30 @@ public interface Project extends ComponentManager, AreaInstance {
   String getName();
 
   /**
-   * Returns a project base directory - a parent directory of a <code>.ipr</code> file or <code>.idea</code> directory.<br/>
-   * Returns <code>null</code> for default project.
+   * Returns a project base directory - a parent directory of a {@code .ipr} file or {@code .idea} directory.<br/>
+   * Returns {@code null} for default project.
    *
-   * @return project base directory, or <code>null</code> for default project
+   * @return project base directory, or {@code null} for default project
    */
   VirtualFile getBaseDir();
 
   /**
-   * Returns a system-independent path to a project base directory (see {@linkplain #getBaseDir()}).<br/>
-   * Returns <code>null</code> for default project.
+   * Returns a path to a project base directory (see {@linkplain #getBaseDir()}).<br/>
+   * Returns {@code null} for default project.
    *
-   * @return a path to a project base directory, or <code>null</code> for default project
+   * @return a path to a project base directory, or {@code null} for default project
    */
   @Nullable
+  @SystemIndependent
   String getBasePath();
 
   /**
    * Returns project descriptor file:
    * <ul>
-   *   <li><code>path/to/project/project.ipr</code> - for file-based projects</li>
-   *   <li><code>path/to/project/.idea/misc.xml</code> - for directory-based projects</li>
+   *   <li>{@code path/to/project/project.ipr} - for file-based projects</li>
+   *   <li>{@code path/to/project/.idea/misc.xml} - for directory-based projects</li>
    * </ul>
-   * Returns <code>null</code> for default project.
+   * Returns {@code null} for default project.
    *
    * @return project descriptor file, or null for default project
    */
@@ -74,29 +77,33 @@ public interface Project extends ComponentManager, AreaInstance {
   VirtualFile getProjectFile();
 
   /**
-   * @return a system-independent path to project file (see {@linkplain #getProjectFile()}) or <code>null</code> for default project.
+   * @return a path to project file (see {@linkplain #getProjectFile()}) or {@code null} for default project.
    */
   @Nullable
+  @SystemIndependent
   String getProjectFilePath();
 
   /**
    * Returns presentable project path:
    * {@linkplain #getProjectFilePath()} for file-based projects, {@linkplain #getBasePath()} for directory-based ones.<br/>
-   * * Returns <code>null</code> for default project.
+   * * Returns {@code null} for default project.
    * <b>Note:</b> the word "presentable" here implies file system presentation, not a UI one.
    *
    * @return presentable project path
    */
   @Nullable
-  String getPresentableUrl();
+  @SystemDependent
+  default String getPresentableUrl() {
+    return null;
+  }
 
   /**
    * <p>Returns a workspace file:
    * <ul>
-   *   <li><code>path/to/project/project.iws</code> - for file-based projects</li>
-   *   <li><code>path/to/project/.idea/workspace.xml</code> - for directory-based ones</li>
+   *   <li>{@code path/to/project/project.iws} - for file-based projects</li>
+   *   <li>{@code path/to/project/.idea/workspace.xml} - for directory-based ones</li>
    * </ul>
-   * Returns <code>null</code> for default project.
+   * Returns {@code null} for default project.
    *
    * @return workspace file, or null for default project
    */

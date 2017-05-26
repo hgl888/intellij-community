@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,17 +32,19 @@ import com.intellij.openapi.startup.StartupActivity
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.packageDependencies.DependencyValidationManager
+import com.intellij.profile.ProfileChangeAdapter
 import com.intellij.project.isDirectoryBased
 import com.intellij.psi.search.scope.packageSet.NamedScopeManager
 import com.intellij.psi.search.scope.packageSet.NamedScopesHolder
+import com.intellij.util.containers.ContainerUtil
 import com.intellij.util.loadElement
-import com.intellij.util.ui.UIUtil
 import com.intellij.util.xmlb.Accessor
 import com.intellij.util.xmlb.SkipDefaultValuesSerializationFilters
 import com.intellij.util.xmlb.XmlSerializer
 import com.intellij.util.xmlb.annotations.OptionTag
 import org.jdom.Element
 import org.jetbrains.annotations.TestOnly
+import org.jetbrains.concurrency.AsyncPromise
 import org.jetbrains.concurrency.Promise
 import org.jetbrains.concurrency.resolvedPromise
 import org.jetbrains.concurrency.runAsync
@@ -68,10 +70,12 @@ class ProjectInspectionProfileManager(val project: Project,
                                       schemeManagerFactory: SchemeManagerFactory) : BaseInspectionProfileManager(project.messageBus), PersistentStateComponent<Element> {
   companion object {
     @JvmStatic
-    fun getInstanceImpl(project: Project): ProjectInspectionProfileManager {
-      return InspectionProjectProfileManager.getInstance(project) as ProjectInspectionProfileManager
+    fun getInstance(project: Project): ProjectInspectionProfileManager {
+      return project.getComponent(ProjectInspectionProfileManager::class.java)
     }
   }
+
+  private val profileListeners: MutableList<ProfileChangeAdapter> = ContainerUtil.createLockFreeCopyOnWriteList<ProfileChangeAdapter>()
 
   private var scopeListener: NamedScopesHolder.ScopeListener? = null
 
@@ -95,8 +99,7 @@ class ProjectInspectionProfileManager(val project: Project,
                               name: String,
                               attributeProvider: Function<String, String?>,
                               isBundled: Boolean): InspectionProfileImpl {
-      val profile = InspectionProfileImpl(name, InspectionToolRegistrar.getInstance(), this@ProjectInspectionProfileManager,
-                                          InspectionProfileImpl.getBaseProfile(), dataHolder)
+      val profile = InspectionProfileImpl(name, InspectionToolRegistrar.getInstance(), this@ProjectInspectionProfileManager, dataHolder)
       profile.isProjectLevel = true
       return profile
     }
@@ -162,29 +165,18 @@ class ProjectInspectionProfileManager(val project: Project,
 
   fun isCurrentProfileInitialized() = currentProfile.wasInitialized()
 
-  @Synchronized override fun updateProfile(profile: InspectionProfileImpl) {
-    super.updateProfile(profile)
-
-    profile.initInspectionTools(project)
-  }
-
-  override fun schemeRemoved(scheme: InspectionProfile) {
+  override fun schemeRemoved(scheme: InspectionProfileImpl) {
     scheme.cleanup(project)
   }
 
   @Suppress("unused")
   private class ProjectInspectionProfileStartUpActivity : StartupActivity {
     override fun runActivity(project: Project) {
-      getInstanceImpl(project).apply {
+      getInstance(project).apply {
         initialLoadSchemesFuture.done {
-          currentProfile.initInspectionTools(project)
-          fireProfilesInitialized()
-
-          val app = ApplicationManager.getApplication()
-          if (app.isUnitTestMode && app.isDispatchThread) {
-            // do not restart daemon in the middle of the test
-            //noinspection TestOnlyProblems
-            UIUtil.dispatchAllInvocationEvents()
+          if (!project.isDisposed) {
+            currentProfile.initInspectionTools(project)
+            fireProfilesInitialized()
           }
         }
 
@@ -199,6 +191,7 @@ class ProjectInspectionProfileManager(val project: Project,
         Disposer.register(project, Disposable {
           scopeManager.removeScopeListener(scopeListener!!)
           localScopesHolder.removeScopeListener(scopeListener!!)
+          (initialLoadSchemesFuture as? AsyncPromise<*>)?.cancel()
         })
       }
     }
@@ -282,7 +275,7 @@ class ProjectInspectionProfileManager(val project: Project,
   @Synchronized fun useApplicationProfile(name: String) {
     schemeManager.currentSchemeName = null
     state.useProjectProfile = false
-    // yes, we reuse the same field - useProjectProfile field will be used to distinguish — is it app or project level
+    // yes, we reuse the same field - useProjectProfile field will be used to distinguish - is it app or project level
     // to avoid data format change
     state.projectProfile = name
   }
@@ -303,8 +296,7 @@ class ProjectInspectionProfileManager(val project: Project,
     if (currentScheme == null) {
       currentScheme = schemeManager.allSchemes.firstOrNull()
       if (currentScheme == null) {
-        currentScheme = InspectionProfileImpl(PROJECT_DEFAULT_PROFILE_NAME, InspectionToolRegistrar.getInstance(), this,
-                                              InspectionProfileImpl.getBaseProfile(), null)
+        currentScheme = InspectionProfileImpl(PROJECT_DEFAULT_PROFILE_NAME, InspectionToolRegistrar.getInstance(), this)
         currentScheme.copyFrom(applicationProfileManager.currentProfile)
         currentScheme.isProjectLevel = true
         currentScheme.name = PROJECT_DEFAULT_PROFILE_NAME
@@ -330,5 +322,26 @@ class ProjectInspectionProfileManager(val project: Project,
   @Synchronized override fun getProfile(name: String, returnRootProfileIfNamedIsAbsent: Boolean): InspectionProfileImpl? {
     val profile = schemeManager.findSchemeByName(name)
     return profile ?: applicationProfileManager.getProfile(name, returnRootProfileIfNamedIsAbsent)
+  }
+
+  fun fireProfileChanged() {
+    fireProfileChanged(currentProfile)
+  }
+
+  fun addProfileChangeListener(listener: ProfileChangeAdapter, parentDisposable: Disposable) {
+    ContainerUtil.add(listener, profileListeners, parentDisposable)
+  }
+
+  fun fireProfileChanged(oldProfile: InspectionProfile?, profile: InspectionProfile) {
+    for (adapter in profileListeners) {
+      adapter.profileActivated(oldProfile, profile)
+    }
+  }
+
+  override fun fireProfileChanged(profile: InspectionProfileImpl) {
+    profile.profileChanged()
+    for (adapter in profileListeners) {
+      adapter.profileChanged(profile)
+    }
   }
 }

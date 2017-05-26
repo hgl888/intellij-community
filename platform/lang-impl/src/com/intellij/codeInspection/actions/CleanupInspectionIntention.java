@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2013 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,10 +31,8 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Comparing;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.SequentialModalProgressTask;
 import org.jetbrains.annotations.NotNull;
@@ -44,10 +42,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * User: anna
- * Date: 21-Feb-2006
- */
 public class CleanupInspectionIntention implements IntentionAction, HighPriorityAction {
   private final static Logger LOG = Logger.getInstance(CleanupInspectionIntention.class);
 
@@ -95,22 +89,20 @@ public class CleanupInspectionIntention implements IntentionAction, HighPriority
                                                     @NotNull String presentationText,
                                                     @NotNull List<ProblemDescriptor> descriptions,
                                                     @Nullable Class quickfixClass) {
-    Collections.sort(descriptions, (o1, o2) -> {
-      final ProblemDescriptorBase d1 = (ProblemDescriptorBase)o1;
-      final ProblemDescriptorBase d2 = (ProblemDescriptorBase)o2;
-      final int elementsDiff = PsiUtilCore.compareElementsByPosition(d1.getPsiElement(), d2.getPsiElement());
-      if (elementsDiff == 0) {
-        return Comparing.compare(d1.getDescriptionTemplate(), d2.getDescriptionTemplate());
-      }
-      return -elementsDiff;
-    });
+    sortDescriptions(descriptions);
+    return applyFixesNoSort(project, presentationText, descriptions, quickfixClass);
+  }
 
+  public static AbstractPerformFixesTask applyFixesNoSort(@NotNull Project project,
+                                                          @NotNull String presentationText,
+                                                          @NotNull List<ProblemDescriptor> descriptions,
+                                                          @Nullable Class quickfixClass) {
     final SequentialModalProgressTask progressTask =
       new SequentialModalProgressTask(project, presentationText, true);
     final boolean isBatch = quickfixClass != null && BatchQuickFix.class.isAssignableFrom(quickfixClass);
     final AbstractPerformFixesTask fixesTask = isBatch ?
-                  new PerformBatchFixesTask(project, descriptions.toArray(ProblemDescriptor.EMPTY_ARRAY), progressTask, quickfixClass) :
-                  new PerformFixesTask(project, descriptions.toArray(ProblemDescriptor.EMPTY_ARRAY), progressTask, quickfixClass);
+                                               new PerformBatchFixesTask(project, descriptions.toArray(ProblemDescriptor.EMPTY_ARRAY), progressTask, quickfixClass) :
+                                               new PerformFixesTask(project, descriptions.toArray(ProblemDescriptor.EMPTY_ARRAY), progressTask, quickfixClass);
     CommandProcessor.getInstance().executeCommand(project, () -> {
       CommandProcessor.getInstance().markCurrentCommandAsGlobal(project);
       progressTask.setMinIterationTime(200);
@@ -120,9 +112,14 @@ public class CleanupInspectionIntention implements IntentionAction, HighPriority
     return fixesTask;
   }
 
+  public static void sortDescriptions(@NotNull List<ProblemDescriptor> descriptions) {
+    Collections.sort(descriptions, CommonProblemDescriptor.DESCRIPTOR_COMPARATOR);
+  }
+
   @Override
   public boolean isAvailable(@NotNull final Project project, final Editor editor, final PsiFile file) {
     return myQuickfixClass != EmptyIntentionAction.class &&
+           editor != null &&
            !(myToolWrapper instanceof LocalInspectionToolWrapper && ((LocalInspectionToolWrapper)myToolWrapper).isUnfair());
   }
 

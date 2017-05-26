@@ -22,15 +22,8 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-/**
- * Created by IntelliJ IDEA.
- * User: ik
- * Date: 28.01.2003
- * Time: 19:11:46
- * To change this template use Options | File Templates.
- */
 public class AndFilter implements ElementFilter{
-  private final List<ElementFilter> myFilters = new ArrayList<ElementFilter>();
+  private final List<ElementFilter> myFilters = new ArrayList<>();
 
   public AndFilter(ElementFilter filter1, ElementFilter filter2){
     this(new ElementFilter[]{filter1, filter2});

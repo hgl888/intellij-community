@@ -17,7 +17,6 @@ package com.intellij.openapi.options.colors.pages;
 
 import com.intellij.codeHighlighting.RainbowHighlighter;
 import com.intellij.lang.Language;
-import com.intellij.openapi.application.ApplicationBundle;
 import com.intellij.openapi.editor.DefaultLanguageHighlighterColors;
 import com.intellij.openapi.editor.HighlighterColors;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
@@ -31,7 +30,6 @@ import com.intellij.openapi.options.colors.RainbowColorSettingsPage;
 import com.intellij.psi.codeStyle.DisplayPriority;
 import com.intellij.psi.codeStyle.DisplayPrioritySortable;
 import com.intellij.util.ArrayUtil;
-import com.intellij.util.PlatformUtils;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -216,9 +214,8 @@ public class DefaultLanguageColorsPage implements RainbowColorSettingsPage, Disp
       "Global <global_var>variable</global_var>\n" +
       "<doc_comment>/** \n" +
       " * Doc comment\n" +
-      " * <doc_tag>@tag</doc_tag> <doc_markup><code>Markup</code></doc_markup>\n" +
-      " * " + ApplicationBundle.message("rainbow.option.panel.display.name") + ":\n" +
-      " * " + RainbowHighlighter.generatePaletteExample() + "\n" +
+      " * <doc_tag>@tag</doc_tag> <doc_markup><code>Markup</code></doc_markup>" +
+      RainbowHighlighter.generatePaletteExample("\n * ") + "\n" +
       " * <doc_tag>@param</doc_tag> <doc_tag_value>parameter1</doc_tag_value> documentation\n" +
       " * <doc_tag>@param</doc_tag> <doc_tag_value>parameter2</doc_tag_value> documentation\n" +
       " * <doc_tag>@param</doc_tag> <doc_tag_value>parameter3</doc_tag_value> documentation\n" +
@@ -227,7 +224,7 @@ public class DefaultLanguageColorsPage implements RainbowColorSettingsPage, Disp
       "Function <func_decl>declaration</func_decl> (<param>parameter1</param> <param>parameter2</param> <param>parameter3</param> <param>parameter4</param>)\n" +
       "    Local <local_var>variable1</local_var> <local_var>variable2</local_var> <local_var>variable3</local_var> <local_var>variable4</local_var>\n" +
       "Function <func_call>call</func_call>(" +
-      (PlatformUtils.isIntelliJ() ? "<parameter_hint p>0, <parameter_hint param> 1, <parameter_hint parameterName> 2" : "")+
+      "<parameter_hint p>0, <parameter_hint param> 1, <parameter_hint parameterName> 2" +
       ")\n" +
       "Interface <interface>Name</interface>\n" +
       "<metadata>@Metadata</metadata>\n" +
@@ -251,7 +248,7 @@ public class DefaultLanguageColorsPage implements RainbowColorSettingsPage, Disp
   @NotNull
   @Override
   public AttributesDescriptor[] getAttributeDescriptors() {
-    return PlatformUtils.isIntelliJ() ? ArrayUtil.append(ATTRIBUTES_DESCRIPTORS, INLINE_PARAMETER_HINT_DESCRIPTOR) : ATTRIBUTES_DESCRIPTORS;
+    return ArrayUtil.append(ATTRIBUTES_DESCRIPTORS, INLINE_PARAMETER_HINT_DESCRIPTOR);
   }
 
   @NotNull

@@ -19,6 +19,7 @@ import com.intellij.vcs.log.graph.*;
 import com.intellij.vcs.log.graph.actions.ActionController;
 import com.intellij.vcs.log.graph.actions.GraphAction;
 import com.intellij.vcs.log.graph.actions.GraphAnswer;
+import com.intellij.vcs.log.graph.api.LinearGraph;
 import com.intellij.vcs.log.graph.api.elements.GraphEdge;
 import com.intellij.vcs.log.graph.api.elements.GraphEdgeType;
 import com.intellij.vcs.log.graph.api.elements.GraphElement;
@@ -87,14 +88,19 @@ public class VisibleGraphImpl<CommitId> implements VisibleGraph<CommitId> {
 
   @NotNull
   public SimpleGraphInfo<CommitId> buildSimpleGraphInfo() {
-    return SimpleGraphInfo
-      .build(myGraphController.getCompiledGraph(), myPermanentGraph.getPermanentGraphLayout(), myPermanentGraph.getPermanentCommitsInfo(),
-             myPermanentGraph.getLinearGraph().nodesCount(),
-             myPermanentGraph.getBranchNodeIds());
+    return SimpleGraphInfo.build(myGraphController.getCompiledGraph(),
+                                 myPermanentGraph.getPermanentGraphLayout(),
+                                 myPermanentGraph.getPermanentCommitsInfo(),
+                                 myPermanentGraph.getLinearGraph().nodesCount(),
+                                 myPermanentGraph.getBranchNodeIds());
   }
 
   public int getRecommendedWidth() {
     return myPrintElementGenerator.getRecommendedWidth();
+  }
+
+  public LinearGraph getLinearGraph() {
+    return myGraphController.getCompiledGraph();
   }
 
   private class ActionControllerImpl implements ActionController<CommitId> {
@@ -148,7 +154,7 @@ public class VisibleGraphImpl<CommitId> implements VisibleGraph<CommitId> {
     @NotNull
     @Override
     public GraphAnswer<CommitId> performAction(@NotNull GraphAction graphAction) {
-      myPrintElementManager.setSelectedElements(Collections.<Integer>emptySet());
+      myPrintElementManager.setSelectedElements(Collections.emptySet());
 
       LinearGraphAction action = convert(graphAction);
       GraphAnswer<CommitId> graphAnswer = performArrowAction(action);
@@ -182,12 +188,9 @@ public class VisibleGraphImpl<CommitId> implements VisibleGraph<CommitId> {
 
     private GraphAnswer<CommitId> convert(@NotNull final LinearGraphController.LinearGraphAnswer answer) {
       final Runnable graphUpdater = answer.getGraphUpdater();
-      return new GraphAnswerImpl<>(answer.getCursorToSet(), null, graphUpdater == null ? null : new Runnable() {
-        @Override
-        public void run() {
-          graphUpdater.run();
-          updatePrintElementGenerator();
-        }
+      return new GraphAnswerImpl<>(answer.getCursorToSet(), null, graphUpdater == null ? null : (Runnable)() -> {
+        graphUpdater.run();
+        updatePrintElementGenerator();
       }, false);
     }
   }

@@ -70,7 +70,7 @@ public class CodeFormatterFacade {
   private static final String WRAP_LINE_COMMAND_NAME = "AutoWrapLongLine";
 
   /**
-   * This key is used as a flag that indicates if <code>'wrap long line during formatting'</code> activity is performed now.
+   * This key is used as a flag that indicates if {@code 'wrap long line during formatting'} activity is performed now.
    *
    * @see CodeStyleSettings#WRAP_LONG_LINES
    */
@@ -281,13 +281,10 @@ public class CodeFormatterFacade {
       }
       else {
         Collection<PsiLanguageInjectionHost> injectionHosts = collectInjectionHosts(file, range);
-        PsiLanguageInjectionHost.InjectedPsiVisitor visitor = new PsiLanguageInjectionHost.InjectedPsiVisitor() {
-          @Override
-          public void visit(@NotNull PsiFile injectedPsi, @NotNull List<PsiLanguageInjectionHost.Shred> places) {
-            for (PsiLanguageInjectionHost.Shred place : places) {
-              Segment rangeMarker = place.getHostRangeMarker();
-              injectedFileRangesSet.add(TextRange.create(rangeMarker.getStartOffset(), rangeMarker.getEndOffset()));
-            }
+        PsiLanguageInjectionHost.InjectedPsiVisitor visitor = (injectedPsi, places) -> {
+          for (PsiLanguageInjectionHost.Shred place : places) {
+            Segment rangeMarker = place.getHostRangeMarker();
+            injectedFileRangesSet.add(TextRange.create(rangeMarker.getStartOffset(), rangeMarker.getEndOffset()));
           }
         };
         for (PsiLanguageInjectionHost host : injectionHosts) {
@@ -387,12 +384,12 @@ public class CodeFormatterFacade {
         }
       }
     }
-    return result == null ? Collections.<PsiLanguageInjectionHost>emptySet() : result;
+    return result == null ? Collections.emptySet() : result;
   }
 
 
   /**
-   * Inspects all lines of the given document and wraps all of them that exceed {@link CodeStyleSettings#getRightMargin(com.intellij.lang.Language)}
+   * Inspects all lines of the given document and wraps all of them that exceed {@link CodeStyleSettings#getRightMargin(Language)}
    * right margin}.
    * <p/>
    * I.e. the algorithm is to do the following for every line:
@@ -400,7 +397,7 @@ public class CodeFormatterFacade {
    * <pre>
    * <ol>
    *   <li>
-   *      Check if the line exceeds {@link CodeStyleSettings#getRightMargin(com.intellij.lang.Language)}  right margin}. Go to the next line in the case of
+   *      Check if the line exceeds {@link CodeStyleSettings#getRightMargin(Language)}  right margin}. Go to the next line in the case of
    *      negative answer;
    *   </li>
    *   <li>Determine line wrap position; </li>
@@ -547,7 +544,7 @@ public class CodeFormatterFacade {
   }
 
   /**
-   * Emulates pressing <code>Enter</code> at current caret position.
+   * Emulates pressing {@code Enter} at current caret position.
    *
    * @param editor       target editor
    * @param project      target project
@@ -641,20 +638,24 @@ public class CodeFormatterFacade {
       }
     }
 
+    int reservedWidthInColumns = FormatConstants.getReservedLineWrapWidthInColumns(editor);
+
     if (!hasTabs) {
-      return wrapPositionForTextWithoutTabs(startLineOffset, endLineOffset, targetRangeEndOffset);
+      return wrapPositionForTextWithoutTabs(startLineOffset, endLineOffset, targetRangeEndOffset, reservedWidthInColumns);
     }
     else if (canOptimize) {
-      return wrapPositionForTabbedTextWithOptimization(text, tabSize, startLineOffset, endLineOffset, targetRangeEndOffset);
+      return wrapPositionForTabbedTextWithOptimization(text, tabSize, startLineOffset, endLineOffset, targetRangeEndOffset,
+                                                       reservedWidthInColumns);
     }
     else {
-      return wrapPositionForTabbedTextWithoutOptimization(editor, text, spaceSize, startLineOffset, endLineOffset, targetRangeEndOffset);
+      return wrapPositionForTabbedTextWithoutOptimization(editor, text, spaceSize, startLineOffset, endLineOffset, targetRangeEndOffset,
+                                                          reservedWidthInColumns);
     }
   }
 
-  private int wrapPositionForTextWithoutTabs(int startLineOffset, int endLineOffset, int targetRangeEndOffset) {
+  private int wrapPositionForTextWithoutTabs(int startLineOffset, int endLineOffset, int targetRangeEndOffset, int reservedWidthInColumns) {
     if (Math.min(endLineOffset, targetRangeEndOffset) - startLineOffset > myRightMargin) {
-      return startLineOffset + myRightMargin - FormatConstants.RESERVED_LINE_WRAP_WIDTH_IN_COLUMNS;
+      return startLineOffset + myRightMargin - reservedWidthInColumns;
     }
     return -1;
   }
@@ -663,7 +664,8 @@ public class CodeFormatterFacade {
                                                         int tabSize,
                                                         int startLineOffset,
                                                         int endLineOffset,
-                                                        int targetRangeEndOffset)
+                                                        int targetRangeEndOffset,
+                                                        int reservedWidthInColumns)
   {
     int width = 0;
     int symbolWidth;
@@ -675,8 +677,8 @@ public class CodeFormatterFacade {
         case '\t': symbolWidth = tabSize - (width % tabSize); break;
         default: symbolWidth = 1;
       }
-      if (width + symbolWidth + FormatConstants.RESERVED_LINE_WRAP_WIDTH_IN_COLUMNS >= myRightMargin
-          && (Math.min(endLineOffset, targetRangeEndOffset) - i) >= FormatConstants.RESERVED_LINE_WRAP_WIDTH_IN_COLUMNS)
+      if (width + symbolWidth + reservedWidthInColumns >= myRightMargin
+          && (Math.min(endLineOffset, targetRangeEndOffset) - i) >= reservedWidthInColumns)
       {
         // Remember preferred position.
         result = i - 1;
@@ -695,7 +697,8 @@ public class CodeFormatterFacade {
                                                            int spaceSize,
                                                            int startLineOffset,
                                                            int endLineOffset,
-                                                           int targetRangeEndOffset)
+                                                           int targetRangeEndOffset,
+                                                           int reservedWidthInColumns)
   {
     int width = 0;
     int x = 0;
@@ -716,8 +719,8 @@ public class CodeFormatterFacade {
           break;
         default: newX = x + EditorUtil.charWidth(c, Font.PLAIN, editor); symbolWidth = 1;
       }
-      if (width + symbolWidth + FormatConstants.RESERVED_LINE_WRAP_WIDTH_IN_COLUMNS >= myRightMargin
-          && (Math.min(endLineOffset, targetRangeEndOffset) - i) >= FormatConstants.RESERVED_LINE_WRAP_WIDTH_IN_COLUMNS)
+      if (width + symbolWidth + reservedWidthInColumns >= myRightMargin
+          && (Math.min(endLineOffset, targetRangeEndOffset) - i) >= reservedWidthInColumns)
       {
         result = i - 1;
       }

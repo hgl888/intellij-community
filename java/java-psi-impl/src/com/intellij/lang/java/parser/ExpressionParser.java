@@ -612,12 +612,7 @@ public class ExpressionParser {
 
   @NotNull
   private PsiBuilder.Marker parseArrayInitializer(PsiBuilder builder) {
-    return parseArrayInitializer(builder, JavaElementType.ARRAY_INITIALIZER_EXPRESSION, new Function<PsiBuilder, Boolean>() {
-      @Override
-      public Boolean fun(PsiBuilder builder) {
-        return parse(builder) != null;
-      }
-    }, "expected.expression");
+    return parseArrayInitializer(builder, JavaElementType.ARRAY_INITIALIZER_EXPRESSION, builder1 -> parse(builder1) != null, "expected.expression");
   }
 
   @NotNull
@@ -848,7 +843,7 @@ public class ExpressionParser {
         PsiBuilder.Marker marker = builder.mark();
         builder.advanceLexer();
         ReferenceParser.TypeInfo typeInfo = myParser.getReferenceParser().parseTypeInfo(
-          builder, ReferenceParser.EAT_LAST_DOT | ReferenceParser.WILDCARD);
+          builder, ReferenceParser.EAT_LAST_DOT | ReferenceParser.ELLIPSIS | ReferenceParser.WILDCARD);
         if (typeInfo != null) {
           IElementType t = builder.getTokenType();
           if (t == JavaTokenType.IDENTIFIER ||

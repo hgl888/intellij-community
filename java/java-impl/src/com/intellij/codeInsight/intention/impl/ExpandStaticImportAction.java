@@ -15,7 +15,6 @@
  */
 package com.intellij.codeInsight.intention.impl;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.Result;
@@ -52,7 +51,7 @@ public class ExpandStaticImportAction extends PsiElementBaseIntentionAction {
       return false;
     }
     final PsiJavaCodeReferenceElement referenceElement = (PsiJavaCodeReferenceElement)parent;
-    final PsiElement resolveScope = referenceElement.advancedResolve(true).getCurrentFileResolveScope();
+    final PsiElement resolveScope = getImportStaticStatement(referenceElement);
     if (resolveScope instanceof PsiImportStaticStatement) {
       final PsiClass targetClass = ((PsiImportStaticStatement)resolveScope).resolveTargetClass();
       if (targetClass == null) return false;
@@ -62,11 +61,14 @@ public class ExpandStaticImportAction extends PsiElementBaseIntentionAction {
     return false;
   }
 
-  public void invoke(final Project project, final PsiFile file, final Editor editor, PsiElement element) {
-    if (!FileModificationService.getInstance().preparePsiElementForWrite(element)) return;
+  private static PsiElement getImportStaticStatement(PsiJavaCodeReferenceElement referenceElement) {
+    return referenceElement instanceof PsiImportStaticReferenceElement ? referenceElement.getParent()
+                                                                       : referenceElement.advancedResolve(true).getCurrentFileResolveScope();
+  }
 
+  public void invoke(final Project project, final PsiFile file, final Editor editor, PsiElement element) {
     final PsiJavaCodeReferenceElement refExpr = (PsiJavaCodeReferenceElement)element.getParent();
-    final PsiImportStaticStatement staticImport = (PsiImportStaticStatement)refExpr.advancedResolve(true).getCurrentFileResolveScope();
+    final PsiImportStaticStatement staticImport = (PsiImportStaticStatement) getImportStaticStatement(refExpr);
     final List<PsiJavaCodeReferenceElement> expressionToExpand = collectReferencesThrough(file, refExpr, staticImport);
 
     if (expressionToExpand.isEmpty()) {
@@ -74,7 +76,7 @@ public class ExpandStaticImportAction extends PsiElementBaseIntentionAction {
       staticImport.delete();
     }
     else {
-      if (ApplicationManager.getApplication().isUnitTestMode()) {
+      if (ApplicationManager.getApplication().isUnitTestMode() || refExpr instanceof PsiImportStaticReferenceElement) {
         replaceAllAndDeleteImport(expressionToExpand, refExpr, staticImport);
       }
       else {

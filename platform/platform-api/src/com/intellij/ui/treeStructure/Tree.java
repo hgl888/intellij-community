@@ -25,6 +25,7 @@ import com.intellij.openapi.util.SystemInfo;
 import com.intellij.ui.*;
 import com.intellij.util.ReflectionUtil;
 import com.intellij.util.ui.*;
+import com.intellij.util.ui.tree.TreeUtil;
 import com.intellij.util.ui.tree.WideSelectionTreeUI;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -56,6 +57,8 @@ public class Tree extends JTree implements ComponentWithEmptyText, ComponentWith
   private final MySelectionModel mySelectionModel = new MySelectionModel();
   private boolean myHorizontalAutoScrolling = true;
 
+  private TreePath rollOverPath;
+
   public Tree() {
     this(getDefaultTreeModel());
   }
@@ -74,6 +77,29 @@ public class Tree extends JTree implements ComponentWithEmptyText, ComponentWith
     };
 
     myExpandableItemsHandler = ExpandableItemsHandlerFactory.install(this);
+
+    if (UIUtil.isUnderWin10LookAndFeel()) {
+      addMouseMotionListener(new MouseMotionAdapter() {
+        @Override
+        public void mouseMoved(MouseEvent e) {
+          Point p = e.getPoint();
+          TreePath newPath = getPathForLocation(p.x, p.y);
+          if (newPath != null && !newPath.equals(rollOverPath)) {
+            TreeCellRenderer renderer = getCellRenderer();
+            TreeNode node = (TreeNode)newPath.getLastPathComponent();
+            JComponent c = (JComponent)renderer.getTreeCellRendererComponent(Tree.this, node,
+                                                                             isPathSelected(newPath),
+                                                                             isExpanded(newPath),
+                                                                             getModel().isLeaf(node),
+                                                                             getRowForPath(newPath), hasFocus());
+
+            c.putClientProperty(UIUtil.CHECKBOX_ROLLOVER_PROPERTY, c instanceof JCheckBox ? getPathBounds(newPath) : node);
+            rollOverPath = newPath;
+            UIUtil.repaintViewport(Tree.this);
+          }
+        }
+      });
+    }
 
     addMouseListener(new MyMouseListener());
     addFocusListener(new MyFocusListener());
@@ -338,7 +364,7 @@ public class Tree extends JTree implements ComponentWithEmptyText, ComponentWith
           component = pathObjects[pathObjects.length - 2];
         }
 
-        Color color = getFileColorFor((DefaultMutableTreeNode)component);
+        Color color = getFileColorFor(TreeUtil.getUserObject(component));
         if (color != null) {
           g.setColor(color);
           g.fillRect(0, bounds.y, getWidth(), bounds.height);
@@ -409,6 +435,18 @@ public class Tree extends JTree implements ComponentWithEmptyText, ComponentWith
 
     super.processMouseEvent(e2);
   }
+
+  /**
+   * Returns true if <code>mouseX</code> falls
+   * in the area of row that is used to expand/collapse the node and
+   * the node at <code>row</code> does not represent a leaf.
+   */
+  protected boolean isLocationInExpandControl(@Nullable TreePath path, int mouseX) {
+    if (path == null) return false;
+    Rectangle bounds = getRowBounds(getRowForPath(path));
+    return isLocationInExpandControl(path, mouseX, bounds.y + bounds.height / 2);
+  }
+
 
   private boolean isLocationInExpandControl(final TreePath path, final int x, final int y) {
     final TreeUI ui = getUI();
@@ -658,56 +696,74 @@ public class Tree extends JTree implements ComponentWithEmptyText, ComponentWith
 
   private class MyMouseListener extends MouseAdapter {
     @Override
-    public void mousePressed(MouseEvent mouseevent) {
-      if (!JBSwingUtilities.isLeftMouseButton(mouseevent) &&
-          (JBSwingUtilities.isRightMouseButton(mouseevent) || JBSwingUtilities.isMiddleMouseButton(mouseevent))) {
-        TreePath treepath = getPathForLocation(mouseevent.getX(), mouseevent.getY());
-        if (treepath != null) {
-          if (getSelectionModel().getSelectionMode() != TreeSelectionModel.SINGLE_TREE_SELECTION) {
-            TreePath[] selectionPaths = getSelectionModel().getSelectionPaths();
-            if (selectionPaths != null) {
-              for (TreePath selectionPath : selectionPaths) {
-                if (selectionPath != null && selectionPath.equals(treepath)) return;
-              }
+    public void mousePressed(MouseEvent event) {
+      setPressed(event, true);
+
+      if (!JBSwingUtilities.isLeftMouseButton(event) &&
+          (JBSwingUtilities.isRightMouseButton(event) || JBSwingUtilities.isMiddleMouseButton(event))) {
+        TreePath path = getClosestPathForLocation(event.getX(), event.getY());
+        if (path == null) return;
+
+        Rectangle bounds = getPathBounds(path);
+        if (bounds != null && bounds.y + bounds.height < event.getY()) return;
+
+        if (getSelectionModel().getSelectionMode() != TreeSelectionModel.SINGLE_TREE_SELECTION) {
+          TreePath[] selectionPaths = getSelectionModel().getSelectionPaths();
+          if (selectionPaths != null) {
+            for (TreePath selectionPath : selectionPaths) {
+              if (selectionPath != null && selectionPath.equals(path)) return;
             }
           }
-          getSelectionModel().setSelectionPath(treepath);
         }
+        getSelectionModel().setSelectionPath(path);
       }
     }
 
     @Override
-    public void mouseReleased(MouseEvent e) {
-      if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 2 && isLocationInExpandControl(getClosestPathForLocation(e.getX(), e.getY()), e.getX())) {
-        e.consume();
+    public void mouseReleased(MouseEvent event) {
+      setPressed(event, false);
+      if (event.getButton() == MouseEvent.BUTTON1 && event.getClickCount() == 2 && isLocationInExpandControl(getClosestPathForLocation(event.getX(), event.getY()), event.getX())) {
+        event.consume();
       }
     }
-    /*
-      Returns true if <code>mouseX</code> falls
-      in the area of row that is used to expand/collapse the node and
-      the node at <code>row</code> does not represent a leaf.
-     */
-  }
 
-  protected boolean isLocationInExpandControl(@Nullable TreePath path, int mouseX) {
-    if (path == null) return false;
-    TreeUI ui = getUI();
-    if (!(ui instanceof BasicTreeUI)) return false;
-    BasicTreeUI treeUI = (BasicTreeUI)ui;
-    if (!treeModel.isLeaf(path.getLastPathComponent())) {
-      Insets insets = this.getInsets();
-      int boxWidth = treeUI.getExpandedIcon() != null ? treeUI.getExpandedIcon().getIconWidth() : 8;
-      int boxLeftX = treeUI.getLeftChildIndent() + treeUI.getRightChildIndent() * (path.getPathCount() - 1);
-      if (getComponentOrientation().isLeftToRight()) {
-        boxLeftX = boxLeftX + insets.left - treeUI.getRightChildIndent() + 1;
+    @Override public void mouseExited(MouseEvent e) {
+      if (UIUtil.isUnderWin10LookAndFeel() && rollOverPath != null) {
+        TreeCellRenderer renderer = getCellRenderer();
+        TreeNode node = (TreeNode)rollOverPath.getLastPathComponent();
+        JComponent c = (JComponent)renderer.getTreeCellRendererComponent(Tree.this, node,
+                                                                         isPathSelected(rollOverPath),
+                                                                         isExpanded(rollOverPath),
+                                                                         getModel().isLeaf(node),
+                                                                         getRowForPath(rollOverPath), hasFocus());
+
+        c.putClientProperty(UIUtil.CHECKBOX_ROLLOVER_PROPERTY, null);
+        rollOverPath = null;
+        UIUtil.repaintViewport(Tree.this);
       }
-      else {
-        boxLeftX = getWidth() - boxLeftX - insets.right + treeUI.getRightChildIndent() - 1;
-      }
-      boxLeftX -= getComponentOrientation().isLeftToRight() ? (int)Math.ceil(boxWidth / 2.0) : (int)Math.floor(boxWidth / 2.0);
-      return mouseX >= boxLeftX && mouseX < boxLeftX + boxWidth;
     }
-    return false;
+
+    private void setPressed(MouseEvent e, boolean pressed) {
+      if (UIUtil.isUnderWin10LookAndFeel()) {
+        Point p = e.getPoint();
+        TreePath path = getPathForLocation(p.x, p.y);
+        if (path != null) {
+          TreeCellRenderer renderer = getCellRenderer();
+          TreeNode node = (TreeNode)path.getLastPathComponent();
+          JComponent c = (JComponent)renderer.getTreeCellRendererComponent(Tree.this, node,
+                                                                           isPathSelected(path), isExpanded(path),
+                                                                           getModel().isLeaf(node),
+                                                                           getRowForPath(path), hasFocus());
+          if (pressed) {
+            c.putClientProperty(UIUtil.CHECKBOX_PRESSED_PROPERTY, c instanceof JCheckBox ? getPathBounds(path) : node);
+          } else {
+            c.putClientProperty(UIUtil.CHECKBOX_PRESSED_PROPERTY, null);
+          }
+
+          UIUtil.repaintViewport(Tree.this);
+        }
+      }
+    }
   }
 
   /**

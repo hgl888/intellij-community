@@ -27,9 +27,6 @@ import com.intellij.psi.PsiFile;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 
-/**
-* Created by anna on 5/13/2014.
-*/
 class EditCleanupProfileIntentionAction implements IntentionAction {
   static final EditCleanupProfileIntentionAction INSTANCE = new EditCleanupProfileIntentionAction();
   private EditCleanupProfileIntentionAction() {}
@@ -53,7 +50,7 @@ class EditCleanupProfileIntentionAction implements IntentionAction {
 
   @Override
   public void invoke(@NotNull Project project, Editor editor, PsiFile file) throws IncorrectOperationException {
-    final ProjectInspectionProfileManager profileManager = ProjectInspectionProfileManager.getInstanceImpl(project);
+    final ProjectInspectionProfileManager profileManager = ProjectInspectionProfileManager.getInstance(project);
     final ProjectInspectionToolsConfigurable configurable =
       new ProjectInspectionToolsConfigurable(profileManager) {
         @Override

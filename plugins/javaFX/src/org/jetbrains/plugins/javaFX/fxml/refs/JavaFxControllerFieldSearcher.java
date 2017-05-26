@@ -16,12 +16,10 @@
 package org.jetbrains.plugins.javaFX.fxml.refs;
 
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
-import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.search.LocalSearchScope;
 import com.intellij.psi.search.SearchScope;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.PsiUtilCore;
@@ -35,29 +33,15 @@ import org.jetbrains.plugins.javaFX.indexing.JavaFxControllerClassIndex;
 
 import java.util.List;
 
-/**
- * User: anna
- * Date: 3/29/13
- */
 public class JavaFxControllerFieldSearcher implements QueryExecutor<PsiReference, ReferencesSearch.SearchParameters>{
   @Override
   public boolean execute(@NotNull final ReferencesSearch.SearchParameters queryParameters, @NotNull final Processor<PsiReference> consumer) {
     final PsiElement elementToSearch = queryParameters.getElementToSearch();
     if (elementToSearch instanceof PsiField) {
       final PsiField field = (PsiField)elementToSearch;
-      final PsiClass containingClass = ApplicationManager.getApplication().runReadAction(new Computable<PsiClass>() {
-        @Override
-        public PsiClass compute() {
-          return field.getContainingClass();
-        }
-      });
+      final PsiClass containingClass = ReadAction.compute(() -> field.getContainingClass());
       if (containingClass != null) {
-        final String qualifiedName = ApplicationManager.getApplication().runReadAction(new Computable<String>() {
-          @Override
-          public String compute() {
-            return containingClass.getQualifiedName(); 
-          }
-        });
+        final String qualifiedName = ReadAction.compute(() -> containingClass.getQualifiedName());
         if (qualifiedName != null) {
           Project project = PsiUtilCore.getProjectInReadAction(containingClass);
           final List<PsiFile> fxmlWithController =
@@ -68,9 +52,7 @@ public class JavaFxControllerFieldSearcher implements QueryExecutor<PsiReference
               if (fieldName == null) return;
               final VirtualFile virtualFile = file.getViewProvider().getVirtualFile();
               final SearchScope searchScope = queryParameters.getEffectiveSearchScope();
-              boolean contains = searchScope instanceof LocalSearchScope ? ((LocalSearchScope)searchScope).isInScope(virtualFile) :
-                                 ((GlobalSearchScope)searchScope).contains(virtualFile);
-              if (contains) {
+              if (searchScope.contains(virtualFile)) {
                 file.accept(new XmlRecursiveElementVisitor() {
                   @Override
                   public void visitXmlAttributeValue(final XmlAttributeValue value) {

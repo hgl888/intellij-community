@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -83,7 +83,9 @@ public class PyTypeAssertionEvaluator extends PyRecursiveElementVisitor {
 
   @Override
   public void visitPyReferenceExpression(final PyReferenceExpression node) {
-    if (node.getParent() instanceof PyIfPart) {
+    if (myPositive && (isIfReferenceStatement(node) || isIfReferenceConditionalStatement(node) || isIfNotReferenceStatement(node))) {
+      // we could not suggest `None` because it could be a reference to an empty collection
+      // so we could push only non-`None` assertions
       pushAssertion(node, !myPositive, context -> PyNoneType.INSTANCE);
       return;
     }
@@ -144,6 +146,11 @@ public class PyTypeAssertionEvaluator extends PyRecursiveElementVisitor {
                                             @NotNull TypeEvalContext context) {
     final PyType transformedType = transformTypeFromAssertion(suggested);
     if (positive) {
+      if (!(initial instanceof PyUnionType) &&
+          !PyTypeChecker.isUnknown(initial) &&
+          PyTypeChecker.match(transformedType, initial, context)) {
+        return initial;
+      }
       return transformedType;
     }
     else if (initial instanceof PyUnionType) {
@@ -178,21 +185,28 @@ public class PyTypeAssertionEvaluator extends PyRecursiveElementVisitor {
     final InstructionTypeCallback typeCallback = new InstructionTypeCallback() {
       @Override
       public PyType getType(TypeEvalContext context, @Nullable PsiElement anchor) {
-        final PyType initial = context.getType(target);
-        final PyType suggested = suggestedType.apply(context);
-
-        if (!PyUnionType.class.isInstance(initial) &&
-            !PyTypeChecker.isUnknown(initial) &&
-            PyTypeChecker.match(suggested, initial, context)) {
-          return initial;
-        }
-        else {
-          return createAssertionType(initial, suggested, positive, context);
-        }
+        return createAssertionType(context.getType(target), suggestedType.apply(context), positive, context);
       }
     };
 
     myStack.push(new Assertion(target, typeCallback));
+  }
+
+  private static boolean isIfReferenceStatement(@NotNull PyReferenceExpression node) {
+    return node.getParent() instanceof PyIfPart;
+  }
+
+  private static boolean isIfReferenceConditionalStatement(@NotNull PyReferenceExpression node) {
+    final PsiElement parent = node.getParent();
+    return parent instanceof PyConditionalExpression &&
+           node == ((PyConditionalExpression)parent).getCondition();
+  }
+
+  private static boolean isIfNotReferenceStatement(@NotNull PyReferenceExpression node) {
+    final PsiElement parent = node.getParent();
+    return parent instanceof PyPrefixExpression &&
+           ((PyPrefixExpression)parent).getOperator() == PyTokenTypes.NOT_KEYWORD &&
+           parent.getParent() instanceof PyIfPart;
   }
 
   static class Assertion {

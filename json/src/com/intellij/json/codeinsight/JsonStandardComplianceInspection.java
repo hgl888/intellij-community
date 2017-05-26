@@ -82,7 +82,7 @@ public class JsonStandardComplianceInspection extends LocalInspectionTool {
 
       @Override
       public void visitReferenceExpression(@NotNull JsonReferenceExpression reference) {
-        holder.registerProblem(reference, JsonBundle.message("inspection.compliance.msg.identifier"), new AddDoubleQuotesFix());
+        holder.registerProblem(reference, JsonBundle.message("inspection.compliance.msg.bad.token"), new AddDoubleQuotesFix());
         // May be illegal property key as well
         super.visitReferenceExpression(reference);
       }
@@ -156,12 +156,7 @@ public class JsonStandardComplianceInspection extends LocalInspectionTool {
           content = escapeSingleQuotedStringContent(content);
         }
         final PsiElement replacement = new JsonElementGenerator(project).createValue("\"" + content + "\"");
-        CodeStyleManager.getInstance(project).performActionWithFormatterDisabled(new Runnable() {
-          @Override
-          public void run() {
-            element.replace(replacement);
-          }
-        });
+        CodeStyleManager.getInstance(project).performActionWithFormatterDisabled((Runnable)() -> element.replace(replacement));
       }
       else {
         LOG.error("Quick fix was applied to unexpected element", rawText, element.getParent().getText());

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@ import com.intellij.openapi.editor.*;
 import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.editor.colors.EditorSchemeAttributeDescriptor;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
-import com.intellij.openapi.editor.event.CaretAdapter;
 import com.intellij.openapi.editor.event.CaretEvent;
+import com.intellij.openapi.editor.event.CaretListener;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.highlighter.EditorHighlighter;
 import com.intellij.openapi.editor.highlighter.HighlighterIterator;
@@ -80,7 +80,7 @@ public class SimpleEditorPreview implements PreviewPanel {
     myHighlightsExtractor = new HighlightsExtractor(page.getAdditionalHighlightingTagToDescriptorMap(), INLINE_ELEMENTS);
     myEditor = (EditorEx)FontEditorPreview.createPreviewEditor(
       myHighlightsExtractor.extractHighlights(page.getDemoText(), myHighlightData), // text without tags
-      10, 3, -1, myOptions, false);
+      10, 3, -1, myOptions.getSelectedScheme(), false);
 
     FontEditorPreview.installTrafficLights(myEditor);
     myBlinkingAlarm = new Alarm().setActivationComponent(myEditor.getComponent());
@@ -92,7 +92,7 @@ public class SimpleEditorPreview implements PreviewPanel {
         }
       });
 
-      myEditor.getCaretModel().addCaretListener(new CaretAdapter() {
+      myEditor.getCaretModel().addCaretListener(new CaretListener() {
         @Override
         public void caretPositionChanged(CaretEvent e) {
           navigate(true, e.getNewPosition());
@@ -332,7 +332,6 @@ public class SimpleEditorPreview implements PreviewPanel {
   public void setupRainbow(@NotNull EditorColorsScheme colorsScheme, @NotNull RainbowColorSettingsPage page) {
     final List<HighlightData> initialMarkup = new ArrayList<>();
     myHighlightsExtractor.extractHighlights(page.getDemoText(), initialMarkup);
-
     final List<HighlightData> rainbowMarkup = setupRainbowHighlighting(
       page,
       initialMarkup,
@@ -355,6 +354,7 @@ public class SimpleEditorPreview implements PreviewPanel {
     List<HighlightData> rainbowMarkup = new ArrayList<>();
 
     int tempKeyIndex = 0;
+    boolean repeatAnchor = true;
     for (HighlightData d : initialMarkup) {
       final TextAttributesKey highlightKey = d.getHighlightKey();
       final boolean rainbowType = page.isRainbowType(highlightKey);
@@ -368,7 +368,14 @@ public class SimpleEditorPreview implements PreviewPanel {
             rainbowTemp = getRainbowTemp(rainbowTempKeys, d.getStartOffset(), d.getEndOffset());
           }
           else {
-            rainbowTemp = new HighlightData(d.getStartOffset(), d.getEndOffset(), rainbowTempKeys[tempKeyIndex++ % colorCount]);
+            rainbowTemp = new HighlightData(d.getStartOffset(), d.getEndOffset(), rainbowTempKeys[tempKeyIndex % colorCount]);
+            if (repeatAnchor && tempKeyIndex == colorCount/2) {
+              // anchor [Color#3] colored twice: it the end and in the beginning of rainbow-demo string
+              repeatAnchor = false;
+            }
+            else {
+              ++tempKeyIndex;
+            }
           }
           // TODO: <remove the hack>
           // At some point highlighting data is applied in reversed order. To ensure rainbow highlighting is always on top, we add it twice.

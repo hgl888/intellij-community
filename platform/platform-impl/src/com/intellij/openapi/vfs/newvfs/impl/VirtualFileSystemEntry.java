@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,17 @@
 package com.intellij.openapi.vfs.newvfs.impl;
 
 import com.intellij.ide.ui.UISettings;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.impl.LoadTextUtil;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.io.FileTooBigException;
 import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.openapi.vfs.LocalFileSystem;
-import com.intellij.openapi.vfs.VFileProperty;
-import com.intellij.openapi.vfs.VfsBundle;
-import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.*;
 import com.intellij.openapi.vfs.encoding.EncodingManager;
 import com.intellij.openapi.vfs.encoding.EncodingRegistry;
 import com.intellij.openapi.vfs.newvfs.NewVirtualFile;
 import com.intellij.openapi.vfs.newvfs.persistent.PersistentFS;
 import com.intellij.openapi.vfs.newvfs.persistent.PersistentFSImpl;
-import com.intellij.psi.SingleRootFileViewProvider;
 import com.intellij.util.LocalTimeCounter;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.util.text.StringFactory;
@@ -166,6 +163,7 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
     }
   }
 
+  @NotNull
   protected char[] appendPathOnFileSystem(int accumulatedPathLength, int[] positionRef) {
     CharSequence name = FileNameCache.getVFileName(mySegment.getNameId(myId));
 
@@ -201,11 +199,13 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
 
   @Override
   public void delete(final Object requestor) throws IOException {
+    ApplicationManager.getApplication().assertWriteAccessAllowed();
     ourPersistence.deleteFile(requestor, this);
   }
 
   @Override
   public void rename(final Object requestor, @NotNull @NonNls final String newName) throws IOException {
+    ApplicationManager.getApplication().assertWriteAccessAllowed();
     if (getName().equals(newName)) return;
     validateName(newName);
     ourPersistence.renameFile(requestor, this, newName);
@@ -258,6 +258,8 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
 
   @Override
   public void move(final Object requestor, @NotNull final VirtualFile newParent) throws IOException {
+    ApplicationManager.getApplication().assertWriteAccessAllowed();
+
     if (getFileSystem() != newParent.getFileSystem()) {
       throw new IOException(VfsBundle.message("file.move.error", newParent.getPresentableUrl()));
     }
@@ -323,6 +325,8 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
   }
 
   public void setParent(@NotNull VirtualFile newParent) {
+    ApplicationManager.getApplication().assertWriteAccessAllowed();
+
     VirtualDirectoryImpl parent = getParent();
     parent.removeChild(this);
 
@@ -355,26 +359,23 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
       charset = configured == null ? Charset.defaultCharset() : configured;
       setCharset(charset);
     }
-    else if (SingleRootFileViewProvider.isTooLargeForContentLoading(this)) {
-      charset = super.getCharset();
-    }
     else {
       try {
         final byte[] content;
         try {
-          content = contentsToByteArray();
+          content = VfsUtilCore.loadBytes(this);
         }
         catch (FileNotFoundException e) {
           // file has already been deleted on disk
           return super.getCharset();
         }
-        charset = LoadTextUtil.detectCharsetAndSetBOM(this, content);
+        charset = LoadTextUtil.detectCharsetAndSetBOM(this, content, getFileType());
       }
       catch (FileTooBigException e) {
         return super.getCharset();
       }
       catch (IOException e) {
-        throw new RuntimeException(e);
+        throw new RuntimeException(getPath(), e);
       }
     }
     return charset;
@@ -382,7 +383,7 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
 
   @Override
   public String getPresentableName() {
-    if (UISettings.getInstance().HIDE_KNOWN_EXTENSION_IN_TABS && !isDirectory()) {
+    if (UISettings.getInstance().getHdeKnownExtensionInTabs() && !isDirectory()) {
       final String nameWithoutExtension = getNameWithoutExtension();
       return nameWithoutExtension.isEmpty() ? getName() : nameWithoutExtension;
     }

@@ -25,6 +25,7 @@ import com.intellij.ide.fileTemplates.FileTemplateManager;
 import com.intellij.ide.fileTemplates.FileTemplateUtil;
 import com.intellij.ide.fileTemplates.JavaTemplateUtil;
 import com.intellij.ide.fileTemplates.ui.CreateFromTemplateDialog;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.StdFileTypes;
 import com.intellij.openapi.project.Project;
@@ -71,7 +72,7 @@ public class JavaDirectoryServiceImpl extends CoreJavaDirectoryService {
                               @NotNull String name,
                               @NotNull String templateName,
                               boolean askForUndefinedVariables) throws IncorrectOperationException {
-    return createClass(dir, name, templateName, askForUndefinedVariables, Collections.<String, String>emptyMap());
+    return createClass(dir, name, templateName, askForUndefinedVariables, Collections.emptyMap());
   }
 
   @Override
@@ -116,13 +117,16 @@ public class JavaDirectoryServiceImpl extends CoreJavaDirectoryService {
   }
 
   private static PsiClass createClassFromTemplate(@NotNull PsiDirectory dir, String name, String templateName) throws IncorrectOperationException {
-    return createClassFromTemplate(dir, name, templateName, false, Collections.<String, String>emptyMap());
+    return createClassFromTemplate(dir, name, templateName, false, Collections.emptyMap());
   }
 
   private static PsiClass createClassFromTemplate(@NotNull PsiDirectory dir,
                                                   String name,
                                                   String templateName,
                                                   boolean askToDefineVariables, @NotNull Map<String, String> additionalProperties) throws IncorrectOperationException {
+    if (askToDefineVariables) {
+      LOG.assertTrue(!ApplicationManager.getApplication().isWriteAccessAllowed());
+    }
     //checkCreateClassOrInterface(dir, name);
 
     Project project = dir.getProject();

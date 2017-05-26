@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -80,7 +80,7 @@ public abstract class SchemeManager<T extends Scheme> {
     return scheme == null ? null : scheme.getName();
   }
 
-  public abstract void removeScheme(@NotNull T scheme);
+  public abstract boolean removeScheme(@NotNull T scheme);
 
   @Nullable
   public T removeScheme(@NotNull String name) {
@@ -121,5 +121,16 @@ public abstract class SchemeManager<T extends Scheme> {
    */
   public boolean isMetadataEditable(@NotNull T scheme) {
     return true;
+  }
+
+  public static String getDisplayName(@NotNull Scheme scheme) {
+    String schemeName = scheme.getName();
+    return
+      schemeName.startsWith(EDITABLE_COPY_PREFIX) ?
+      schemeName.substring(EDITABLE_COPY_PREFIX.length()) :
+      schemeName;
+  }
+
+  public void save(@NotNull List<Throwable> errors) {
   }
 }

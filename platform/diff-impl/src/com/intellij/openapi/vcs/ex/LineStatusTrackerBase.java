@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.undo.UndoConstants;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.editor.impl.DocumentImpl;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
 import com.intellij.openapi.progress.ProcessCanceledException;
@@ -34,17 +34,14 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.diff.FilesTooBigForDiffException;
 import org.jetbrains.annotations.*;
 
-import java.util.ArrayList;
-import java.util.BitSet;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 import static com.intellij.diff.util.DiffUtil.getLineCount;
 import static com.intellij.openapi.localVcs.UpToDateLineNumberProvider.ABSENT_LINE_NUMBER;
 
 @SuppressWarnings({"MethodMayBeStatic", "FieldAccessedSynchronizedAndUnsynchronized"})
 public abstract class LineStatusTrackerBase {
-  public static final Logger LOG = Logger.getInstance("#com.intellij.openapi.vcs.ex.LineStatusTracker");
+  protected static final Logger LOG = Logger.getInstance("#com.intellij.openapi.vcs.ex.LineStatusTracker");
 
   // all variables should be modified in EDT and under LOCK
   // read access allowed from EDT or while holding LOCK
@@ -65,7 +62,11 @@ public abstract class LineStatusTrackerBase {
   private boolean myAnathemaThrown;
   private boolean myReleased;
 
-  @NotNull private List<Range> myRanges;
+  @NotNull private List<Range> myRanges = Collections.emptyList();
+
+  // operation delayed till the end of write action
+  @NotNull private final Set<Range> myToBeDestroyedRanges = ContainerUtil.newIdentityTroveSet();
+  @NotNull private final Set<Range> myToBeInstalledRanges = ContainerUtil.newIdentityTroveSet();
 
   @Nullable private DirtyRange myDirtyRange;
 
@@ -81,8 +82,6 @@ public abstract class LineStatusTrackerBase {
 
     myApplicationListener = new MyApplicationListener();
     myApplication.addApplicationListener(myApplicationListener);
-
-    myRanges = new ArrayList<>();
 
     myVcsDocument = new DocumentImpl("", true);
     myVcsDocument.putUserData(UndoConstants.DONT_RECORD_UNDO, Boolean.TRUE);
@@ -161,9 +160,15 @@ public abstract class LineStatusTrackerBase {
   private void destroyRanges() {
     removeAnathema();
     for (Range range : myRanges) {
+      range.invalidate();
+      disposeHighlighter(range);
+    }
+    for (Range range : myToBeDestroyedRanges) {
       disposeHighlighter(range);
     }
     myRanges = Collections.emptyList();
+    myToBeDestroyedRanges.clear();
+    myToBeInstalledRanges.clear();
     myDirtyRange = null;
   }
 
@@ -183,7 +188,6 @@ public abstract class LineStatusTrackerBase {
   @CalledInAwt
   private void disposeHighlighter(@NotNull Range range) {
     try {
-      range.invalidate();
       RangeHighlighter highlighter = range.getHighlighter();
       if (highlighter != null) {
         range.setHighlighter(null);
@@ -311,14 +315,33 @@ public abstract class LineStatusTrackerBase {
     }
   }
 
+  @CalledInAwt
+  private void updateRangeHighlighters() {
+    if (myToBeInstalledRanges.isEmpty() && myToBeDestroyedRanges.isEmpty()) return;
+
+    synchronized (LOCK) {
+      myToBeInstalledRanges.removeAll(myToBeDestroyedRanges);
+
+      for (Range range : myToBeDestroyedRanges) {
+        disposeHighlighter(range);
+      }
+      for (Range range : myToBeInstalledRanges) {
+        createHighlighter(range);
+      }
+      myToBeDestroyedRanges.clear();
+      myToBeInstalledRanges.clear();
+    }
+  }
+
   private class MyApplicationListener extends ApplicationAdapter {
     @Override
     public void afterWriteActionFinished(@NotNull Object action) {
       updateRanges();
+      updateRangeHighlighters();
     }
   }
 
-  private class MyDocumentListener extends DocumentAdapter {
+  private class MyDocumentListener implements DocumentListener {
     /*
      *   beforeWriteLock   beforeChange     Current
      *              |            |             |
@@ -484,11 +507,10 @@ public abstract class LineStatusTrackerBase {
         myRanges.addAll(rangesAfter);
 
         for (Range range : changedRanges) {
-          disposeHighlighter(range);
+          range.invalidate();
         }
-        for (Range range : newChangedRanges) {
-          createHighlighter(range);
-        }
+        myToBeDestroyedRanges.addAll(changedRanges);
+        myToBeInstalledRanges.addAll(newChangedRanges);
 
         if (myRanges.isEmpty()) {
           fireFileUnchanged();
@@ -725,6 +747,7 @@ public abstract class LineStatusTrackerBase {
         int beforeTotalLines = getLineCount(myDocument) - shift;
 
         doUpdateRanges(beforeChangedLine1, beforeChangedLine2, shift, beforeTotalLines);
+        updateRangeHighlighters();
       }
     });
   }

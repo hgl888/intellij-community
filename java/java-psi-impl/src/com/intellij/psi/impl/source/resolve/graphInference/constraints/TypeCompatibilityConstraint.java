@@ -24,9 +24,6 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-/**
- * User: anna
- */
 public class TypeCompatibilityConstraint implements ConstraintFormula {
   private PsiType myT;
   private PsiType myS;
@@ -87,7 +84,7 @@ public class TypeCompatibilityConstraint implements ConstraintFormula {
         }
       }
     } 
-    else if (t instanceof PsiArrayType && t.getArrayDimensions() == s.getArrayDimensions()) {
+    else if (t instanceof PsiArrayType && s != null && t.getArrayDimensions() == s.getArrayDimensions()) {
       return isUncheckedConversion(t.getDeepComponentType(), s.getDeepComponentType());
     }
     return false;

@@ -18,7 +18,6 @@ package com.intellij.codeInsight.generation.surroundWith;
 
 import com.intellij.codeInsight.CodeInsightActionHandler;
 import com.intellij.codeInsight.CodeInsightBundle;
-import com.intellij.codeInsight.CodeInsightUtilBase;
 import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.codeInsight.template.CustomLiveTemplate;
 import com.intellij.codeInsight.template.TemplateManager;
@@ -34,13 +33,8 @@ import com.intellij.lang.surroundWith.SurroundDescriptor;
 import com.intellij.lang.surroundWith.Surrounder;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.Result;
 import com.intellij.openapi.command.WriteCommandAction;
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.editor.LogicalPosition;
-import com.intellij.openapi.editor.ScrollType;
-import com.intellij.openapi.editor.SelectionModel;
+import com.intellij.openapi.editor.*;
 import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.options.ShowSettingsUtil;
@@ -52,8 +46,9 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.refactoring.rename.inplace.InplaceRefactoring;
-import com.intellij.util.IncorrectOperationException;
+import com.intellij.util.DocumentUtil;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.text.CharArrayUtil;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -61,7 +56,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 
 public class SurroundWithHandler implements CodeInsightActionHandler {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.generation.surroundWith.SurroundWithHandler");
   private static final String CHOOSER_TITLE = CodeInsightBundle.message("surround.with.chooser.title");
   public static final TextRange CARET_IS_OK = new TextRange(0, 0);
 
@@ -75,8 +69,14 @@ public class SurroundWithHandler implements CodeInsightActionHandler {
     return true;
   }
 
+  @Nullable
+  @Override
+  public PsiElement getElementToMakeWritable(@NotNull PsiFile currentFile) {
+    return null;
+  }
+
   public static void invoke(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile file, Surrounder surrounder) {
-    if (!CodeInsightUtilBase.prepareEditorForWrite(editor)) return;
+    if (!EditorModificationUtil.checkModificationAllowed(editor)) return;
     if (file instanceof PsiCompiledElement) {
       HintManager.getInstance().showErrorHint(editor, "Can't modify decompiled code");
       return;
@@ -96,12 +96,10 @@ public class SurroundWithHandler implements CodeInsightActionHandler {
     SelectionModel selectionModel = editor.getSelectionModel();
     boolean hasSelection = selectionModel.hasSelection();
     if (!hasSelection) {
-      selectionModel.selectLineAtCaret();
+      selectLogicalLineContentsAtCaret(editor);
     }
     int startOffset = selectionModel.getSelectionStart();
     int endOffset = selectionModel.getSelectionEnd();
-
-    PsiDocumentManager.getInstance(project).commitAllDocuments();
 
     PsiElement element1 = file.findElementAt(startOffset);
     PsiElement element2 = file.findElementAt(endOffset - 1);
@@ -160,6 +158,14 @@ public class SurroundWithHandler implements CodeInsightActionHandler {
     return doBuildSurroundActions(project, editor, file, surrounders);
   }
 
+  public static void selectLogicalLineContentsAtCaret(Editor editor) {
+    int caretOffset = editor.getCaretModel().getOffset();
+    Document document = editor.getDocument();
+    CharSequence text = document.getImmutableCharSequence();
+    editor.getSelectionModel().setSelection(CharArrayUtil.shiftForward(text, DocumentUtil.getLineStartOffset(caretOffset, document), " \t"),
+                                            CharArrayUtil.shiftBackward(text, DocumentUtil.getLineEndOffset(caretOffset, document) - 1, " \t") + 1);
+  }
+
   private static void invokeSurrounderInTests(Project project,
                                               Editor editor,
                                               PsiFile file,
@@ -172,7 +178,7 @@ public class SurroundWithHandler implements CodeInsightActionHandler {
       if (elements.length > 0) {
         for (Surrounder descriptorSurrounder : descriptor.getSurrounders()) {
           if (surrounder.getClass().equals(descriptorSurrounder.getClass())) {
-            doSurround(project, editor, surrounder, elements);
+            WriteCommandAction.runWriteCommandAction(project, () -> doSurround(project, editor, surrounder, elements));
             return;
           }
         }
@@ -188,36 +194,27 @@ public class SurroundWithHandler implements CodeInsightActionHandler {
   }
 
   static void doSurround(final Project project, final Editor editor, final Surrounder surrounder, final PsiElement[] elements) {
-    if (!FileDocumentManager.getInstance().requestWriting(editor.getDocument(), project)) {
-      return;
+    PsiDocumentManager.getInstance(project).commitAllDocuments();
+    int col = editor.getCaretModel().getLogicalPosition().column;
+    int line = editor.getCaretModel().getLogicalPosition().line;
+    if (!editor.getCaretModel().supportsMultipleCarets()) {
+      LogicalPosition pos = new LogicalPosition(0, 0);
+      editor.getCaretModel().moveToLogicalPosition(pos);
     }
-
-    try {
-      PsiDocumentManager.getInstance(project).commitAllDocuments();
-      int col = editor.getCaretModel().getLogicalPosition().column;
-      int line = editor.getCaretModel().getLogicalPosition().line;
-      if (!editor.getCaretModel().supportsMultipleCarets()) {
-        LogicalPosition pos = new LogicalPosition(0, 0);
-        editor.getCaretModel().moveToLogicalPosition(pos);
+    TextRange range = surrounder.surroundElements(project, editor, elements);
+    if (range != CARET_IS_OK) {
+      if (TemplateManager.getInstance(project).getActiveTemplate(editor) == null &&
+          InplaceRefactoring.getActiveInplaceRenamer(editor) == null) {
+        LogicalPosition pos1 = new LogicalPosition(line, col);
+        editor.getCaretModel().moveToLogicalPosition(pos1);
       }
-      TextRange range = surrounder.surroundElements(project, editor, elements);
-      if (range != CARET_IS_OK) {
-        if (TemplateManager.getInstance(project).getActiveTemplate(editor) == null &&
-            InplaceRefactoring.getActiveInplaceRenamer(editor) == null) {
-          LogicalPosition pos1 = new LogicalPosition(line, col);
-          editor.getCaretModel().moveToLogicalPosition(pos1);
-        }
-        if (range != null) {
-          int offset = range.getStartOffset();
-          editor.getCaretModel().removeSecondaryCarets();
-          editor.getCaretModel().moveToOffset(offset);
-          editor.getScrollingModel().scrollToCaret(ScrollType.RELATIVE);
-          editor.getSelectionModel().setSelection(range.getStartOffset(), range.getEndOffset());
-        }
+      if (range != null) {
+        int offset = range.getStartOffset();
+        editor.getCaretModel().removeSecondaryCarets();
+        editor.getCaretModel().moveToOffset(offset);
+        editor.getScrollingModel().scrollToCaret(ScrollType.RELATIVE);
+        editor.getSelectionModel().setSelection(range.getStartOffset(), range.getEndOffset());
       }
-    }
-    catch (IncorrectOperationException e) {
-      LOG.error(e);
     }
   }
 
@@ -293,12 +290,11 @@ public class SurroundWithHandler implements CodeInsightActionHandler {
 
     @Override
     public void actionPerformed(AnActionEvent e) {
-      new WriteCommandAction(myProject) {
-        @Override
-        protected void run(@NotNull Result result) throws Exception {
-          doSurround(myProject, myEditor, mySurrounder, myElements);
-        }
-      }.execute();
+      if (!FileDocumentManager.getInstance().requestWriting(myEditor.getDocument(), myProject)) {
+        return;
+      }
+
+      WriteCommandAction.runWriteCommandAction(myProject, () -> doSurround(myProject, myEditor, mySurrounder, myElements));
     }
   }
 

@@ -111,6 +111,9 @@ class PyDevTerminalInteractiveShell(TerminalInteractiveShell):
     #   a better theme).
     colors_force = CBool(True)
     colors = Unicode("NoColor")
+    # Since IPython 5 the terminal interface is not compatible with Emacs `inferior-shell` and
+    # the `simple_prompt` flag is needed
+    simple_prompt = CBool(True)
 
     # In the PyDev Console, GUI control is done via hookable XML-RPC server
     @staticmethod
@@ -310,15 +313,16 @@ class _PyDevFrontEnd:
     version = release.__version__
 
     def __init__(self, show_banner=True):
-
         # Create and initialize our IPython instance.
-        self.ipython = PyDevTerminalInteractiveShell.instance()
+        if hasattr(PyDevTerminalInteractiveShell, '_instance') and PyDevTerminalInteractiveShell._instance is not None:
+            self.ipython = PyDevTerminalInteractiveShell._instance
+        else:
+            self.ipython = PyDevTerminalInteractiveShell.instance()
 
         if show_banner:
             # Display the IPython banner, this has version info and
             # help info
             self.ipython.show_banner()
-
 
         self._curr_exec_line = 0
         self._curr_exec_lines = []

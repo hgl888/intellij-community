@@ -17,6 +17,7 @@ package com.intellij.openapi.application.impl;
 
 import com.intellij.diagnostic.ThreadDumper;
 import com.intellij.openapi.application.AccessToken;
+import com.intellij.openapi.application.ex.ApplicationUtil;
 import com.intellij.openapi.diagnostic.Attachment;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressManager;
@@ -47,7 +48,7 @@ import java.util.concurrent.locks.LockSupport;
 class ReadMostlyRWLock {
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.application.impl.ReadMostlyRWLock");
   private final Thread writeThread;
-  private volatile boolean writeRequested;  // this writer is requesting or obtained the write access
+  volatile boolean writeRequested;  // this writer is requesting or obtained the write access
   private volatile boolean writeAcquired;   // this writer obtained the write lock
   // All reader threads are registered here. Dead readers are garbage collected in writeUnlock().
   private final ConcurrentList<Reader> readers = ContainerUtil.createConcurrentList();
@@ -65,7 +66,7 @@ class ReadMostlyRWLock {
     @NotNull private final Thread thread;   // its thread
     private volatile boolean readRequested; // this reader is requesting or obtained read access. Written by reader thread only, read by writer.
     private volatile boolean blocked;       // this reader is blocked waiting for the writer thread to release write lock. Written by reader thread only, read by writer.
-
+    private boolean impatientReads; // true if should throw PCE on contented read lock
     Reader(@NotNull Thread readerThread) {
       thread = readerThread;
     }
@@ -85,6 +86,7 @@ class ReadMostlyRWLock {
   boolean isReadLockedByThisThread() {
     checkReadThreadAccess();
     Reader status = R.get();
+    throwIfImpatient(status);
     return status.readRequested;
   }
 
@@ -106,6 +108,7 @@ class ReadMostlyRWLock {
     if (iteration > SPIN_TO_WAIT_FOR_LOCK) {
       status.blocked = true;
       try {
+        throwIfImpatient(status);
         LockSupport.parkNanos(this, 1000000);  // unparked by writeUnlock
       }
       finally {
@@ -114,6 +117,32 @@ class ReadMostlyRWLock {
     }
     else {
       Thread.yield();
+    }
+  }
+
+  private void throwIfImpatient(Reader status) {
+    // when client explicitly runs in non-cancelable block do not throw from within nested read actions
+    if (status.impatientReads && writeRequested && !ProgressManager.getInstance().isInNonCancelableSection()) {
+      throw new ApplicationUtil.CannotRunReadActionException();
+    }
+  }
+
+  /**
+   * Executes a {@code runnable} in an "impatient" mode.
+   * In this mode any attempt to grab read lock
+   * will fail (i.e. throw {@link ApplicationUtil.CannotRunReadActionException})
+   * if there is a pending write lock request.
+   */
+  void executeByImpatientReader(@NotNull Runnable runnable) throws ApplicationUtil.CannotRunReadActionException {
+    checkReadThreadAccess();
+    Reader status = R.get();
+    boolean old = status.impatientReads;
+    try {
+      status.impatientReads = true;
+      runnable.run();
+    }
+    finally {
+      status.impatientReads = old;
     }
   }
 

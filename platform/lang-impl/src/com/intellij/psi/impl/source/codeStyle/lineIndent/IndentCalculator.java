@@ -34,7 +34,7 @@ import org.jetbrains.annotations.Nullable;
 import static com.intellij.formatting.Indent.Type.CONTINUATION;
 import static com.intellij.formatting.Indent.Type.NORMAL;
 
-class IndentCalculator {
+public class IndentCalculator {
   
   private @NotNull final Project myProject;
   private @NotNull final Editor myEditor;
@@ -57,7 +57,13 @@ class IndentCalculator {
       return CharArrayUtil.shiftBackward(currPosition.getChars(), currPosition.getStartOffset(), " \t\n\r");
     }
   };
-  
+
+  public final static BaseLineOffsetCalculator LINE_AFTER = new BaseLineOffsetCalculator() {
+    @Override
+    public int getOffsetInBaseIndentLine(@NotNull SemanticEditorPosition currPosition) {
+      return CharArrayUtil.shiftForward(currPosition.getChars(), currPosition.getStartOffset(), " \t\n\r");
+    }
+  };
   
   @Nullable
   String getIndentString(@Nullable Language language, @NotNull SemanticEditorPosition currPosition) {
@@ -66,10 +72,11 @@ class IndentCalculator {
     PsiFile file = PsiDocumentManager.getInstance(myProject).getPsiFile(document);
     if (file != null) {
       CodeStyleSettings codeStyleSettings = CodeStyleSettingsManager.getSettings(myProject);
+      CommonCodeStyleSettings.IndentOptions fileOptions = codeStyleSettings.getIndentOptionsByFile(file);
       CommonCodeStyleSettings.IndentOptions options =
-        language != null && !(language.is(file.getLanguage()) || language.is(Language.ANY)) ?
+        !fileOptions.isOverrideLanguageOptions() && language != null && !(language.is(file.getLanguage()) || language.is(Language.ANY)) ?
         codeStyleSettings.getCommonSettings(language).getIndentOptions() :
-        codeStyleSettings.getIndentOptionsByFile(file);
+        fileOptions;
       return
         baseIndent + new IndentInfo(0, indentTypeToSize(myIndentType, options), 0, false).generateNewWhiteSpace(options);
     }

@@ -16,13 +16,10 @@
 
 package com.intellij.openapi.vcs.changes.ui;
 
-import com.google.common.base.Predicate;
 import com.google.common.collect.Collections2;
 import com.intellij.ide.DeleteProvider;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.fileChooser.actions.VirtualFileDeleteProvider;
-import com.intellij.openapi.project.DumbModePermission;
-import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vcs.VcsShowConfirmationOption;
 import com.intellij.openapi.vcs.changes.actions.DeleteUnversionedFilesAction;
@@ -95,16 +92,6 @@ public class SelectFilesDialog extends AbstractSelectFilesDialog<VirtualFile> {
     return defaultGroup;
   }
 
-  @Override
-  public void show() {
-    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, new Runnable() {
-      @Override
-      public void run() {
-        SelectFilesDialog.super.show();
-      }
-    });
-  }
-
   public static class VirtualFileList extends ChangesTreeList<VirtualFile> {
 
     @Nullable private final DeleteProvider myDeleteProvider;
@@ -115,7 +102,7 @@ public class SelectFilesDialog extends AbstractSelectFilesDialog<VirtualFile> {
     }
 
     protected DefaultTreeModel buildTreeModel(final List<VirtualFile> changes, ChangeNodeDecorator changeNodeDecorator) {
-      return new TreeModelBuilder(myProject, isShowFlatten()).buildModelFromFiles(changes);
+      return TreeModelBuilder.buildFromVirtualFiles(myProject, isShowFlatten(), changes);
     }
 
     protected List<VirtualFile> getSelectedObjects(final ChangesBrowserNode node) {
@@ -142,12 +129,7 @@ public class SelectFilesDialog extends AbstractSelectFilesDialog<VirtualFile> {
     }
 
     public void refresh() {
-      setChangesToDisplay(new ArrayList<>(Collections2.filter(getIncludedChanges(), new Predicate<VirtualFile>() {
-        @Override
-        public boolean apply(@Nullable VirtualFile input) {
-          return input != null && input.isValid();
-        }
-      })));
+      setChangesToDisplay(new ArrayList<>(Collections2.filter(getIncludedChanges(), input -> input != null && input.isValid())));
     }
 
   }

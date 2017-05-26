@@ -16,21 +16,14 @@
 package org.jetbrains.plugins.groovy.lang.actions.generate
 
 import com.intellij.codeInsight.generation.*
-import com.intellij.openapi.application.Result
-import com.intellij.openapi.application.RunResult
-import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiFile
 import com.intellij.psi.impl.source.PostprocessReformattingAspect
 import com.intellij.testFramework.fixtures.LightCodeInsightFixtureTestCase
-import com.intellij.util.ui.UIUtil
-import org.jetbrains.annotations.NotNull
 import org.jetbrains.annotations.Nullable
 import org.jetbrains.plugins.groovy.actions.generate.constructors.GroovyGenerateConstructorHandler
 import org.jetbrains.plugins.groovy.util.TestUtils
-
 /**
  * @author peter
  */
@@ -373,32 +366,21 @@ class GrImportStatementStub {
   }
 
   private void generateGetter() {
-    new WriteCommandAction(project, PsiFile.EMPTY_ARRAY) {
-      protected void run(@NotNull Result result) throws Throwable {
-        new GenerateGetterHandler() {
-          @Nullable
-          protected ClassMember[] chooseMembers(ClassMember[] members, boolean allowEmptySelection, boolean copyJavadocCheckbox, Project project, Editor editor) {
-            return members
-          }
-        }.invoke(project, myFixture.editor, myFixture.file)
-        UIUtil.dispatchAllInvocationEvents()
-        PostprocessReformattingAspect.getInstance(project).doPostponedFormatting()
+    new GenerateGetterHandler() {
+      @Nullable
+      protected ClassMember[] chooseMembers(ClassMember[] members, boolean allowEmptySelection, boolean copyJavadocCheckbox, Project project, Editor editor) {
+        return members
       }
-    }.execute()
+    }.invoke(project, myFixture.editor, myFixture.file)
   }
 
   private void generateSetter() {
-    new WriteCommandAction(project, PsiFile.EMPTY_ARRAY) {
-      protected void run(@NotNull Result result) throws Throwable {
-        new GenerateSetterHandler() {
-          @Nullable
-          protected ClassMember[] chooseMembers(ClassMember[] members, boolean allowEmptySelection, boolean copyJavadocCheckbox, Project project, Editor editor) {
-            return members
-          }
-        }.invoke(project, myFixture.editor, myFixture.file)
-        PostprocessReformattingAspect.getInstance(project).doPostponedFormatting()
+    new GenerateSetterHandler() {
+      @Nullable
+      protected ClassMember[] chooseMembers(ClassMember[] members, boolean allowEmptySelection, boolean copyJavadocCheckbox, Project project, Editor editor) {
+        return members
       }
-    }.execute()
+    }.invoke(project, myFixture.editor, myFixture.file)
   }
 
   private void doConstructorTest(String before = null, String after = null) {
@@ -417,7 +399,7 @@ class GrImportStatementStub {
     }
   }
 
-  private RunResult generateConstructor(boolean javaHandler = false) {
+  private void generateConstructor(boolean javaHandler = false) {
     GenerateMembersHandlerBase handler
     if (javaHandler) {
       handler = new GenerateConstructorHandler() {
@@ -438,12 +420,8 @@ class GrImportStatementStub {
       }
     }
 
-    return new WriteCommandAction(project, new PsiFile[0]) {
-      protected void run(@NotNull Result result) throws Throwable {
-        handler.invoke(project, myFixture.editor, myFixture.file)
-        PostprocessReformattingAspect.getInstance(project).doPostponedFormatting()
-      }
-    }.execute()
+    handler.invoke(project, myFixture.editor, myFixture.file)
+    PostprocessReformattingAspect.getInstance(project).doPostponedFormatting()
   }
 
   final String basePath = TestUtils.testDataPath + "generate"

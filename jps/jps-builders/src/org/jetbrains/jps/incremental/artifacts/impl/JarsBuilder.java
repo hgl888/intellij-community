@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2012 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import com.intellij.util.ArrayUtil;
 import com.intellij.util.graph.CachingSemiGraph;
 import com.intellij.util.graph.DFSTBuilder;
 import com.intellij.util.graph.GraphGenerator;
+import com.intellij.util.graph.InboundSemiGraph;
 import com.intellij.util.io.ZipUtil;
 import gnu.trove.THashSet;
 import org.jetbrains.annotations.NonNls;
@@ -81,7 +82,7 @@ public class JarsBuilder {
       return false;
     }
 
-    myBuiltJars = new HashMap<JarInfo, File>();
+    myBuiltJars = new HashMap<>();
     try {
       for (JarInfo jar : sortedJars) {
         myContext.checkCanceled();
@@ -119,7 +120,7 @@ public class JarsBuilder {
 
   @Nullable
   private JarInfo[] sortJars() {
-    final DFSTBuilder<JarInfo> builder = new DFSTBuilder<JarInfo>(GraphGenerator.create(CachingSemiGraph.create(new JarsGraph())));
+    final DFSTBuilder<JarInfo> builder = new DFSTBuilder<>(GraphGenerator.generate(CachingSemiGraph.cache(new JarsGraph())));
     if (!builder.isAcyclic()) {
       final Pair<JarInfo, JarInfo> dependency = builder.getCircularDependency();
       String message = "Cannot build: circular dependency found between '" + dependency.getFirst().getPresentableDestination() +
@@ -147,11 +148,11 @@ public class JarsBuilder {
 
     FileUtil.createParentDirs(jarFile);
     final String targetJarPath = jar.getDestination().getOutputFilePath();
-    List<String> packedFilePaths = new ArrayList<String>();
+    List<String> packedFilePaths = new ArrayList<>();
     Manifest manifest = loadManifest(jar, packedFilePaths);
     final JarOutputStream jarOutputStream = createJarOutputStream(jarFile, manifest);
 
-    final THashSet<String> writtenPaths = new THashSet<String>();
+    final THashSet<String> writtenPaths = new THashSet<>();
     try {
       if (manifest != null) {
         writtenPaths.add(JarFile.MANIFEST_NAME);
@@ -383,13 +384,13 @@ public class JarsBuilder {
     output.closeEntry();
   }
 
-  private class JarsGraph implements GraphGenerator.SemiGraph<JarInfo> {
+  private class JarsGraph implements InboundSemiGraph<JarInfo> {
     public Collection<JarInfo> getNodes() {
       return myJarsToBuild;
     }
 
     public Iterator<JarInfo> getIn(final JarInfo n) {
-      Set<JarInfo> ins = new HashSet<JarInfo>();
+      Set<JarInfo> ins = new HashSet<>();
       final DestinationInfo destination = n.getDestination();
       if (destination instanceof JarDestinationInfo) {
         ins.add(((JarDestinationInfo)destination).getJarInfo());

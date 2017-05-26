@@ -16,7 +16,10 @@
 package com.intellij.notification.impl.ui;
 
 import com.intellij.notification.NotificationDisplayType;
-import com.intellij.notification.impl.*;
+import com.intellij.notification.impl.NotificationParentGroup;
+import com.intellij.notification.impl.NotificationParentGroupBean;
+import com.intellij.notification.impl.NotificationSettings;
+import com.intellij.notification.impl.NotificationsConfigurationImpl;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.ui.ComboBoxTableRenderer;
 import com.intellij.openapi.ui.StripeTable;
@@ -333,44 +336,35 @@ public class NotificationsConfigurablePanel extends JPanel implements Disposable
 
       List<DefaultMutableTreeNode> rootChildren = new ArrayList<>();
 
-      if (NotificationsManagerImpl.newEnabled()) {
-        Map<NotificationParentGroupBean, List<DefaultMutableTreeNode>> parentChildrenTable = new HashMap<>();
-        for (NotificationSettings setting : NotificationsConfigurationImpl.getInstanceImpl().getAllSettings()) {
-          SettingsWrapper wrapper = new SettingsWrapper(setting);
-          mySettings.add(wrapper);
+      Map<NotificationParentGroupBean, List<DefaultMutableTreeNode>> parentChildrenTable = new HashMap<>();
+      for (NotificationSettings setting : NotificationsConfigurationImpl.getInstanceImpl().getAllSettings()) {
+        SettingsWrapper wrapper = new SettingsWrapper(setting);
+        mySettings.add(wrapper);
 
-          NotificationParentGroupBean parentGroup = NotificationParentGroup.findParent(setting);
-          DefaultMutableTreeNode treeNode = new DefaultMutableTreeNode(wrapper, false);
-          if (parentGroup == null) {
-            rootChildren.add(treeNode);
-          }
-          else {
-            wrapper.myTitle = NotificationParentGroup.getReplaceTitle(wrapper.getGroupId());
-            if (wrapper.myTitle == null && parentGroup.titlePrefix != null) {
-              wrapper.myTitle = StringUtil.substringAfter(wrapper.getGroupId(), parentGroup.titlePrefix);
-            }
-
-            List<DefaultMutableTreeNode> children = parentChildrenTable.get(parentGroup);
-            if (children == null) {
-              parentChildrenTable.put(parentGroup, children = new ArrayList<>());
-            }
-            children.add(treeNode);
-          }
+        NotificationParentGroupBean parentGroup = NotificationParentGroup.findParent(setting);
+        DefaultMutableTreeNode treeNode = new DefaultMutableTreeNode(wrapper, false);
+        if (parentGroup == null) {
+          rootChildren.add(treeNode);
         }
-
-        for (NotificationParentGroupBean parentGroup : NotificationParentGroup.getParents()) {
-          if (parentGroup.parentId == null) {
-            DefaultMutableTreeNode node = new DefaultMutableTreeNode(parentGroup);
-            addParentGroup(parentGroup, node, parentChildrenTable);
-            rootChildren.add(node);
+        else {
+          wrapper.myTitle = NotificationParentGroup.getReplaceTitle(wrapper.getGroupId());
+          if (wrapper.myTitle == null && parentGroup.titlePrefix != null) {
+            wrapper.myTitle = StringUtil.substringAfter(wrapper.getGroupId(), parentGroup.titlePrefix);
           }
+
+          List<DefaultMutableTreeNode> children = parentChildrenTable.get(parentGroup);
+          if (children == null) {
+            parentChildrenTable.put(parentGroup, children = new ArrayList<>());
+          }
+          children.add(treeNode);
         }
       }
-      else {
-        for (NotificationSettings setting : NotificationsConfigurationImpl.getInstanceImpl().getAllSettings()) {
-          SettingsWrapper wrapper = new SettingsWrapper(setting);
-          mySettings.add(wrapper);
-          rootChildren.add(new DefaultMutableTreeNode(wrapper, false));
+
+      for (NotificationParentGroupBean parentGroup : NotificationParentGroup.getParents()) {
+        if (parentGroup.parentId == null) {
+          DefaultMutableTreeNode node = new DefaultMutableTreeNode(parentGroup);
+          addParentGroup(parentGroup, node, parentChildrenTable);
+          rootChildren.add(node);
         }
       }
 

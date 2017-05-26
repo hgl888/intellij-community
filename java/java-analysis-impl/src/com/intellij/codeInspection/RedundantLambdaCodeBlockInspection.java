@@ -15,7 +15,6 @@
  */
 package com.intellij.codeInspection;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.daemon.GroupNames;
 import com.intellij.codeInsight.intention.HighPriorityAction;
 import com.intellij.openapi.diagnostic.Logger;
@@ -28,11 +27,8 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
 
-/**
- * User: anna
- */
 public class RedundantLambdaCodeBlockInspection extends BaseJavaBatchLocalInspectionTool {
-  public static final Logger LOG = Logger.getInstance("#" + RedundantLambdaCodeBlockInspection.class.getName());
+  public static final Logger LOG = Logger.getInstance(RedundantLambdaCodeBlockInspection.class);
 
   @Nls
   @NotNull
@@ -134,7 +130,6 @@ public class RedundantLambdaCodeBlockInspection extends BaseJavaBatchLocalInspec
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
       final PsiElement element = descriptor.getPsiElement();
       if (element != null) {
-        if (!FileModificationService.getInstance().preparePsiElementForWrite(element)) return;
         final PsiLambdaExpression lambdaExpression = PsiTreeUtil.getParentOfType(element, PsiLambdaExpression.class);
         if (lambdaExpression != null) {
           final PsiElement body = lambdaExpression.getBody();

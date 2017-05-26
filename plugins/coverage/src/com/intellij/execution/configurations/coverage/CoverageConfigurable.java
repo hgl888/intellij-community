@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import com.intellij.openapi.options.SettingsEditor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.PackageChooser;
 import com.intellij.openapi.ui.VerticalFlowLayout;
+import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiPackage;
 import com.intellij.ui.IdeBorderFactory;
@@ -63,7 +64,7 @@ import java.util.List;
  * @author ven
  */
 public class CoverageConfigurable extends SettingsEditor<RunConfigurationBase> {
-  private static final Logger LOG = Logger.getInstance("#" + CoverageConfigurable.class.getName());
+  private static final Logger LOG = Logger.getInstance(CoverageConfigurable.class);
 
   private final JreVersionDetector myVersionDetector = new JreVersionDetector();
   Project myProject;
@@ -102,7 +103,9 @@ public class CoverageConfigurable extends SettingsEditor<RunConfigurationBase> {
           int row = myTableModel.getRowCount() - 1;
           myTable.getSelectionModel().setSelectionInterval(row, row);
           myTable.scrollRectToVisible(myTable.getCellRect(row, 0, true));
-          myTable.requestFocus();
+          IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> {
+            IdeFocusManager.getGlobalInstance().requestFocus(myTable, true);
+          });
         }
       }
     }
@@ -122,7 +125,7 @@ public class CoverageConfigurable extends SettingsEditor<RunConfigurationBase> {
     myProject = config.getProject();
   }
 
-  protected void resetEditorFrom(final RunConfigurationBase runConfiguration) {
+  protected void resetEditorFrom(@NotNull final RunConfigurationBase runConfiguration) {
     final boolean isJre50;
     if (runConfiguration instanceof CommonJavaRunConfigurationParameters && myVersionDetector.isJre50Configured((CommonJavaRunConfigurationParameters)runConfiguration)) {
       isJre50 = true;
@@ -171,7 +174,7 @@ public class CoverageConfigurable extends SettingsEditor<RunConfigurationBase> {
     return CoverageEnabledConfiguration.getOrCreate(myConfig).canHavePerTestCoverage();
   }
 
-  protected void applyEditorTo(final RunConfigurationBase runConfiguration) throws ConfigurationException {
+  protected void applyEditorTo(@NotNull final RunConfigurationBase runConfiguration) throws ConfigurationException {
     final JavaCoverageEnabledConfiguration configuration = (JavaCoverageEnabledConfiguration)CoverageEnabledConfiguration.getOrCreate(runConfiguration);
     configuration.setCoveragePatterns(myClassFilterEditor.getFilters());
     configuration.setCoverageRunner(getSelectedRunner());

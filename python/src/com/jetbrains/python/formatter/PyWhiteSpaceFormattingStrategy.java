@@ -22,7 +22,6 @@ import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.formatter.StaticSymbolWhiteSpaceDefinitionStrategy;
 import com.jetbrains.python.editor.PythonEnterHandler;
 import gnu.trove.TIntIntHashMap;
-import gnu.trove.TIntProcedure;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -67,7 +66,7 @@ public class PyWhiteSpaceFormattingStrategy extends StaticSymbolWhiteSpaceDefini
    * @param endOffset         end offset to use with the given text (exclusive)
    * @param codeStyleSettings the code style settings
    * @param nodeAfter
-   * @return                  symbols to use for replacing <code>[startOffset; endOffset)</code> sub-sequence of the given text
+   * @return                  symbols to use for replacing {@code [startOffset; endOffset)} sub-sequence of the given text
    */
   @NotNull
   @Override
@@ -89,15 +88,12 @@ public class PyWhiteSpaceFormattingStrategy extends StaticSymbolWhiteSpaceDefini
 
     final TIntIntHashMap newBackSlashes = countBackSlashes(whiteSpaceText, 0, whiteSpaceText.length());
     final AtomicBoolean continueProcessing = new AtomicBoolean();
-    initialBackSlashes.forEachKey(new TIntProcedure() {
-      @Override
-      public boolean execute(int key) {
-        if (!newBackSlashes.containsKey(key)) {
-          continueProcessing.set(true);
-          return false;
-        }
-        return true;
+    initialBackSlashes.forEachKey(key -> {
+      if (!newBackSlashes.containsKey(key)) {
+        continueProcessing.set(true);
+        return false;
       }
+      return true;
     });
     if (!continueProcessing.get()) {
       return whiteSpaceText;

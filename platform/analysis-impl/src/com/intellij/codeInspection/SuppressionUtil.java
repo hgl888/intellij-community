@@ -99,12 +99,8 @@ public class SuppressionUtil extends SuppressionUtilCore {
   public static boolean isSuppressedInStatement(@NotNull final PsiElement place,
                                                 @NotNull final String toolId,
                                                 @NotNull final Class<? extends PsiElement> statementClass) {
-    return ApplicationManager.getApplication().runReadAction(new NullableComputable<PsiElement>() {
-      @Override
-      public PsiElement compute() {
-        return getStatementToolSuppressedIn(place, toolId, statementClass);
-      }
-    }) != null;
+    return ApplicationManager.getApplication().runReadAction(
+      (NullableComputable<PsiElement>)() -> getStatementToolSuppressedIn(place, toolId, statementClass)) != null;
   }
 
   @NotNull
@@ -194,6 +190,10 @@ public class SuppressionUtil extends SuppressionUtilCore {
   }
 
   public static boolean inspectionResultSuppressed(@NotNull PsiElement place, @NotNull LocalInspectionTool tool) {
+    return inspectionResultSuppressed(place, (InspectionProfileEntry)tool);
+  }
+
+  public static boolean inspectionResultSuppressed(@NotNull PsiElement place, @NotNull InspectionProfileEntry tool) {
     return tool.isSuppressedFor(place);
   }
 }

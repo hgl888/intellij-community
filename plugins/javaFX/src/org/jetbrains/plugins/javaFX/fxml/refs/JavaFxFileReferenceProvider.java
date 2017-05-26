@@ -12,10 +12,6 @@ import org.jetbrains.annotations.NotNull;
 import java.util.Collection;
 import java.util.Collections;
 
-/**
-* User: anna
-* Date: 4/3/13
-*/
 public class JavaFxFileReferenceProvider extends PsiReferenceProvider {
 
   private final String myAcceptedExtension;
@@ -48,7 +44,7 @@ public class JavaFxFileReferenceProvider extends PsiReferenceProvider {
         if (startsWithSlash || !directory.isValid()) {
           return super.getDefaultContexts();
         }
-        return Collections.<PsiFileSystemItem>singletonList(directory);
+        return Collections.singletonList(directory);
       }
 
       @Override

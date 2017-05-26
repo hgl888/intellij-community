@@ -61,7 +61,7 @@ import java.util.List;
  * @author yole
  */
 public class GenerateBinaryStubsFix implements LocalQuickFix {
-  private static final Logger LOG = Logger.getInstance("#" + GenerateBinaryStubsFix.class.getName());
+  private static final Logger LOG = Logger.getInstance(GenerateBinaryStubsFix.class);
 
   private final String myQualifiedName;
   private final Sdk mySdk;
@@ -108,6 +108,11 @@ public class GenerateBinaryStubsFix implements LocalQuickFix {
   @NotNull
   public String getFamilyName() {
     return "Generate binary stubs";
+  }
+
+  @Override
+  public boolean startInWriteAction() {
+    return false;
   }
 
   @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,13 +25,6 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-/**
- * Created by IntelliJ IDEA.
- * User: ik
- * Date: 10.06.2003
- * Time: 16:36:05
- * To change this template use Options | File Templates.
- */
 public class JavaVariableConflictResolver implements PsiConflictResolver{
   @Override
   public CandidateInfo resolveConflict(@NotNull List<CandidateInfo> conflicts){
@@ -69,7 +62,7 @@ public class JavaVariableConflictResolver implements PsiConflictResolver{
         Boolean oldClassIsInheritor = null;
         if (newClass != null && oldClass != null) {
           if (newClass.isInheritor(oldClass, true)) {
-            if (scope != null &&
+            if (scope instanceof PsiClass &&
                 (scope.equals(oldClass) ||
                 scope.equals(newClass) ||
                 !((PsiClass)scope).isInheritorDeep(oldClass, newClass))) {

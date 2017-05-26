@@ -17,7 +17,6 @@ package com.intellij.util.io;
 
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.testFramework.PlatformTestUtil;
-import com.intellij.util.ThrowableRunnable;
 import com.intellij.util.containers.IntObjectCache;
 import junit.framework.TestCase;
 
@@ -50,6 +49,7 @@ public class StringEnumeratorTest extends TestCase {
   @Override
   protected void tearDown() throws Exception {
     myEnumerator.close();
+    myEnumerator = null;
     IOUtil.deleteAllFilesStartingWith(myFile);
     assertTrue(!myFile.exists());
     super.tearDown();
@@ -170,7 +170,7 @@ public class StringEnumeratorTest extends TestCase {
       }
       stringCache.removeDeletedPairsListener(listener);
       stringCache.removeAll();
-    }).cpuBound().useLegacyScaling().assertTiming();
+    }).useLegacyScaling().assertTiming();
     myEnumerator.close();
     System.out.printf("File size = %d bytes\n", myFile.length());
   }

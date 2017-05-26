@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@ package com.intellij.ide.plugins;
 
 import com.intellij.CommonBundle;
 import com.intellij.icons.AllIcons;
+import com.intellij.ide.CopyProvider;
+import com.intellij.ide.DataManager;
 import com.intellij.ide.actions.ShowSettingsUtilImpl;
 import com.intellij.ide.startup.StartupActionScriptManager;
 import com.intellij.ide.ui.search.ActionFromOptionDescriptorProvider;
@@ -27,6 +29,7 @@ import com.intellij.openapi.actionSystem.ex.ComboBoxAction;
 import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.fileChooser.FileChooser;
 import com.intellij.openapi.fileChooser.FileChooserDescriptor;
+import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.options.ex.SingleConfigurableEditor;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.DumbAwareAction;
@@ -46,6 +49,7 @@ import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.Consumer;
 import com.intellij.util.ui.StatusText;
+import com.intellij.util.ui.TextTransferable;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -68,6 +72,7 @@ public class InstalledPluginsManagerMain extends PluginManagerMain {
   private static final String PLUGINS_PRESELECTION_PATH = "plugins.preselection.path";
 
   private static final InstalledPluginsState ourState = InstalledPluginsState.getInstance();
+  private static final String INSTALL_PLUGIN_FROM_DISK_BUTTON_LABEL = "Install plugin from disk...";
 
   public InstalledPluginsManagerMain(PluginManagerUISettings uiSettings) {
     super(uiSettings);
@@ -85,7 +90,7 @@ public class InstalledPluginsManagerMain extends PluginManagerMain {
     browse.addActionListener(new BrowseRepoListener(null));
     myActionsPanel.add(browse);
 
-    JButton installFromDisk = new JButton("Install plugin from disk...");
+    JButton installFromDisk = new JButton(INSTALL_PLUGIN_FROM_DISK_BUTTON_LABEL);
     installFromDisk.setMnemonic('d');
     installFromDisk.addActionListener(new ActionListener() {
       @Override
@@ -153,7 +158,7 @@ public class InstalledPluginsManagerMain extends PluginManagerMain {
         PluginInstaller.install(file, file.getName(), false, pluginDescriptor);
         ourState.onPluginInstall(pluginDescriptor);
         checkInstalledPluginDependencies(model, pluginDescriptor, parent);
-        callback.consume(pair(file, (IdeaPluginDescriptor)pluginDescriptor));
+        callback.consume(pair(file, pluginDescriptor));
       }
       catch (IOException ex) {
         MessagesEx.showErrorDialog(parent, ex.getMessage(), CommonBundle.getErrorTitle());
@@ -251,8 +256,43 @@ public class InstalledPluginsManagerMain extends PluginManagerMain {
         pluginTable.repaint();
       }
     }, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), JComponent.WHEN_FOCUSED);
+    registerCopyProvider(pluginTable);
     pluginTable.setExpandableItemsEnabled(false);
     return installedScrollPane;
+  }
+
+  private static void registerCopyProvider(PluginTable table) {
+    CopyProvider copyProvider = new CopyProvider() {
+      @Override
+      public void performCopy(@NotNull DataContext dataContext) {
+        StringBuilder sb = new StringBuilder();
+        for (IdeaPluginDescriptor pluginDescriptor : table.getSelectedObjects()) {
+          sb.append(pluginDescriptor.getName()).append(" (").append(pluginDescriptor.getVersion()).append(")\n");
+        }
+        CopyPasteManager.getInstance().setContents(new TextTransferable(sb.substring(0, sb.length() - 1)));
+      }
+
+      @Override
+      public boolean isCopyEnabled(@NotNull DataContext dataContext) {
+        return table.getSelectedRowCount() > 0;
+      }
+
+      @Override
+      public boolean isCopyVisible(@NotNull DataContext dataContext) {
+        return true;
+      }
+    };
+
+    DataManager.registerDataProvider(table, new DataProvider() {
+      @Nullable
+      @Override
+      public Object getData(String dataId) {
+        if (PlatformDataKeys.COPY_PROVIDER.is(dataId)) {
+          return copyProvider;
+        }
+        return null;
+      }
+    });
   }
 
   @Override
@@ -473,7 +513,7 @@ public class InstalledPluginsManagerMain extends PluginManagerMain {
     @Nullable
     @Override
     public AnAction provide(@NotNull OptionDescription description) {
-      String name = "Install plugin from disk...";
+      String name = INSTALL_PLUGIN_FROM_DISK_BUTTON_LABEL;
       if (name.equals(description.getHit()) && "preferences.pluginManager".equals(description.getConfigurableId())) {
         return new InstalledPluginsManagerMain.InstallFromDiskAction(name);
       }

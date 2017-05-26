@@ -1,6 +1,9 @@
 """Skeletons for Python 3 built-in symbols."""
 
 
+import os
+
+
 def abs(number):
     """Return the absolute value of the argument.
 
@@ -186,31 +189,55 @@ def locals():
     return {}
 
 
-def max(*args, key=None, default=None):
-    """Return the largest item in an iterable or the largest of two or more
-    arguments.
+class map(object):
+    def __init__(self, function, sequence, *sequence_1):
+        """Return an iterable of the results of applying the function to the items of
+        the argument sequence(s).
 
-    :rtype: object | unknown
-    """
-    pass
+        :type function: None | (T) -> V
+        :type sequence: collections.Iterable[T]
+        :rtype: map[T, V]
+        """
+        pass
 
+    def __iter__(self):
+        """
+        :rtype: collections.Iterator[V]
+        """
+        return self
 
-def map(function, sequence, *sequence_1):
-    """Return a list of the results of applying the function to the items of
-    the argument sequence(s).
-
-    :type function: ((T) -> V) | None
-    :type sequence: collections.Iterable[T]
-    :rtype: list[V] | bytes | str
-    """
-    pass
-
+    def __next__(self):
+        """
+        :rtype: V
+        """
+        pass
 
 def min(*args, key=None, default=None):
     """Return the smallest item in an iterable or the smallest of two or more
     arguments.
 
-    :rtype: object | unknown
+    :type args: T
+    :rtype: T
+    """
+    pass
+
+
+def max(*args, key=None, default=None):
+    """Return the largest item in an iterable or the largest of two or more
+    arguments.
+
+    :type args: T
+    :rtype: T
+    """
+    pass
+
+
+def sum(iterable, start=0):
+    """Sums start and the items of an iterable from left to right and returns
+    the total.
+
+    :type iterable: collections.Iterable[T]
+    :rtype: T
     """
     pass
 
@@ -237,7 +264,7 @@ def open(name, mode='r', buffering=-1, encoding=None, errors=None, newline=None,
          closefd=None, opener=None):
     """Open a file, returns a file object.
 
-    :type name: str
+    :type name: str | os.PathLike
     :type mode: str
     :type buffering: numbers.Integral
     :type encoding: str | None
@@ -793,7 +820,7 @@ class float(object):
         return 0.0
 
     @staticmethod
-    def fromhex(cls, string):
+    def fromhex(string):
         """Create a floating-point number from a hexadecimal string.
 
         :type string: str
@@ -2561,3 +2588,11 @@ class __method(object):
     def __init__(self):
         self.__func__ = None
         self.__self__ = None
+
+
+def input(prompt=None):
+    """
+    :type prompt: Any
+    :rtype: str
+    """
+    pass

@@ -18,6 +18,7 @@ package org.intellij.lang.xpath.xslt.run;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.LangDataKeys;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileChooser.FileChooserDescriptor;
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
@@ -38,7 +39,6 @@ import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.TextComponentAccessor;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
 import com.intellij.openapi.util.Computable;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -120,11 +120,9 @@ class XsltRunSettingsEditor extends SettingsEditor<XsltRunConfiguration> {
           if (file.isDirectory()) return true;
           if (!super.isFileVisible(file, showHiddenFiles)) return false;
 
-          return ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {
-            public Boolean compute() {
-              final PsiFile psiFile = psiManager.findFile(file);
-              return psiFile != null && XsltSupport.isXsltFile(psiFile);
-            }
+          return ReadAction.compute(() -> {
+            final PsiFile psiFile = psiManager.findFile(file);
+            return psiFile != null && XsltSupport.isXsltFile(psiFile);
           });
         }
       };
@@ -596,11 +594,11 @@ class XsltRunSettingsEditor extends SettingsEditor<XsltRunConfiguration> {
     myProject = project;
   }
 
-  protected void resetEditorFrom(XsltRunConfiguration s) {
+  protected void resetEditorFrom(@NotNull XsltRunConfiguration s) {
     myEditor.resetFrom(s);
   }
 
-  protected void applyEditorTo(XsltRunConfiguration s) throws ConfigurationException {
+  protected void applyEditorTo(@NotNull XsltRunConfiguration s) throws ConfigurationException {
     myEditor.applyTo(s);
   }
 

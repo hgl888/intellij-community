@@ -46,6 +46,16 @@ public class PyConvertToFStringIntentionTest extends PyIntentionTestCase {
   public void testPercentOperatorDynamicPrecision() {
     doNegativeTest();
   }
+  
+  // PY-21243
+  public void testPercentOperatorFallbackResolveResultForNamedChunk() {
+    doNegativeTest();
+  }
+
+  // PY-21243
+  public void testPercentOperatorFallbackResolveResultForPositionalChunk() {
+    doNegativeTest();
+  }
 
   public void testPercentOperatorSingleExpression() {
     doTest();
@@ -94,11 +104,27 @@ public class PyConvertToFStringIntentionTest extends PyIntentionTestCase {
   public void testFormatMethodItemAccess() {
     doTest();
   }
-
+  
+  // PY-21245
   public void testFormatMethodIndexContainsHostAlternativeQuote() {
     doTest();
   }
   
+  // PY-21245
+  public void testFormatMethodIndexContainsQuoteOfMultilineHost() {
+    doTest();    
+  }
+  
+  // PY-21245
+  public void testFormatMethodIndexContainsAlternativeQuoteOfMultilineHost() {
+    doTest();    
+  }
+
+  // PY-21245
+  public void testFormatMethodIndexContainsBothTypesOfQuotesInsideMultilineHost() {
+    doTest();
+  }
+
   public void testFormatMethodIndexContainsBackslash() {
     doTest();
   }
@@ -130,6 +156,26 @@ public class PyConvertToFStringIntentionTest extends PyIntentionTestCase {
   
   // PY-21244
   public void testFormatMethodNestedFields2() {
+    doTest();
+  }
+
+  // PY-21244
+  public void testFormatMethodNestedFields3() {
+    doTest();
+  }
+
+  // PY-21244
+  public void testFormatMethodParentFieldUnresolved() {
+    doNegativeTest();
+  }
+
+  // PY-21246
+  public void testFormatMethodWrapExpressionsInParentheses() {
+    doTest();
+  }
+
+  // PY-21246
+  public void testPercentOperatorWrapLambdaInParentheses() {
     doTest();
   }
 }

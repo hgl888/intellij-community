@@ -30,7 +30,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 
 /**
- * Function declaration in source (the <code>def</code> and everything within).
+ * Function declaration in source (the {@code def} and everything within).
  *
  * @author yole
  */
@@ -39,7 +39,7 @@ public interface PyFunction extends PsiNamedElement, StubBasedPsiElement<PyFunct
                                     PyPossibleClassMember, PyTypeCommentOwner, PyAnnotationOwner {
 
   PyFunction[] EMPTY_ARRAY = new PyFunction[0];
-  ArrayFactory<PyFunction> ARRAY_FACTORY = count -> new PyFunction[count];
+  ArrayFactory<PyFunction> ARRAY_FACTORY = count -> count == 0 ? EMPTY_ARRAY : new PyFunction[count];
 
   /**
    * Returns the AST node for the function name identifier.
@@ -71,6 +71,11 @@ public interface PyFunction extends PsiNamedElement, StubBasedPsiElement<PyFunct
    */
   @Nullable
   Modifier getModifier();
+
+  /**
+   * Checks whether the function contains a yield expression in its body.
+   */
+  boolean isGenerator();
 
   boolean isAsync();
 

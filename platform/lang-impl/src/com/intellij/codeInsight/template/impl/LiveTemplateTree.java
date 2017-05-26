@@ -22,9 +22,11 @@ import com.intellij.openapi.actionSystem.DataProvider;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.util.JDOMUtil;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.CheckboxTree;
 import com.intellij.ui.CheckedTreeNode;
+import com.intellij.ui.SpeedSearchComparator;
 import com.intellij.ui.TreeSpeedSearch;
 import com.intellij.util.JdomKt;
 import com.intellij.util.SystemProperties;
@@ -36,6 +38,7 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.tree.DefaultMutableTreeNode;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
+import java.util.Collections;
 import java.util.Set;
 
 /**
@@ -72,7 +75,7 @@ class LiveTemplateTree extends CheckboxTree implements DataProvider, CopyProvide
                template.getTemplateText();
       }
       return "";
-    }, true);
+    }, true).setComparator(new SubstringSpeedSearchComparator());
   }
 
   @Nullable
@@ -88,10 +91,11 @@ class LiveTemplateTree extends CheckboxTree implements DataProvider, CopyProvide
   public void performCopy(@NotNull DataContext dataContext) {
     final Set<TemplateImpl> templates = myConfigurable.getSelectedTemplates().keySet();
 
-
+    TemplateSettings templateSettings = TemplateSettings.getInstance();
     CopyPasteManager.getInstance().setContents(
       new StringSelection(StringUtil.join(templates,
-                                          template -> JDOMUtil.writeElement(TemplateSettings.serializeTemplate(template)),
+                                          template -> JDOMUtil.writeElement(
+                                            TemplateSettings.serializeTemplate(template, templateSettings.getDefaultTemplate(template), TemplateContext.getIdToType())),
                                           SystemProperties.getLineSeparator())));
     
   }
@@ -140,6 +144,20 @@ class LiveTemplateTree extends CheckboxTree implements DataProvider, CopyProvide
       }
     }
     catch (Exception ignore) {
+    }
+  }
+
+  private static class SubstringSpeedSearchComparator extends SpeedSearchComparator {
+    @Override
+    public int matchingDegree(String pattern, String text) {
+      return matchingFragments(pattern, text) != null ? 1 : 0;
+    }
+
+    @Nullable
+    @Override
+    public Iterable<TextRange> matchingFragments(@NotNull String pattern, @NotNull String text) {
+      int index = StringUtil.indexOfIgnoreCase(text, pattern, 0);
+      return index >= 0 ? Collections.singleton(TextRange.from(index, pattern.length())) : null;
     }
   }
 }

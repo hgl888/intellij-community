@@ -19,9 +19,6 @@ import com.intellij.openapi.actionSystem.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
-* User: anna
-*/
 public class CustomisedActionGroup extends ActionGroup {
   private boolean myForceUpdate;
   private final ActionGroup myGroup;
@@ -56,6 +53,11 @@ public class CustomisedActionGroup extends ActionGroup {
       }
       return myChildren;
     }
+  }
+
+  @Override
+  public boolean isPopup() {
+    return myGroup.isPopup();
   }
 
   public void update(AnActionEvent e) {

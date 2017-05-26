@@ -14,18 +14,11 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: mike
- * Date: Aug 26, 2002
- * Time: 2:33:58 PM
- * To change template for new class use
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.codeInsight.intention.impl;
 
 import com.intellij.codeInsight.CodeInsightBundle;
 import com.intellij.codeInsight.CodeInsightUtil;
+import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.daemon.impl.analysis.HighlightNamesUtil;
 import com.intellij.codeInsight.daemon.impl.quickfix.CreateClassKind;
 import com.intellij.codeInsight.daemon.impl.quickfix.CreateConstructorMatchingSuperFix;
@@ -40,6 +33,7 @@ import com.intellij.ide.scratch.ScratchFileType;
 import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.Result;
+import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.CaretModel;
@@ -122,6 +116,10 @@ public class CreateSubclassAction extends BaseIntentionAction {
       }
     }
 
+    if (shouldCreateInnerClass(psiClass) && !file.getManager().isInProject(file)) {
+      return false;
+    }
+
     myText = getTitle(psiClass);
     return true;
   }
@@ -144,11 +142,16 @@ public class CreateSubclassAction extends BaseIntentionAction {
     final PsiClass psiClass = PsiTreeUtil.getParentOfType(element, PsiClass.class);
 
     LOG.assertTrue(psiClass != null);
-    if (psiClass.hasModifierProperty(PsiModifier.PRIVATE) && psiClass.getContainingClass() != null) {
+    if (shouldCreateInnerClass(psiClass)) {
+      if (!FileModificationService.getInstance().prepareFileForWrite(file)) return;
       createInnerClass(psiClass);
       return;
     }
     createTopLevelClass(psiClass);
+  }
+
+  private boolean shouldCreateInnerClass(PsiClass psiClass) {
+    return psiClass.hasModifierProperty(PsiModifier.PRIVATE) && psiClass.getContainingClass() != null;
   }
 
   public static void createInnerClass(final PsiClass aClass) {
@@ -202,6 +205,10 @@ public class CreateSubclassAction extends BaseIntentionAction {
   }
 
   public static PsiClass createSubclass(final PsiClass psiClass, final PsiDirectory targetDirectory, final String className) {
+    return createSubclass(psiClass, targetDirectory, className, true);
+  }
+
+  public static PsiClass createSubclass(final PsiClass psiClass, final PsiDirectory targetDirectory, final String className, boolean showChooser) {
     final Project project = psiClass.getProject();
     final PsiClass[] targetClass = new PsiClass[1];
     new WriteCommandAction(project, getTitle(psiClass), getTitle(psiClass)) {
@@ -230,7 +237,7 @@ public class CreateSubclassAction extends BaseIntentionAction {
       final Editor editor = CodeInsightUtil.positionCursorAtLBrace(project, targetClass[0].getContainingFile(), targetClass[0]);
       if (editor == null) return targetClass[0];
 
-      chooseAndImplement(psiClass, project, targetClass[0], editor);
+      chooseAndImplement(psiClass, project, targetClass[0], editor, showChooser);
     }
     return targetClass[0];
   }
@@ -290,7 +297,9 @@ public class CreateSubclassAction extends BaseIntentionAction {
                 final PsiElement psiElement = containingFile.findElementAt(startClassOffset.getStartOffset());
                 final PsiClass aTargetClass = PsiTreeUtil.getParentOfType(psiElement, PsiClass.class);
                 LOG.assertTrue(aTargetClass != null, psiElement);
-                chooseAndImplement(psiClass, project, aTargetClass, editor);
+                if (!brokenOff) {
+                  TransactionGuard.getInstance().submitTransactionAndWait(() -> chooseAndImplement(psiClass, project, aTargetClass, editor));
+                }
               }
               finally {
                 startClassOffset.dispose();
@@ -312,6 +321,10 @@ public class CreateSubclassAction extends BaseIntentionAction {
   }
 
   protected static void chooseAndImplement(PsiClass psiClass, Project project, @NotNull PsiClass targetClass, Editor editor) {
+    chooseAndImplement(psiClass, project, targetClass, editor, true);
+  }
+
+  protected static void chooseAndImplement(PsiClass psiClass, Project project, @NotNull PsiClass targetClass, Editor editor, boolean showChooser) {
     boolean hasNonTrivialConstructor = false;
     final PsiMethod[] constructors = psiClass.getConstructors();
     for (PsiMethod constructor : constructors) {
@@ -335,7 +348,7 @@ public class CreateSubclassAction extends BaseIntentionAction {
       editor.getCaretModel().moveToOffset(offset);
     }
 
-    OverrideImplementUtil.chooseAndImplementMethods(project, editor, targetClass);
+    if (showChooser) OverrideImplementUtil.chooseAndImplementMethods(project, editor, targetClass);
   }
 
   @Override

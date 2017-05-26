@@ -15,7 +15,6 @@
  */
 package com.intellij.openapi.progress;
 
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.CachedSingletonsRegistry;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.project.Project;
@@ -37,13 +36,7 @@ public abstract class ProgressManager extends ProgressIndicatorProvider {
   public static ProgressManager getInstance() {
     ProgressManager result = ourInstance;
     if (result == null) {
-      result = ServiceManager.getService(ProgressManager.class);
-      if (result == null) {
-        throw new AssertionError("ProgressManager is null; " + ApplicationManager.getApplication());
-      }
-      else {
-        ourInstance = result;
-      }
+      ourInstance = result = ServiceManager.getService(ProgressManager.class);
     }
     return result;
   }
@@ -90,6 +83,10 @@ public abstract class ProgressManager extends ProgressIndicatorProvider {
 
   public abstract void executeNonCancelableSection(@NotNull Runnable runnable);
 
+  /**
+   * to be removed in 2017.2
+   */
+  @Deprecated
   public abstract void setCancelButtonText(String cancelButtonText);
 
   /**
@@ -141,9 +138,9 @@ public abstract class ProgressManager extends ProgressIndicatorProvider {
                                                               @Nullable JComponent parentComponent);
 
   /**
-   * Runs a specified <code>process</code> in a background thread and shows a progress dialog, which can be made non-modal by pressing
-   * background button. Upon successful termination of the process a <code>successRunnable</code> will be called in Swing UI thread and
-   * <code>canceledRunnable</code> will be called if terminated on behalf of the user by pressing either cancel button, while running in
+   * Runs a specified {@code process} in a background thread and shows a progress dialog, which can be made non-modal by pressing
+   * background button. Upon successful termination of the process a {@code successRunnable} will be called in Swing UI thread and
+   * {@code canceledRunnable} will be called if terminated on behalf of the user by pressing either cancel button, while running in
    * a modal state or stop button if running in background.
    *
    * @param project          the project in the context of which the operation is executed.
@@ -159,9 +156,9 @@ public abstract class ProgressManager extends ProgressIndicatorProvider {
                                                             @Nullable Runnable successRunnable,
                                                             @Nullable Runnable canceledRunnable);
   /**
-   * Runs a specified <code>process</code> in a background thread and shows a progress dialog, which can be made non-modal by pressing
-   * background button. Upon successful termination of the process a <code>successRunnable</code> will be called in Swing UI thread and
-   * <code>canceledRunnable</code> will be called if terminated on behalf of the user by pressing either cancel button, while running in
+   * Runs a specified {@code process} in a background thread and shows a progress dialog, which can be made non-modal by pressing
+   * background button. Upon successful termination of the process a {@code successRunnable} will be called in Swing UI thread and
+   * {@code canceledRunnable} will be called if terminated on behalf of the user by pressing either cancel button, while running in
    * a modal state or stop button if running in background.
    *
    * @param project          the project in the context of which the operation is executed.
@@ -180,7 +177,7 @@ public abstract class ProgressManager extends ProgressIndicatorProvider {
                                                             @NotNull PerformInBackgroundOption option);
 
   /**
-   * Runs a specified <code>task</code> in either background/foreground thread and shows a progress dialog.
+   * Runs a specified {@code task} in either background/foreground thread and shows a progress dialog.
    *
    * @param task task to run (either {@link Task.Modal} or {@link Task.Backgroundable}).
    */
@@ -204,7 +201,10 @@ public abstract class ProgressManager extends ProgressIndicatorProvider {
 
   @SuppressWarnings("MethodOverridesStaticMethodOfSuperclass")
   public static void checkCanceled() throws ProcessCanceledException {
-    getInstance().doCheckCanceled();
+    ProgressManager instance = ourInstance;
+    if (instance != null) {
+      instance.doCheckCanceled();
+    }
   }
 
   /**
@@ -215,10 +215,30 @@ public abstract class ProgressManager extends ProgressIndicatorProvider {
   public static void assertNotCircular(@NotNull ProgressIndicator original) {
     Set<ProgressIndicator> wrappedParents = null;
     for (ProgressIndicator i = original; i instanceof WrappedProgressIndicator; i = ((WrappedProgressIndicator)i).getOriginalProgressIndicator()) {
-      if (wrappedParents == null) wrappedParents = new THashSet<ProgressIndicator>();
+      if (wrappedParents == null) wrappedParents = new THashSet<>();
       if (!wrappedParents.add(i)) {
         throw new IllegalArgumentException(i + " wraps itself");
       }
     }
   }
+
+  /**
+   * This method attempts to run provided action synchronously in a read action, so that, if possible, it wouldn't impact any pending,
+   * executing or future write actions (for this to work effectively the action should invoke {@link ProgressManager#checkCanceled()} or
+   * {@link ProgressIndicator#checkCanceled()} often enough).
+   * It returns {@code true} if action was executed successfully. It returns {@code false} if the action was not
+   * executed successfully, i.e. if:
+   * <ul>
+   * <li>write action was in progress when the method was called</li>
+   * <li>write action was pending when the method was called</li>
+   * <li>action started to execute, but was aborted using {@link ProcessCanceledException} when some other thread initiated
+   * write action</li>
+   * </ul>
+   * @param action the code to execute under read action
+   * @param indicator progress indicator that should be cancelled if a write action is about to start. Can be null.
+   * @since 171.*
+   */
+  public abstract boolean runInReadActionWithWriteActionPriority(@NotNull final Runnable action, @Nullable ProgressIndicator indicator);
+
+  public abstract boolean isInNonCancelableSection();
 }

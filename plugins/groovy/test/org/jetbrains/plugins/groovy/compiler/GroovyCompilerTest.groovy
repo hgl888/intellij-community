@@ -28,6 +28,7 @@ import com.intellij.execution.runners.ProgramRunner
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.application.PluginPathManager
+import com.intellij.openapi.compiler.CompilerMessageCategory
 import com.intellij.openapi.compiler.options.ExcludeEntryDescription
 import com.intellij.openapi.compiler.options.ExcludesConfiguration
 import com.intellij.openapi.diagnostic.Logger
@@ -720,7 +721,7 @@ public class Main {
   }
 
   private excludeFromCompilation(ExcludesConfiguration configuration, PsiFile foo) {
-    configuration.addExcludeEntryDescription(new ExcludeEntryDescription(foo.virtualFile, false, true, testRootDisposable))
+    configuration.addExcludeEntryDescription(new ExcludeEntryDescription(foo.virtualFile, false, true, myFixture.testRootDisposable))
   }
 
   void "test make stub-level error and correct it"() {
@@ -913,6 +914,40 @@ class AppTest {
     myFixture.addFileToProject("another/b.groovy", "class AnotherBar extends CliBuilder {}")
 
     assertEmpty(make())
+  }
+
+  void "test java depends on stub whose generation failed"() {
+    Closure<Runnable> createFiles = { String prefix ->
+      def genParam = myFixture.addFileToProject(prefix + "GenParam.java", "class GenParam {}")
+      myFixture.addFileToProject(prefix + "Intf.java", "class Intf<T extends GenParam> {}")
+      myFixture.addFileToProject(prefix + "SuperFoo.java", "class SuperFoo extends Intf<GenParam> {}")
+      def fooGroovy = myFixture.addFileToProject(prefix + "Foo.groovy", "class Foo extends SuperFoo {}")
+      return {
+        touch(genParam.virtualFile)
+        touch(fooGroovy.virtualFile)
+        myFixture.addFileToProject(prefix + "Bar.java", "class Bar extends Foo { }")
+      } as Runnable
+    }
+
+    addGroovyLibrary(addModule('mod2', true))
+
+    def touch1 = createFiles('')
+    def touch2 = createFiles('mod2/')
+
+    assertEmpty(make())
+
+    touch1.run()
+    touch2.run()
+
+    assert !make().find { it.category == CompilerMessageCategory.ERROR }
+  }
+
+  void "test report real compilation errors"() {
+    addModule('another', true)
+
+    myFixture.addClass('class Foo {}');
+    myFixture.addFileToProject('a.groovy', 'import goo.Goo; class Bar { }')
+    shouldFail { compileModule(myModule) }
   }
 
   static class GroovycTest extends GroovyCompilerTest {

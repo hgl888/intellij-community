@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import org.jetbrains.annotations.NotNull;
 import java.io.IOException;
 
 /**
- * @by Maxim.Mossienko
+ * @author Maxim.Mossienko
  */
 @SuppressWarnings({"ALL"})
 public class StructuralReplaceTest extends StructuralReplaceTestCase {
@@ -304,8 +304,8 @@ public class StructuralReplaceTest extends StructuralReplaceTestCase {
     assertEquals("replace silly assignments", expectedResult12, replacer.testReplace(s31,s32,s33,options));
 
     String s34 = "ParamChecker.isTrue(1==1, \"!!!\");";
-    String s35 = "ParamChecker.isTrue('_expr, '_msg)";
-    String s36 = "assert $expr$ : $msg$";
+    String s35 = "ParamChecker.isTrue('_expr, '_msg);";
+    String s36 = "assert $expr$ : $msg$;";
 
     String expectedResult13 = "assert 1==1 : \"!!!\";";
     assertEquals("replace with assert", expectedResult13, replacer.testReplace(s34,s35,s36,options));
@@ -911,7 +911,9 @@ public class StructuralReplaceTest extends StructuralReplaceTestCase {
     String s12 = "public class $a$ {\n" +
                  "  $Other$\n" +
                  "}";
-    String expectedResult4 = "/** @example */\n" +
+    String expectedResult4 = "    /**\n" +
+                             "     * @example\n" +
+                             "     */\n" +
                              "    public class A {\n" +
                              "        class C {\n" +
                              "        }\n\n" +
@@ -1732,7 +1734,7 @@ public class StructuralReplaceTest extends StructuralReplaceTestCase {
                                                 doTest(testName, ext, message);
                                               }
                                             }
-      ).cpuBound().useLegacyScaling().assertTiming();
+      ).useLegacyScaling().assertTiming();
     } finally {
       options.setToReformatAccordingToStyle(false);
       options.setToShortenFQN(false);
@@ -1928,6 +1930,17 @@ public class StructuralReplaceTest extends StructuralReplaceTestCase {
                       "}";
 
     assertEquals(expected, replacer.testReplace(s1,s2,s3,options));
+  }
+
+  public void testKeepUnmatchedModifiers() {
+    final String in = "class X {" +
+                      "  private static final int foo = 1;" +
+                      "}";
+    final String expected = "class X {" +
+                            "  protected static final int foo = 1;" +
+                            "}";
+
+    assertEquals(expected, replacer.testReplace(in, "private '_Type '_field = '_init;", "protected $Type$ $field$ = $init$;", options));
   }
 
   public void testRemovingRedundancy() throws Exception {
@@ -2201,5 +2214,43 @@ public class StructuralReplaceTest extends StructuralReplaceTestCase {
                  "  void m3() {}\n" +
                  "}",
                  replacer.testReplace(in2, what, by, options));
+  }
+
+  public void testReplaceQualifiedReference() {
+    String in = "class A {" +
+                "  String s;" +
+                "  void setS(String s) {" +
+                "    System.out.println(this.s);" +
+                "    this.s = s;" +
+                "  }" +
+                "}";
+    String what = "System.out.println('_a);";
+    String by = "System.out.println(\"$a$\" + $a$);";
+    assertEquals("don't drop this",
+                 "class A {" +
+                 "  String s;" +
+                 "  void setS(String s) {" +
+                 "    System.out.println(\"this.s\" + this.s);" +
+                 "    this.s = s;" +
+                 "  }" +
+                 "}",
+                 replacer.testReplace(in, what, by, options));
+  }
+
+  public void testReplaceExpressionStatement() {
+    String in = "class A {" +
+                "  void m() {" +
+                "    new Object();" +
+                "  }" +
+                "}";
+    String what = "'_expr;";
+    String by = "$expr$.toString();";
+    assertEquals("too many semicolons",
+                 "class A {" +
+                 "  void m() {" +
+                 "    new Object().toString();" +
+                 "  }" +
+                 "}",
+                 replacer.testReplace(in, what, by, options, true));
   }
 }

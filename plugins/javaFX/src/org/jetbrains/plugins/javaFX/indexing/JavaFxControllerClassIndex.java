@@ -15,11 +15,10 @@
  */
 package org.jetbrains.plugins.javaFX.indexing;
 
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.fileTypes.StdFileTypes;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
@@ -27,7 +26,6 @@ import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.ProjectScope;
 import com.intellij.util.Function;
 import com.intellij.util.Functions;
-import com.intellij.util.Processor;
 import com.intellij.util.indexing.*;
 import com.intellij.util.io.EnumeratorStringDescriptor;
 import com.intellij.util.io.KeyDescriptor;
@@ -99,34 +97,28 @@ public class JavaFxControllerClassIndex extends ScalarIndexExtension<String> {
       }
 
       final String[] className = new String[]{null};
-      
-      class StopException extends RuntimeException {}
+      NanoXmlUtil.parse(new StringReader(content), new NanoXmlUtil.IXMLBuilderAdapter() {
+        private boolean myFxRootUsed = false;
 
-      try {
-        NanoXmlUtil.parse(new StringReader(content), new NanoXmlUtil.IXMLBuilderAdapter() {
-          private boolean myFxRootUsed = false;
-
-          @Override
-          public void addAttribute(String key, String nsPrefix, String nsURI, String value, String type) throws Exception {
-            if (value != null &&
-                (FxmlConstants.FX_CONTROLLER.equals(nsPrefix + ":" + key) || FxmlConstants.TYPE.equals(key) && myFxRootUsed)) {
-              className[0] = value;
-            }
+        @Override
+        public void addAttribute(String key, String nsPrefix, String nsURI, String value, String type) throws Exception {
+          if (value != null &&
+              (FxmlConstants.FX_CONTROLLER.equals(nsPrefix + ":" + key) || FxmlConstants.TYPE.equals(key) && myFxRootUsed)) {
+            className[0] = value;
           }
+        }
 
-          @Override
-          public void elementAttributesProcessed(String name, String nsPrefix, String nsURI) throws Exception {
-            throw new StopException();
-          }
+        @Override
+        public void elementAttributesProcessed(String name, String nsPrefix, String nsURI) throws Exception {
+          throw NanoXmlUtil.ParserStoppedXmlException.INSTANCE;
+        }
 
-          @Override
-          public void startElement(String name, String nsPrefix, String nsURI, String systemID, int lineNr)
-            throws Exception {
-            myFxRootUsed = FxmlConstants.FX_ROOT.equals(nsPrefix + ":" + name);
-          }
-        });
-      }
-      catch (StopException ignore){}
+        @Override
+        public void startElement(String name, String nsPrefix, String nsURI, String systemID, int lineNr)
+          throws Exception {
+          myFxRootUsed = FxmlConstants.FX_ROOT.equals(nsPrefix + ":" + name);
+        }
+      });
       return className[0];
     }
   }
@@ -164,28 +156,32 @@ public class JavaFxControllerClassIndex extends ScalarIndexExtension<String> {
                                                      @NotNull final String className,
                                                      final Function<VirtualFile, T> f,
                                                      final GlobalSearchScope scope) {
-    return ApplicationManager.getApplication().runReadAction(new Computable<List<T>>() {
-      @Override
-      public List<T> compute() {
-        final Collection<VirtualFile> files;
-        try {
-          files = FileBasedIndex.getInstance().getContainingFiles(NAME, className,
-                                                                  GlobalSearchScope.projectScope(project).intersectWith(scope));
-        }
-        catch (IndexNotReadyException e) {
-          return Collections.emptyList();
-        }
-        if (files.isEmpty()) return Collections.emptyList();
-        List<T> result = new ArrayList<>();
-        for (VirtualFile file : files) {
-          if (!file.isValid()) continue;
-          final T fFile = f.fun(file);
-          if (fFile != null) { 
-            result.add(fFile);
-          }
-        }
-        return result;
+    return findFxmls(NAME, project, className, f, scope);
+  }
+
+  static <T> List<T> findFxmls(ID<String, ?> id, Project project,
+                               @NotNull String className,
+                               Function<VirtualFile, T> f,
+                               GlobalSearchScope scope) {
+    return ReadAction.compute(() -> {
+      final Collection<VirtualFile> files;
+      try {
+        files = FileBasedIndex.getInstance().getContainingFiles(id, className,
+                                                                GlobalSearchScope.projectScope(project).intersectWith(scope));
       }
+      catch (IndexNotReadyException e) {
+        return Collections.emptyList();
+      }
+      if (files.isEmpty()) return Collections.emptyList();
+      List<T> result = new ArrayList<>();
+      for (VirtualFile file : files) {
+        if (!file.isValid()) continue;
+        final T fFile = f.fun(file);
+        if (fFile != null) {
+          result.add(fFile);
+        }
+      }
+      return result;
     });
   }
 }

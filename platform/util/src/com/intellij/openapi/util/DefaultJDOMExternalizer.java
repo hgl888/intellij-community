@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import java.util.List;
  * @deprecated {@link com.intellij.util.xmlb.XmlSerializer} should be used instead
  * @author mike
  */
-@SuppressWarnings({"HardCodedStringLiteral"})
+@SuppressWarnings("HardCodedStringLiteral")
 public class DefaultJDOMExternalizer {
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.util.DefaultJDOMExternalizer");
 
@@ -138,7 +138,7 @@ public class DefaultJDOMExternalizer {
   }
 
   @Nullable
-  public static String filterXMLCharacters(String value) {
+  static String filterXMLCharacters(String value) {
     if (value != null) {
       StringBuilder builder = null;
       for (int i=0; i<value.length();i++) {
@@ -165,9 +165,7 @@ public class DefaultJDOMExternalizer {
   public static void readExternal(@NotNull Object data, Element parentNode) throws InvalidDataException{
     if (parentNode == null) return;
 
-    for (final Object o : parentNode.getChildren("option")) {
-      Element e = (Element)o;
-
+    for (Element e : parentNode.getChildren("option")) {
       String fieldName = e.getAttributeValue("name");
       if (fieldName == null) {
         throw new InvalidDataException();
@@ -292,7 +290,7 @@ public class DefaultJDOMExternalizer {
         }
       }
       catch (NoSuchFieldException ex) {
-        LOG.debug(ex);
+        LOG.debug("No field '" + fieldName + "' in " + data.getClass(), ex);
       }
       catch (SecurityException ex) {
         throw new InvalidDataException();

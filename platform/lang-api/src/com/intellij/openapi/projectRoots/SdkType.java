@@ -21,6 +21,7 @@ import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.fileChooser.FileChooserDescriptor;
 import com.intellij.openapi.project.ProjectBundle;
 import com.intellij.openapi.roots.OrderRootType;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Consumer;
 import com.intellij.util.IconUtil;
@@ -29,13 +30,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 public abstract class SdkType implements SdkTypeId {
   public static final ExtensionPointName<SdkType> EP_NAME = ExtensionPointName.create("com.intellij.sdkType");
+  public static final Comparator<Sdk> ALPHABETICAL_COMPARATOR = (sdk1, sdk2) -> StringUtil.compare(sdk1.getName(), sdk2.getName(), true);
 
   private final String myName;
 
@@ -61,7 +60,7 @@ public abstract class SdkType implements SdkTypeId {
   @NotNull
   public Collection<String> suggestHomePaths() {
     String home = suggestHomePath();
-    return home != null ? Collections.singletonList(home) : Collections.<String>emptyList();
+    return home != null ? Collections.singletonList(home) : Collections.emptyList();
   }
 
   /**
@@ -92,6 +91,16 @@ public abstract class SdkType implements SdkTypeId {
   public abstract String suggestSdkName(String currentSdkName, String sdkHome);
 
   public void setupSdkPaths(@NotNull Sdk sdk) {}
+
+  /**
+   * Returns comparator which is used to order sdks in project or module settings combo boxes.
+   * If different sdk types return the same comparator instance then they are sorted together.
+   */
+
+  @NotNull
+  public Comparator<Sdk> getComparator() {
+    return ALPHABETICAL_COMPARATOR;
+  }
 
   public boolean setupSdkPaths(@NotNull Sdk sdk, @NotNull SdkModel sdkModel) {
     setupSdkPaths(sdk);
@@ -236,13 +245,24 @@ public abstract class SdkType implements SdkTypeId {
   }
 
   /**
-   * Shows the custom SDK create UI. The returned SDK needs to have the correct name and home path; the framework will call
-   * setupSdkPaths() on the returned SDK.
+   * Shows the custom SDK create UI based on selected SDK in parent component. The returned SDK needs to have the correct name and home path;
+   * the framework will call setupSdkPaths() on the returned SDK.
    *
    * @param sdkModel the list of SDKs currently displayed in the configuration dialog.
    * @param parentComponent the parent component for showing the dialog.
+   * @param selectedSdk current selected sdk in parentComponent
    * @param sdkCreatedCallback the callback to which the created SDK is passed.
-   * @since 12.0
+   * @since 2017.1
+   */
+  public void showCustomCreateUI(@NotNull SdkModel sdkModel,
+                                 @NotNull JComponent parentComponent,
+                                 @Nullable Sdk selectedSdk,
+                                 @NotNull Consumer<Sdk> sdkCreatedCallback) {
+    showCustomCreateUI(sdkModel, parentComponent, sdkCreatedCallback);
+  }
+
+  /**
+   * @deprecated Use {@link #showCustomCreateUI(SdkModel, JComponent, Sdk, Consumer)} method instead
    */
   public void showCustomCreateUI(@NotNull SdkModel sdkModel, @NotNull JComponent parentComponent, @NotNull Consumer<Sdk> sdkCreatedCallback) {
   }

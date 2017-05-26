@@ -18,16 +18,16 @@ package com.intellij.psi;
 
 import com.intellij.lang.Language;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.NullableComputable;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.impl.smartPointers.AnchorTypeInfo;
+import com.intellij.psi.impl.smartPointers.Identikit;
 import com.intellij.psi.impl.smartPointers.SelfElementInfo;
 import com.intellij.psi.impl.smartPointers.SmartPointerAnchorProvider;
 import com.intellij.psi.impl.source.PsiFileImpl;
@@ -111,7 +111,7 @@ public abstract class PsiAnchor {
       return wrapperOrHardReference(element);
     }
 
-    return new TreeRangeReference(file, textRange.getStartOffset(), textRange.getEndOffset(), AnchorTypeInfo.obtainInfo(element, lang), virtualFile);
+    return new TreeRangeReference(file, textRange.getStartOffset(), textRange.getEndOffset(), Identikit.fromPsi(element, lang), virtualFile);
   }
 
   @NotNull
@@ -178,14 +178,14 @@ public abstract class PsiAnchor {
   private static class TreeRangeReference extends PsiAnchor {
     private final VirtualFile myVirtualFile;
     private final Project myProject;
-    private final AnchorTypeInfo myInfo;
+    private final Identikit myInfo;
     private final int myStartOffset;
     private final int myEndOffset;
 
     private TreeRangeReference(@NotNull PsiFile file,
                                int startOffset,
                                int endOffset,
-                               @NotNull AnchorTypeInfo info,
+                               @NotNull Identikit info,
                                @NotNull VirtualFile virtualFile) {
       myVirtualFile = virtualFile;
       myProject = file.getProject();
@@ -200,7 +200,7 @@ public abstract class PsiAnchor {
       PsiFile psiFile = getFile();
       if (psiFile == null || !psiFile.isValid()) return null;
 
-      return SelfElementInfo.findElementInside(psiFile, myStartOffset, myEndOffset, myInfo);
+      return myInfo.findPsiElement(psiFile, myStartOffset, myEndOffset);
     }
 
     @Override
@@ -453,40 +453,22 @@ public abstract class PsiAnchor {
       if (myProject.isDisposed() || !myVirtualFile.isValid()) {
         return null;
       }
-      final PsiFile file = PsiManager.getInstance(myProject).findFile(myVirtualFile);
-      if (file == null) {
-        return null;
-      }
-      if (file.getLanguage() == myLanguage) {
-        return file;
-      }
-      return file.getViewProvider().getPsi(myLanguage);
+      FileViewProvider viewProvider = PsiManager.getInstance(myProject).findViewProvider(myVirtualFile);
+      PsiFile file = viewProvider == null ? null : viewProvider.getPsi(myLanguage);
+      return file instanceof PsiFileWithStubSupport ? file : null;
     }
 
     @Override
     public PsiElement retrieve() {
-      return ApplicationManager.getApplication().runReadAction(new NullableComputable<PsiElement>() {
-        @Override
-        public PsiElement compute() {
-          return restoreFromStubIndex((PsiFileWithStubSupport)getFile(), myIndex, myElementType, false);
-        }
-      });
+      return ApplicationManager.getApplication().runReadAction(
+        (NullableComputable<PsiElement>)() -> restoreFromStubIndex((PsiFileWithStubSupport)getFile(), myIndex, myElementType, false));
     }
 
     public String diagnoseNull() {
-      final PsiFile file = ApplicationManager.getApplication().runReadAction(new Computable<PsiFile>() {
-        @Override
-        public PsiFile compute() {
-          return getFile();
-        }
-      });
+      final PsiFile file = ReadAction.compute(() -> getFile());
       try {
-        PsiElement element = ApplicationManager.getApplication().runReadAction(new NullableComputable<PsiElement>() {
-          @Override
-          public PsiElement compute() {
-            return restoreFromStubIndex((PsiFileWithStubSupport)file, myIndex, myElementType, true);
-          }
-        });
+        PsiElement element = ApplicationManager.getApplication().runReadAction(
+          (NullableComputable<PsiElement>)() -> restoreFromStubIndex((PsiFileWithStubSupport)file, myIndex, myElementType, true));
         return "No diagnostics, element=" + element + "@" + (element == null ? 0 : System.identityHashCode(element));
       }
       catch (AssertionError e) {

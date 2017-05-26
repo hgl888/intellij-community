@@ -35,8 +35,6 @@ import com.intellij.openapi.vfs.ReadonlyStatusHandler;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileFilter;
 import com.intellij.psi.*;
-import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.search.LocalSearchScope;
 import com.intellij.psi.search.SearchScope;
 import com.intellij.psi.util.PsiUtilCore;
 import org.jetbrains.annotations.NonNls;
@@ -53,6 +51,9 @@ public class ReformatCodeAction extends AnAction implements DumbAware {
   private static final @NonNls String HELP_ID = "editing.codeReformatting";
   protected static ReformatFilesOptions myTestOptions;
 
+  public ReformatCodeAction() {
+    setEnabledInModalContext(true);
+  }
 
   @Override
   public void actionPerformed(AnActionEvent event) {
@@ -224,19 +225,7 @@ public class ReformatCodeAction extends AnAction implements DumbAware {
       return;
     }
 
-    processor.addFileFilter(new VirtualFileFilter() {
-      @Override
-      public boolean accept(@NotNull VirtualFile file) {
-        if (scope instanceof LocalSearchScope) {
-          return ((LocalSearchScope)scope).isInScope(file);
-        }
-        if (scope instanceof GlobalSearchScope) {
-          return ((GlobalSearchScope)scope).contains(file);
-        }
-
-        return false;
-      }
-    });
+    processor.addFileFilter(scope::contains);
   }
 
   public static void registerFileMaskFilter(@NotNull AbstractLayoutCodeProcessor processor, @Nullable String fileTypeMask) {
@@ -270,6 +259,8 @@ public class ReformatCodeAction extends AnAction implements DumbAware {
     }
     return PsiUtilCore.toPsiFileArray(result);
   }
+
+
 
   @Override
   public void update(AnActionEvent event){
@@ -373,7 +364,7 @@ public class ReformatCodeAction extends AnAction implements DumbAware {
   }
 
   @TestOnly
-  protected static void setTestOptions(ReformatFilesOptions options) {
+  public static void setTestOptions(ReformatFilesOptions options) {
     myTestOptions = options;
   }
 

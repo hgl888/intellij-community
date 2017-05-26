@@ -1,4 +1,4 @@
-<idea-plugin version="2" xmlns:xi="http://www.w3.org/2001/XInclude">
+<idea-plugin xmlns:xi="http://www.w3.org/2001/XInclude">
   <!-- Components and extensions declared in this file work ONLY in Pycharm Educational Edition -->
 
   <application-components>
@@ -24,7 +24,9 @@
   </application-components>
 
   <extensions defaultExtensionNs="com.intellij">
-      <programRunner implementation="com.jetbrains.python.edu.debugger.PyEduDebugRunner"/>
+    <applicationService serviceInterface="com.intellij.openapi.fileEditor.impl.EditorEmptyTextPainter"
+                        serviceImplementation="com.jetbrains.python.edu.PyStudyInstructionPainter" overrides="true"/>
+    <programRunner implementation="com.jetbrains.python.edu.debugger.PyEduDebugRunner"/>
       <executor implementation="com.jetbrains.python.edu.debugger.PyEduDebugExecutor" order="first,after run"/>
       <consoleInputFilterProvider implementation="com.jetbrains.python.edu.debugger.PyEduConsoleInputFilterProvider"/>
   </extensions>

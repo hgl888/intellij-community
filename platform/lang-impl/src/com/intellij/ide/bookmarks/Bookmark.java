@@ -386,12 +386,12 @@ public class Bookmark implements Navigatable, Comparable<Bookmark> {
 
     @Override
     public int getIconWidth() {
-      return scaleVal(DEFAULT_ICON.getIconWidth(), Scale.ARBITRARY);
+      return scaleVal(DEFAULT_ICON.getIconWidth(), Scale.INSTANCE);
     }
 
     @Override
     public int getIconHeight() {
-      return scaleVal(DEFAULT_ICON.getIconHeight(), Scale.ARBITRARY);
+      return scaleVal(DEFAULT_ICON.getIconHeight(), Scale.INSTANCE);
     }
 
     @Override
@@ -414,22 +414,22 @@ public class Bookmark implements Navigatable, Comparable<Bookmark> {
     @Nullable
     @Override
     public Icon retrieveIcon() {
-      return IconUtil.scale(PlatformIcons.CHECK_ICON, getScale(), true);
+      return IconUtil.scale(PlatformIcons.CHECK_ICON, null, getScale());
     }
 
     @Override
     public void paintIcon(Component c, Graphics g, int x, int y) {
-      IconUtil.scale((darkBackground() ? AllIcons.Actions.CheckedGrey : AllIcons.Actions.CheckedBlack), getScale(), true).paintIcon(c, g, x, y);
+      IconUtil.scale((darkBackground() ? AllIcons.Actions.CheckedGrey : AllIcons.Actions.CheckedBlack), c, getScale()).paintIcon(c, g, x, y);
     }
 
     @Override
     public int getIconWidth() {
-      return scaleVal(PlatformIcons.CHECK_ICON.getIconWidth(), Scale.ARBITRARY);
+      return scaleVal(PlatformIcons.CHECK_ICON.getIconWidth(), Scale.INSTANCE);
     }
 
     @Override
     public int getIconHeight() {
-      return scaleVal(PlatformIcons.CHECK_ICON.getIconHeight(), Scale.ARBITRARY);
+      return scaleVal(PlatformIcons.CHECK_ICON.getIconHeight(), Scale.INSTANCE);
     }
 
     @NotNull

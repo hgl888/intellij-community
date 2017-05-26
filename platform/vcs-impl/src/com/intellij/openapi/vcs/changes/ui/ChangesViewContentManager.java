@@ -154,7 +154,7 @@ public class ChangesViewContentManager extends AbstractProjectComponent implemen
 
   public boolean isAvailable() {
     final List<VcsDirectoryMapping> mappings = myVcsManager.getDirectoryMappings();
-    return !mappings.isEmpty() && !StringUtil.isEmpty(mappings.get(0).getVcs());
+    return mappings.stream().anyMatch(mapping -> !StringUtil.isEmpty(mapping.getVcs()));
   }
 
   public void projectClosed() {
@@ -218,13 +218,11 @@ public class ChangesViewContentManager extends AbstractProjectComponent implemen
   private class MyVcsListener implements VcsListener {
     public void directoryMappingChanged() {
       myVcsChangeAlarm.cancelAllRequests();
-      myVcsChangeAlarm.addRequest(new Runnable() {
-        public void run() {
-          if (myProject.isDisposed()) return;
-          updateToolWindowAvailability();
-          if (myContentManager != null) {
-            updateExtensionTabs();
-          }
+      myVcsChangeAlarm.addRequest(() -> {
+        if (myProject.isDisposed()) return;
+        updateToolWindowAvailability();
+        if (myContentManager != null) {
+          updateExtensionTabs();
         }
       }, 100, ModalityState.NON_MODAL);
     }

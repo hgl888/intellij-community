@@ -15,7 +15,6 @@
  */
 package com.intellij.lang.properties;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.lang.ASTNode;
 import com.intellij.lang.annotation.Annotation;
@@ -47,7 +46,7 @@ import java.util.Collection;
 public class PropertiesAnnotator implements Annotator {
 
   public void annotate(@NotNull PsiElement element, @NotNull AnnotationHolder holder) {
-    if (!(element instanceof IProperty)) return;
+    if (!(element instanceof Property)) return;
     final Property property = (Property)element;
     PropertiesFile propertiesFile = property.getPropertiesFile();
     Collection<IProperty> others = propertiesFile.findPropertiesByKey(property.getUnescapedKey());
@@ -113,7 +112,6 @@ public class PropertiesAnnotator implements Annotator {
               }
 
               public void invoke(@NotNull Project project, Editor editor, PsiFile file) {
-                if (!FileModificationService.getInstance().prepareFileForWrite(file)) return;
                 int offset = annotation.getStartOffset();
                 if (property.getPropertiesFile().getContainingFile().getText().charAt(offset) == '\\') {
                   editor.getDocument().deleteString(offset, offset+1);

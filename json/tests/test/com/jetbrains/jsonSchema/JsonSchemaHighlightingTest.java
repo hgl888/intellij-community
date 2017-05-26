@@ -50,7 +50,7 @@ public class JsonSchemaHighlightingTest extends DaemonAnalyzerTestCase {
 
   public void testNumberMultipleWrong() throws Exception {
     testImpl("{ \"properties\": { \"prop\": {\"type\": \"number\", \"multipleOf\": 2}}}",
-             "{ \"prop\": <warning descr=\"Is not multiple of 3\">3</warning>}");
+             "{ \"prop\": <warning descr=\"Is not multiple of 2\">3</warning>}");
   }
 
   public void testNumberMultipleCorrect() throws Exception {
@@ -96,6 +96,27 @@ public class JsonSchemaHighlightingTest extends DaemonAnalyzerTestCase {
     testImpl(schema, "{\"prop\": [<warning descr=\"Type is not allowed\">\"test\"</warning>]}");
   }
 
+  public void testTopLevelArray() throws Exception {
+    final String schema = "{\n" +
+                                 "  \"type\": \"array\",\n" +
+                                 "  \"items\": {\n" +
+                                 "    \"type\": \"number\", \"minimum\": 18" +
+                                 "  }\n" +
+                                 "}";
+    testImpl(schema, "[101, 102]");
+  }
+
+  public void testTopLevelObjectArray() throws Exception {
+    final String schema = "{\n" +
+                                 "  \"type\": \"array\",\n" +
+                                 "  \"items\": {\n" +
+                                 "    \"type\": \"object\", \"properties\": {\"a\": {\"type\": \"number\"}}" +
+                                 "  }\n" +
+                                 "}";
+    testImpl(schema, "[{\"a\": <warning descr=\"Type is not allowed\">true</warning>}]");
+    testImpl(schema, "[{\"a\": 18}]");
+  }
+
   public void testArrayTuples1() throws Exception {
     final String schema = schema("{\n" +
                                  "  \"type\": \"array\",\n" +
@@ -126,7 +147,7 @@ public class JsonSchemaHighlightingTest extends DaemonAnalyzerTestCase {
   public void testArrayUnique() throws Exception {
     final String schema = schema("{\"type\": \"array\", \"uniqueItems\": true}");
     testImpl(schema, "{\"prop\": [1,2]}");
-    testImpl(schema, "{\"prop\": [1,2, \"test\", <warning descr=\"Item is not unique\">1</warning>]}");
+    testImpl(schema, "{\"prop\": [<warning descr=\"Item is not unique\">1</warning>,2, \"test\", <warning descr=\"Item is not unique\">1</warning>]}");
   }
 
   public void testMetadataIsOk() throws Exception {
@@ -238,12 +259,12 @@ public class JsonSchemaHighlightingTest extends DaemonAnalyzerTestCase {
   @SuppressWarnings("Duplicates")
   public void testAllOf() throws Exception {
     final List<String> subSchemas = new ArrayList<>();
-    subSchemas.add("{\"type\": \"string\", \"enum\": [\"a\", \"b\"]}");
-    subSchemas.add("{\"type\": \"string\", \"enum\": [\"a\", \"c\"]}");
+    subSchemas.add("{\"type\": \"integer\", \"\"multipleOf\": 2}");
+    subSchemas.add("{\"enum\": [1,2,3]}");
     final String schema = schema("{\"allOf\": [" + StringUtil.join(subSchemas, ", ") + "]}");
-    testImpl(schema, "{\"prop\": <warning descr=\"Value should be one of: [\\\"a\\\", \\\"c\\\"]\">\"b\"</warning>}");
-    testImpl(schema, "{\"prop\": <warning descr=\"Value should be one of: [\\\"a\\\", \\\"b\\\"]\">\"c\"</warning>}");
-    testImpl(schema, "{\"prop\": \"a\"}");
+    testImpl(schema, "{\"prop\": 1}");
+    testImpl(schema, "{\"prop\": 4}");
+    testImpl(schema, "{\"prop\": 2}");
   }
 
   public void testObjectInArray() throws Exception {
@@ -276,7 +297,7 @@ public class JsonSchemaHighlightingTest extends DaemonAnalyzerTestCase {
     final String schema = "{\"allOf\": [{\"type\": \"object\", \"properties\": {\"first\": {}}}," +
                           " {\"properties\": {\"second\": {\"enum\": [33,44]}}}], \"additionalProperties\": false}";
     testImpl(schema, "{\"first\": {}, \"second\": null}");
-    testImpl(schema, "{\"first\": {}, \"second\": 44, \"other\": 15}");
+    testImpl(schema, "{\"first\": {}, \"second\": 44, <warning descr=\"Property 'other' is not allowed\">\"other\": 15</warning>}");
     testImpl(schema, "{\"first\": {}, \"second\": <warning descr=\"Value should be one of: [33, 44]\">12</warning>}");
   }
 
@@ -293,6 +314,212 @@ public class JsonSchemaHighlightingTest extends DaemonAnalyzerTestCase {
     String schemaText = FileUtil.loadFile(new File(getTestDataPath() + "/integerTypeWithMinMax_schema.json"));
     String inputText = FileUtil.loadFile(new File(getTestDataPath() + "/integerTypeWithMinMax.json"));
     testImpl(schemaText, inputText);
+  }
+
+  public void testOneOf1() throws Exception {
+    String schemaText = FileUtil.loadFile(new File(getTestDataPath() + "/oneOfSchema.json"));
+    String inputText = FileUtil.loadFile(new File(getTestDataPath() + "/oneOf1.json"));
+    testImpl(schemaText, inputText);
+  }
+
+  public void testOneOf2() throws Exception {
+    String schemaText = FileUtil.loadFile(new File(getTestDataPath() + "/oneOfSchema.json"));
+    String inputText = FileUtil.loadFile(new File(getTestDataPath() + "/oneOf2.json"));
+    testImpl(schemaText, inputText);
+  }
+
+  public void testOneOfWithEmptyPropertyValue() throws Exception {
+    String schemaText = FileUtil.loadFile(new File(getTestDataPath() + "/oneOfSchema.json"));
+    String inputText = FileUtil.loadFile(new File(getTestDataPath() + "/oneOfWithEmptyPropertyValue.json"));
+    testImpl(schemaText, inputText);
+  }
+
+  public void testCycledSchema() throws Exception {
+    String schemaText = FileUtil.loadFile(new File(getTestDataPath() + "/cycledSchema.json"));
+    String inputText = FileUtil.loadFile(new File(getTestDataPath() + "/testCycledSchema.json"));
+    testImpl(schemaText, inputText);
+  }
+
+  public void testPatternPropertiesHighlighting() throws Exception {
+    final String schema = "{\n" +
+                          "  \"patternProperties\": {\n" +
+                          "    \"^A\" : {\n" +
+                          "      \"type\": \"number\"\n" +
+                          "    },\n" +
+                          "    \"B\": {\n" +
+                          "      \"type\": \"boolean\"\n" +
+                          "    },\n" +
+                          "    \"C\": {\n" +
+                          "      \"enum\": [\"test\", \"em\"]\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    testImpl(schema, "{\n" +
+                     "  \"Abezjana\": 2,\n" +
+                     "  \"Auto\": <warning descr=\"Type is not allowed\">\"no\"</warning>,\n" +
+                     "  \"ABe\": <warning descr=\"Type is not allowed\">22</warning>,\n" +
+                     "  \"Boloto\": <warning descr=\"Type is not allowed\">2</warning>,\n" +
+                     "  \"Cyan\": <warning descr=\"Value should be one of: [\\\"test\\\", \\\"em\\\"]\">\"me\"</warning>\n" +
+                     "}");
+  }
+
+  public void testPatternPropertiesFromIssue() throws Exception {
+    final String schema = "{\n" +
+                          "  \"type\": \"object\",\n" +
+                          "  \"additionalProperties\": false,\n" +
+                          "  \"patternProperties\": {\n" +
+                          "    \"p[0-9]\": {\n" +
+                          "      \"type\": \"string\"\n" +
+                          "    },\n" +
+                          "    \"a[0-9]\": {\n" +
+                          "      \"enum\": [\"auto!\"]\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    testImpl(schema, "{\n" +
+                     "  \"p1\": <warning descr=\"Type is not allowed\">1</warning>,\n" +
+                     "  \"p2\": \"3\",\n" +
+                     "  \"a2\": \"auto!\",\n" +
+                     "  \"a1\": <warning descr=\"Value should be one of: [\\\"auto!\\\"]\">\"moto!\"</warning>\n" +
+                     "}");
+  }
+
+  public void testPatternForPropertyValue() throws Exception {
+    final String schema = "{\n" +
+                          "  \"properties\": {\n" +
+                          "    \"withPattern\": {\n" +
+                          "      \"pattern\": \"p[0-9]\"\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    final String correctText = "{\n" +
+                               "  \"withPattern\": \"p1\"\n" +
+                               "}";
+    final String wrongText = "{\n" +
+                             "  \"withPattern\": <warning descr=\"String is violating the pattern: 'p[0-9]'\">\"wrong\"</warning>\n" +
+                             "}";
+    testImpl(schema, correctText);
+    testImpl(schema, wrongText);
+  }
+
+  public void testPatternWithSpecialEscapedSymbols() throws Exception {
+    final String schema = "{\n" +
+                          "  \"properties\": {\n" +
+                          "    \"withPattern\": {\n" +
+                          "      \"pattern\": \"^\\\\d{4}\\\\-(0?[1-9]|1[012])\\\\-(0?[1-9]|[12][0-9]|3[01])$\"\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    final String correctText = "{\n" +
+                               "  \"withPattern\": \"1234-11-11\"\n" +
+                               "}";
+    final String wrongText = "{\n" +
+                             "  \"withPattern\": <warning descr=\"String is violating the pattern: '^\\d{4}\\-(0?[1-9]|1[012])\\-(0?[1-9]|[12][0-9]|3[01])$'\">\"wrong\"</warning>\n" +
+                             "}";
+    testImpl(schema, correctText);
+    testImpl(schema, wrongText);
+  }
+
+  public void testRootObjectRedefinedAdditionalPropertiesForbidden() throws Exception {
+    testImpl(rootObjectRedefinedSchema(), "{<warning descr=\"Property 'a' is not allowed\">\"a\": true</warning>," +
+                                          "\"r1\": \"allowed!\"}");
+  }
+
+  public void testNumberOfSameNamedPropertiesCorrectlyChecked() throws Exception {
+    final String schema = "{\n" +
+                          "  \"properties\": {\n" +
+                          "    \"size\": {\n" +
+                          "      \"type\": \"object\",\n" +
+                          "      \"minProperties\": 2,\n" +
+                          "      \"maxProperties\": 3,\n" +
+                          "      \"properties\": {\n" +
+                          "        \"a\": {\n" +
+                          "          \"type\": \"boolean\"\n" +
+                          "        }\n" +
+                          "      }\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    testImpl(schema, "{\n" +
+                     "  \"size\": <warning descr=\"Number of properties is greater than 3\">{\n" +
+                     "    \"a\": <warning descr=\"Type is not allowed\">1</warning>," +
+                     " \"b\":3, \"c\": 4, " +
+                     "\"a\": <warning descr=\"Type is not allowed\">5</warning>\n" +
+                     "  }</warning>\n" +
+                     "}");
+  }
+
+  public void testManyDuplicatesInArray() throws Exception {
+    final String schema = "{\n" +
+                          "  \"properties\": {\n" +
+                          "    \"array\":{\n" +
+                          "      \"type\": \"array\",\n" +
+                          "      \"uniqueItems\": true\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    testImpl(schema, "{\"array\": [<warning descr=\"Item is not unique\">1</warning>," +
+                     "<warning descr=\"Item is not unique\">1</warning>," +
+                     "<warning descr=\"Item is not unique\">1</warning>," +
+                     "<warning descr=\"Item is not unique\">2</warning>," +
+                     "<warning descr=\"Item is not unique\">2</warning>," +
+                     "5," +
+                     "<warning descr=\"Item is not unique\">3</warning>," +
+                     "<warning descr=\"Item is not unique\">3</warning>]}");
+  }
+
+  public void testPropertyValueAlsoHighlightedIfPatternIsInvalid() throws Exception {
+    final String schema = "{\n" +
+                          "  \"properties\": {\n" +
+                          "    \"withPattern\": {\n" +
+                          "      \"pattern\": \"^[]$\"\n" +
+                          "    }\n" +
+                          "  }\n" +
+                          "}";
+    final String text = "{\"withPattern\":" +
+                        " <warning descr=\"Can not check string by pattern because of error: Unclosed character class near index 3\n^[]$\n   ^\">\"(124)555-4216\"</warning>}";
+    testImpl(schema, text);
+  }
+
+  public void testNotSchema() throws Exception {
+    final String schema = "{\"properties\": {\n" +
+                          "    \"not_type\": { \"not\": { \"type\": \"string\" } }\n" +
+                          "  }}";
+    testImpl(schema, "{\"not_type\": <warning descr=\"Validates against 'not' schema\">\"wrong\"</warning>}");
+  }
+
+  public void testNotSchemaCombinedWithNormal() throws Exception {
+    final String schema = "{\"properties\": {\n" +
+                          "    \"not_type\": {\n" +
+                          "      \"pattern\": \"^[a-z]*[0-5]*$\",\n" +
+                          "      \"not\": { \"pattern\": \"^[a-z]{1}[0-5]$\" }\n" +
+                          "    }\n" +
+                          "  }}";
+    testImpl(schema, "{\"not_type\": \"va4\"}");
+    testImpl(schema, "{\"not_type\": <warning descr=\"Validates against 'not' schema\">\"a4\"</warning>}");
+    testImpl(schema, "{\"not_type\": <warning descr=\"String is violating the pattern: '^[a-z]*[0-5]*$'\">\"4a4\"</warning>}");
+  }
+
+  public static String rootObjectRedefinedSchema() {
+    return "{\n" +
+           "  \"$schema\": \"http://json-schema.org/draft-04/schema#\",\n" +
+           "  \"type\": \"object\",\n" +
+           "  \"$ref\" : \"#/definitions/root\",\n" +
+           "  \"definitions\": {\n" +
+           "    \"root\" : {\n" +
+           "      \"type\": \"object\",\n" +
+           "      \"additionalProperties\": false,\n" +
+           "      \"properties\": {\n" +
+           "        \"r1\": {\n" +
+           "          \"type\": \"string\"\n" +
+           "        },\n" +
+           "        \"r2\": {\n" +
+           "          \"type\": \"string\"\n" +
+           "        }\n" +
+           "      }\n" +
+           "    }\n" +
+           "  }\n" +
+           "}\n";
   }
 
   static String schema(final String s) {

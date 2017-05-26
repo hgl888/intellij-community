@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,12 @@
  * limitations under the License.
  */
 
-/*
- * User: anna
- * Date: 06-May-2008
- */
 package com.intellij.refactoring.extractMethodObject;
 
 import com.intellij.codeInsight.NullableNotNullManager;
 import com.intellij.codeInsight.generation.GenerateMembersUtil;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -58,9 +55,10 @@ import com.intellij.usageView.UsageInfo;
 import com.intellij.usageView.UsageViewDescriptor;
 import com.intellij.usageView.UsageViewUtil;
 import com.intellij.util.ArrayUtil;
-import com.intellij.util.Function;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.VisibilityUtil;
+import com.intellij.util.text.UniqueNameGenerator;
+import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
@@ -68,7 +66,7 @@ import javax.swing.*;
 import java.util.*;
 
 public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
-  private static final Logger LOG = Logger.getInstance("#" + ExtractMethodObjectProcessor.class.getName());
+  private static final Logger LOG = Logger.getInstance(ExtractMethodObjectProcessor.class);
   @NonNls public static final String REFACTORING_NAME = "Extract Method Object";
 
   private final PsiElementFactory myElementFactory;
@@ -86,6 +84,8 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
   private PsiClass myInnerClass;
   private boolean myChangeReturnType;
   private Runnable myCopyMethodToInner;
+  private final UniqueNameGenerator myFieldNameGenerator = new UniqueNameGenerator();
+  private String myResultFieldName = null;
 
   private static final Key<Boolean> GENERATED_RETURN = new Key<>("GENERATED_RETURN");
 
@@ -163,8 +163,9 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
         }
 
         if (myExtractProcessor.generatesConditionalExit()) {
-          myInnerClass.add(myElementFactory.createField("myResult", PsiPrimitiveType.BOOLEAN));
-          myInnerClass.add(myElementFactory.createMethodFromText("boolean is(){return myResult;}", myInnerClass));
+          myResultFieldName = uniqueFieldName(new String[]{"myResult"});
+          myInnerClass.add(myElementFactory.createField(myResultFieldName, PsiType.BOOLEAN));
+          myInnerClass.add(myElementFactory.createMethodFromText("boolean is(){return " + myResultFieldName + ";}", myInnerClass));
         }
 
         final PsiParameter[] parameters = getMethod().getParameterList().getParameters();
@@ -203,12 +204,14 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
   void moveUsedMethodsToInner() {
     if (!myUsages.isEmpty()) {
       if (ApplicationManager.getApplication().isUnitTestMode()) {
-        for (MethodToMoveUsageInfo usage : myUsages) {
-          final PsiMember member = (PsiMember)usage.getElement();
-          LOG.assertTrue(member != null);
-          myInnerClass.add(member.copy());
-          member.delete();
-        }
+        WriteAction.run(() -> {
+          for (MethodToMoveUsageInfo usage : myUsages) {
+            final PsiMember member = (PsiMember)usage.getElement();
+            LOG.assertTrue(member != null);
+            myInnerClass.add(member.copy());
+            member.delete();
+          }
+        });
         return;
       }
       final List<MemberInfo> memberInfos = new ArrayList<>();
@@ -230,7 +233,7 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
         }
       };
       if (dlg.showAndGet()) {
-        ApplicationManager.getApplication().runWriteAction(() -> {
+        WriteAction.run(() -> {
           for (MemberInfoBase<PsiMember> memberInfo : panel.getTable().getSelectedMemberInfos()) {
             if (memberInfo.isChecked()) {
               myInnerClass.add(memberInfo.getMember().copy());
@@ -283,7 +286,8 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
       for (int i = 0; i < returnStatements.size() - 1; i++) {
         final PsiReturnStatement condition = returnStatements.get(i);
         final PsiElement container = condition.getParent();
-        final PsiStatement resultStmt = myElementFactory.createStatementFromText("myResult = true;", container);
+        LOG.assertTrue(myResultFieldName != null);
+        final PsiStatement resultStmt = myElementFactory.createStatementFromText(myResultFieldName + " = true;", container);
         if (!RefactoringUtil.isLoopOrIf(container)) {
           container.addBefore(resultStmt, condition);
         } else {
@@ -294,7 +298,8 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
       LOG.assertTrue(!returnStatements.isEmpty());
       final PsiReturnStatement returnStatement = returnStatements.get(returnStatements.size() - 1);
       final PsiElement container = returnStatement.getParent();
-      final PsiStatement resultStmt = myElementFactory.createStatementFromText("myResult = false;", container);
+      LOG.assertTrue(myResultFieldName != null);
+      final PsiStatement resultStmt = myElementFactory.createStatementFromText(myResultFieldName + " = false;", container);
       if (!RefactoringUtil.isLoopOrIf(container)) {
         container.addBefore(resultStmt, returnStatement);
       } else {
@@ -330,15 +335,7 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
             for (PsiVariable variable : outputVariables) {
               PsiVariable var = (PsiVariable)declaredElement;
               if (Comparing.strEqual(var.getName(), variable.getName())) {
-                PsiExpression initializer = var.getInitializer();
-                if (initializer == null) {
-                  replacementMap.put(var, null);
-                }
-                else {
-                  PsiStatement assignmentStatement = myElementFactory
-                    .createStatementFromText(var2FieldNames.get(variable.getName()) + " = " + initializer.getText() + ";", statement);
-                  replacementMap.put(var, assignmentStatement);
-                }
+                replacementMap.put(var, var.getInitializer());
               }
             }
           }
@@ -403,11 +400,14 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
           }
         }
         else if (statement instanceof PsiLocalVariable) {
-          PsiLocalVariable variable = (PsiLocalVariable)statement;
+          final PsiLocalVariable variable = (PsiLocalVariable)statement;
           variable.normalizeDeclaration();
-          PsiDeclarationStatement declaration = PsiTreeUtil.getParentOfType(statement, PsiDeclarationStatement.class);
+          final PsiExpression initializer = variable.getInitializer();
+          LOG.assertTrue(initializer != null);
+          final PsiStatement assignmentStatement = myElementFactory.createStatementFromText(var2FieldNames.get(variable.getName()) + " = " + initializer.getText() + ";", statement);
+          final PsiDeclarationStatement declaration = PsiTreeUtil.getParentOfType(statement, PsiDeclarationStatement.class);
           LOG.assertTrue(declaration != null);
-          declaration.replace(replacement);
+          declaration.replace(assignmentStatement);
         }
         else {
           if (statement instanceof PsiReturnStatement) {
@@ -633,7 +633,8 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
     if (type instanceof PsiEllipsisType) type = ((PsiEllipsisType)type).toArrayType();
     try {
       final JavaCodeStyleManager styleManager = JavaCodeStyleManager.getInstance(getMethod().getProject());
-      final String fieldName = styleManager.suggestVariableName(VariableKind.FIELD, styleManager.variableNameToPropertyName(parameterName, VariableKind.PARAMETER), null, type).names[0];
+      String fieldName = uniqueFieldName(styleManager.suggestVariableName(
+        VariableKind.FIELD, styleManager.variableNameToPropertyName(parameterName, VariableKind.PARAMETER), null, type).names);
       PsiField field = myElementFactory.createField(fieldName, type);
 
       final PsiModifierList modifierList = field.getModifierList();
@@ -723,6 +724,15 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
     return true;
   }
 
+  private String uniqueFieldName(String[] candidates) {
+    String name = StreamEx.of(candidates).findFirst(myFieldNameGenerator::isUnique).orElse(null);
+    if (name == null) {
+      name = myFieldNameGenerator.generateUniqueName(candidates[0]);
+    }
+    myFieldNameGenerator.addExistingName(name);
+    return name;
+  }
+
   public class MyExtractMethodProcessor extends ExtractMethodProcessor {
 
     public MyExtractMethodProcessor(Project project,
@@ -765,9 +775,8 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
       for (int i = 0; i < myOutputVariables.length; i++) {
         PsiVariable variable = myOutputVariables[i];
         if (!myInputVariables.contains(variable)) { //one field creation
-          final JavaCodeStyleManager styleManager = JavaCodeStyleManager.getInstance(myProject);
-          final String fieldName =
-            styleManager.suggestVariableName(VariableKind.FIELD, getPureName(variable), null, variable.getType()).names[0];
+          String fieldName = uniqueFieldName(JavaCodeStyleManager.getInstance(myProject)
+            .suggestVariableName(VariableKind.FIELD, getPureName(variable), null, variable.getType()).names);
           try {
             myOutputFields[i] = myElementFactory.createField(fieldName, variable.getType());
           }

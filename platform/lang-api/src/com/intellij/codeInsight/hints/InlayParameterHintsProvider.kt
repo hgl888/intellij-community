@@ -15,37 +15,90 @@
  */
 package com.intellij.codeInsight.hints
 
+import com.intellij.codeInsight.hints.settings.ParameterNameHintsSettings
 import com.intellij.lang.Language
 import com.intellij.lang.LanguageExtension
-import com.intellij.psi.PsiElement
-import org.jetbrains.annotations.ApiStatus
+
 
 object InlayParameterHintsExtension: LanguageExtension<InlayParameterHintsProvider>("com.intellij.codeInsight.parameterNameHints")
 
-@ApiStatus.Experimental
-interface InlayParameterHintsProvider {
 
-  /**
-   * Hints for params to be shown
-   */
-  fun getParameterHints(element: PsiElement): List<InlayInfo>
-
-  /**
-   * Provides fully qualified method name (e.g. "java.util.Map.put") and list of it's parameter names.
-   * Used to obtain method information when adding it to blacklist
-   */
-  fun getMethodInfo(element: PsiElement): MethodInfo?
+class InlayInfo(val text: String, val offset: Int, val isShowOnlyIfExistedBefore: Boolean) {
   
-  /**
-   * Default list of patterns for which hints should not be shown
-   */
-  val defaultBlackList: Set<String>
+  constructor(text: String, offset: Int): this(text, offset, false)
+  
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other?.javaClass != javaClass) return false
+
+    other as InlayInfo
+
+    if (text != other.text) return false
+    if (offset != other.offset) return false
+
+    return true
+  }
+
+  override fun hashCode(): Int {
+    var result = text.hashCode()
+    result = 31 * result + offset
+    return result
+  }
+
+}
+
+
+sealed class HintInfo {
 
   /**
-   * Returns language which blacklist will be appended to the resulting one
-   * E.g. to prevent possible Groovy and Kotlin extensions from showing hints for blacklisted java methods. 
+   * @language in case you want to put this method into blacklist of another language
    */
-  fun getBlackListDependencyLanguage(): Language? = null
-  
+  open class MethodInfo(val fullyQualifiedName: String, val paramNames: List<String>, val language: Language?) : HintInfo() {
+    constructor(fullyQualifiedName: String, paramNames: List<String>): this(fullyQualifiedName, paramNames, null)
+
+    open fun getMethodName(): String {
+      val start = fullyQualifiedName.lastIndexOf('.') + 1
+      return fullyQualifiedName.substring(start)
+    }
+  }
+
+  open class OptionInfo(protected val option: Option) : HintInfo() {
+    
+    open fun disable() = alternate()
+    open fun enable() = alternate()
+    
+    private fun alternate() {
+      val current = option.get()
+      option.set(!current)
+    }
+    
+    open val optionName = option.name
+
+    fun isOptionEnabled(): Boolean = option.isEnabled()
+
+  }
+
+}
+
+data class Option(val id: String,
+                  val name: String,
+                  val defaultValue: Boolean) {
+
+  fun isEnabled() = get()
+
+  fun get(): Boolean {
+    return ParameterNameHintsSettings.getInstance().getOption(id) ?: defaultValue
+  }
+
+  fun set(newValue: Boolean) {
+    val settings = ParameterNameHintsSettings.getInstance()
+    if (newValue == defaultValue) {
+      settings.setOption(id, null)
+    }
+    else {
+      settings.setOption(id, newValue)
+    }
+  }
+
 }
 

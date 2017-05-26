@@ -4,6 +4,6 @@ import java.util.Arrays;
 
 class Test {
   int cnt() {
-    return (int) Arrays.asList('d', 'e', 'f').stream().c<caret>ount();
+    return (int) Arrays.asList('d', 'e', 'f').stream(/*inside*/).c<caret>ount();
   }
 }

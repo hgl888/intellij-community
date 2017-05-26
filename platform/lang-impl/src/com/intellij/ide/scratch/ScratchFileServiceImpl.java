@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,13 +21,16 @@ import com.intellij.lang.Language;
 import com.intellij.lang.LanguageUtil;
 import com.intellij.lang.PerFileMappings;
 import com.intellij.lang.PerFileMappingsBase;
-import com.intellij.openapi.application.*;
+import com.intellij.openapi.application.Application;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.PathManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.RoamingType;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.fileEditor.FileEditorManagerAdapter;
 import com.intellij.openapi.fileEditor.FileEditorManagerListener;
 import com.intellij.openapi.fileEditor.impl.EditorTabTitleProvider;
 import com.intellij.openapi.fileEditor.impl.FileEditorManagerImpl;
@@ -36,7 +39,6 @@ import com.intellij.openapi.fileTypes.*;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-import com.intellij.openapi.project.ProjectManagerAdapter;
 import com.intellij.openapi.util.Iconable;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
@@ -64,8 +66,7 @@ import javax.swing.*;
 import java.io.IOException;
 import java.util.*;
 
-
-@State(name = "ScratchFileService", storages = @Storage("scratches.xml"))
+@State(name = "ScratchFileService", storages = @Storage(value = "scratches.xml", roamingType = RoamingType.DISABLED))
 public class ScratchFileServiceImpl extends ScratchFileService implements PersistentStateComponent<Element>{
 
   private static final RootType NULL_TYPE = new RootType("", null) {};
@@ -99,7 +100,7 @@ public class ScratchFileServiceImpl extends ScratchFileService implements Persis
   }
 
   private void initFileOpenedListener(MessageBus messageBus) {
-    final FileEditorManagerAdapter editorListener = new FileEditorManagerAdapter() {
+    final FileEditorManagerListener editorListener = new FileEditorManagerListener() {
       @Override
       public void fileOpened(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
         if (!isEditable(file)) return;
@@ -122,20 +123,15 @@ public class ScratchFileServiceImpl extends ScratchFileService implements Persis
         return FileDocumentManager.getInstance().getDocument(file) != null;
       }
     };
-    ProjectManagerAdapter projectListener = new ProjectManagerAdapter() {
-      @Override
-      public void projectOpened(Project project) {
-        project.getMessageBus().connect(project).subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, editorListener);
-        FileEditorManager editorManager = FileEditorManager.getInstance(project);
-        for (VirtualFile virtualFile : editorManager.getOpenFiles()) {
-          editorListener.fileOpened(editorManager, virtualFile);
-        }
-      }
-    };
+
+    // handle all previously opened projects (as we are service, lazily created)
     for (Project project : ProjectManager.getInstance().getOpenProjects()) {
-      projectListener.projectOpened(project);
+      FileEditorManager editorManager = FileEditorManager.getInstance(project);
+      for (VirtualFile virtualFile : editorManager.getOpenFiles()) {
+        editorListener.fileOpened(editorManager, virtualFile);
+      }
     }
-    messageBus.connect().subscribe(ProjectManager.TOPIC, projectListener);
+    messageBus.connect().subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, editorListener);
   }
 
   @NotNull
@@ -162,7 +158,7 @@ public class ScratchFileServiceImpl extends ScratchFileService implements Persis
 
   private static class MyLanguages extends PerFileMappingsBase<Language> {
     @Override
-    protected List<Language> getAvailableValues() {
+    public List<Language> getAvailableValues() {
       return LanguageUtil.getFileLanguages();
     }
 

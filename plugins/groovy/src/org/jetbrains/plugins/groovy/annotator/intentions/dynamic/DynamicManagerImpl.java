@@ -15,17 +15,14 @@
  */
 package org.jetbrains.plugins.groovy.annotator.intentions.dynamic;
 
-import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.startup.StartupManager;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiVariable;
-import com.intellij.psi.impl.PsiModificationTrackerImpl;
 import com.intellij.ui.treeStructure.treetable.ListTreeTableModelOnColumns;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.tree.TreeUtil;
@@ -41,10 +38,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * User: Dmitry.Krasilschikov
- * Date: 23.11.2007
- */
 @State(name = "DynamicElementsStorage", storages = @Storage("dynamic.xml"))
 
 public class DynamicManagerImpl extends DynamicManager {
@@ -53,20 +46,10 @@ public class DynamicManagerImpl extends DynamicManager {
 
   public DynamicManagerImpl(final Project project) {
     myProject = project;
-    StartupManager.getInstance(project).registerPostStartupActivity(() -> {
-      if (!myRootElement.getContainingClasses().isEmpty()) {
-        DynamicToolWindowWrapper.getInstance(project).getToolWindow(); //initialize myToolWindow
-      }
-    });
   }
 
   public Project getProject() {
     return myProject;
-  }
-
-
-  @Override
-  public void initComponent() {
   }
 
   @Override
@@ -377,10 +360,7 @@ public class DynamicManagerImpl extends DynamicManager {
 
   @Override
   public void fireChange() {
-    TransactionGuard.submitTransaction(myProject, () -> {
-      ((PsiModificationTrackerImpl)PsiManager.getInstance(myProject).getModificationTracker()).incCounter();
-      DaemonCodeAnalyzer.getInstance(myProject).restart();
-    });
+    TransactionGuard.submitTransaction(myProject, () -> PsiManager.getInstance(myProject).dropPsiCaches());
   }
 
   @Override
@@ -390,8 +370,8 @@ public class DynamicManagerImpl extends DynamicManager {
   }
 
   @Nullable
-  private static DPropertyElement findConcreteDynamicProperty(DRootElement rootElement, final String conatainingClassName, final String propertyName) {
-    final DClassElement classElement = rootElement.getClassElement(conatainingClassName);
+  private static DPropertyElement findConcreteDynamicProperty(DRootElement rootElement, final String containingClassName, final String propertyName) {
+    final DClassElement classElement = rootElement.getClassElement(containingClassName);
 
     if (classElement == null) return null;
 
@@ -399,43 +379,17 @@ public class DynamicManagerImpl extends DynamicManager {
   }
 
   @Nullable
-  private static DClassElement findClassElement(DRootElement rootElement, final String conatainingClassName) {
-    return rootElement.getClassElement(conatainingClassName);
+  private static DClassElement findClassElement(DRootElement rootElement, final String containingClassName) {
+    return rootElement.getClassElement(containingClassName);
   }
 
-  @Override
-  public void disposeComponent() {
-  }
-
-  @Override
-  @NotNull
-  public String getComponentName() {
-    return "DynamicManagerImpl";
-  }
-
-  @Override
-  public void projectOpened() {
-  }
-
-  @Override
-  public void projectClosed() {
-  }
-
-  /**
-   * On exit
-   */
   @Override
   public DRootElement getState() {
-//    return XmlSerializer.serialize(myRootElement);
     return myRootElement;
   }
 
-  /*
-   * On loading
-   */
   @Override
   public void loadState(DRootElement element) {
-//    myRootElement = XmlSerializer.deserialize(element, myRootElement.getClass());
     myRootElement = element;
   }
 

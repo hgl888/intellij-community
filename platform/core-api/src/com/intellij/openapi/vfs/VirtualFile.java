@@ -21,6 +21,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeRegistry;
 import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.encoding.EncodingRegistry;
 import com.intellij.testFramework.LightVirtualFile;
@@ -177,10 +178,8 @@ public abstract class VirtualFile extends UserDataHolderBase implements Modifica
    */
   @Nullable
   public String getExtension() {
-    String name = getName();
-    int index = name.lastIndexOf('.');
-    if (index < 0) return null;
-    return name.substring(index + 1);
+    CharSequence extension = FileUtilRt.getExtension(getNameSequence(), null);
+    return extension == null ? null : extension.toString();
   }
 
   /**
@@ -192,9 +191,8 @@ public abstract class VirtualFile extends UserDataHolderBase implements Modifica
    */
   @NotNull
   public String getNameWithoutExtension() {
-    return StringUtil.trimExtension(getName());
+    return FileUtilRt.getNameWithoutExtension(getNameSequence()).toString();
   }
-
 
   /**
    * Renames this file to the {@code newName}.<p>
@@ -208,6 +206,7 @@ public abstract class VirtualFile extends UserDataHolderBase implements Modifica
    * @throws IOException if file failed to be renamed
    */
   public void rename(Object requestor, @NotNull String newName) throws IOException {
+    ApplicationManager.getApplication().assertWriteAccessAllowed();
     if (getName().equals(newName)) return;
     if (!getFileSystem().isValidName(newName)) {
       throw new IOException(VfsBundle.message("file.invalid.name.error", newName));
@@ -451,6 +450,7 @@ public abstract class VirtualFile extends UserDataHolderBase implements Modifica
    * @throws IOException if file failed to be deleted
    */
   public void delete(Object requestor) throws IOException {
+    ApplicationManager.getApplication().assertWriteAccessAllowed();
     LOG.assertTrue(isValid(), "Deleting invalid file");
     getFileSystem().deleteFile(requestor, this);
   }
@@ -466,6 +466,8 @@ public abstract class VirtualFile extends UserDataHolderBase implements Modifica
    * @throws IOException if file failed to be moved
    */
   public void move(final Object requestor, @NotNull final VirtualFile newParent) throws IOException {
+    ApplicationManager.getApplication().assertWriteAccessAllowed();
+
     if (getFileSystem() != newParent.getFileSystem()) {
       throw new IOException(VfsBundle.message("file.move.error", newParent.getPresentableUrl()));
     }
@@ -678,7 +680,7 @@ public abstract class VirtualFile extends UserDataHolderBase implements Modifica
 
   /**
    * The same as {@link #refresh(boolean, boolean)} but also runs {@code postRunnable}
-   * after the operation is completed.
+   * after the operation is completed. The runnable is executed on event dispatch thread inside a write action.
    */
   public abstract void refresh(boolean asynchronous, boolean recursive, @Nullable Runnable postRunnable);
 

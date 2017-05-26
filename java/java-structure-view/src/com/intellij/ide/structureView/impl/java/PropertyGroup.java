@@ -24,22 +24,23 @@ import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.colors.CodeInsightColors;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
+import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PropertyUtil;
 import com.intellij.psi.util.PsiUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.util.ArrayList;
 import java.util.Collection;
 
 public class PropertyGroup implements Group, ColoredItemPresentation, AccessLevelProvider, WeighedItem {
-  private final String myPropertyName;
-  private final SmartTypePointer myPropertyType;
+  @NotNull private final String myPropertyName;
+  @NotNull private final String myTypeText;
 
   private SmartPsiElementPointer myFieldPointer;
   private SmartPsiElementPointer myGetterPointer;
@@ -54,9 +55,9 @@ public class PropertyGroup implements Group, ColoredItemPresentation, AccessLeve
   private final Project myProject;
   private final Collection<TreeElement> myChildren = new ArrayList<>();
 
-  private PropertyGroup(String propertyName, PsiType propertyType, boolean isStatic, @NotNull Project project) {
+  private PropertyGroup(@NotNull String propertyName, @NotNull PsiType propertyType, boolean isStatic, @NotNull Project project) {
     myPropertyName = propertyName;
-    myPropertyType = SmartTypePointerManager.getInstance(project).createSmartTypePointer(propertyType);
+    myTypeText = propertyType.getPresentableText();
     myIsStatic = isStatic;
     myProject = project;
   }
@@ -141,8 +142,7 @@ public class PropertyGroup implements Group, ColoredItemPresentation, AccessLeve
 
   @Override
   public String getPresentableText() {
-    final PsiType type = getPropertyType();
-    return myPropertyName + (type != null ? ": " + type.getPresentableText() : "");
+    return myPropertyName + ": " + myTypeText;
   }
 
   public String toString() {
@@ -154,32 +154,11 @@ public class PropertyGroup implements Group, ColoredItemPresentation, AccessLeve
     if (this == o) return true;
     if (!(o instanceof PropertyGroup)) return false;
 
-    final PropertyGroup propertyGroup = (PropertyGroup)o;
-
-    if (myPropertyName != null ? !myPropertyName.equals(propertyGroup.myPropertyName) : propertyGroup.myPropertyName != null) return false;
-
-    final PsiType propertyType = getPropertyType();
-    final PsiType otherPropertyType = propertyGroup.getPropertyType();
-
-    if (!Comparing.equal(propertyType, otherPropertyType)) {
-      return false;
-    }
-    return true;
+    return myPropertyName.equals(((PropertyGroup)o).myPropertyName) && myTypeText.equals(((PropertyGroup)o).myTypeText);
   }
 
   public int hashCode() {
-    return myPropertyName != null ? myPropertyName.hashCode() : 0;
-  }
-
-  public String getGetterName() {
-    return PropertyUtil.suggestGetterName(myPropertyName, getPropertyType());
-  }
-
-  private PsiType getPropertyType() {
-    if (myPropertyType == null) {
-      return null;
-    }
-    return myPropertyType.getType();
+    return myPropertyName.hashCode() * 31 + myTypeText.hashCode();
   }
 
   @Override
@@ -254,11 +233,13 @@ public class PropertyGroup implements Group, ColoredItemPresentation, AccessLeve
     return isDeprecated(getField()) && isDeprecated(getGetter()) && isDeprecated(getSetter());
   }
 
-  private static boolean isDeprecated(final PsiElement element) {
-    if (element == null) return false;
-    if (!element.isValid()) return false;
-    if (!(element instanceof PsiDocCommentOwner)) return false;
-    return ((PsiDocCommentOwner)element).isDeprecated();
+  private static boolean isDeprecated(@Nullable final PsiDocCommentOwner element) {
+    try {
+      return element != null && element.isValid() && element.isDeprecated();
+    }
+    catch (IndexNotReadyException e) {
+      return false;
+    }
   }
 
   public boolean isComplete() {

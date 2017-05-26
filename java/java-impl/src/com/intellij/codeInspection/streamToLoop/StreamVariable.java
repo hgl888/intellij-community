@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import com.intellij.psi.codeStyle.VariableKind;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -31,11 +30,9 @@ import java.util.List;
 /**
  * This class represents a variable which holds stream element. Its lifecycle is the following:
  * 1. Construction: fast, in case you don't need to perform a fix actually
- * 2. Gather name candidates (addBestNameCandidate/addOtherNameCandidate can be called).
- * 3. addCandidatesFromType called which adds name candidates based on type
- * (until this stage no changes in original file should be performed)
- * 4. Register variable in {@code StreamToLoopReplacementContext}: actual variable name is assigned here
- * 5. Usage in code generation: getName()/getType() could be called.
+ * 2. Preprocessing (addBestNameCandidate/addOtherNameCandidate/markFinal can be called).
+ * 3. Register variable in {@code StreamToLoopReplacementContext}: actual variable name is assigned here
+ * 4. Usage in code generation: getName()/getType()/isFinal() could be called.
  *
  * @author Tagir Valeev
  */
@@ -45,10 +42,6 @@ class StreamVariable {
   static StreamVariable STUB = new StreamVariable(PsiType.VOID) {
     @Override
     public void addBestNameCandidate(String candidate) {
-    }
-
-    @Override
-    public void addCandidatesFromType(JavaCodeStyleManager manager) {
     }
 
     @Override
@@ -62,14 +55,26 @@ class StreamVariable {
   };
 
   String myName;
-  String myType;
-  PsiType myPsiType;
+  @NotNull PsiType myType;
+  boolean myFinal;
 
   private Collection<String> myBestCandidates = new LinkedHashSet<>();
   private Collection<String> myOtherCandidates = new LinkedHashSet<>();
 
   StreamVariable(@NotNull PsiType type) {
-    myPsiType = type;
+    myType = type;
+  }
+
+  StreamVariable(@NotNull PsiType type, @NotNull String name) {
+    myType = type;
+    myName = name;
+  }
+
+  /**
+   * Call if the resulting variable must be declared final (e.g. used in lambdas)
+   */
+  public void markFinal() {
+    myFinal = true;
   }
 
   /**
@@ -91,20 +96,6 @@ class StreamVariable {
   }
 
   /**
-   * Register name candidates based on variable type.
-   * This must be called only once and only after addBestNameCandidate/addOtherNameCandidate.
-   *
-   * @param manager project-specific {@link JavaCodeStyleManager}
-   */
-  void addCandidatesFromType(JavaCodeStyleManager manager) {
-    LOG.assertTrue(myPsiType != null);
-    LOG.assertTrue(myType == null);
-    myOtherCandidates.addAll(Arrays.asList(manager.suggestVariableName(VariableKind.LOCAL_VARIABLE, null, null, myPsiType, true).names));
-    myType = myPsiType.getCanonicalText();
-    myPsiType = null;
-  }
-
-  /**
    * Register variable within {@link StreamToLoopReplacementContext}.
    * Must be called once after all name candidates are registered. Now variable gets an actual name.
    *
@@ -112,7 +103,9 @@ class StreamVariable {
    */
   void register(StreamToLoopReplacementContext context) {
     LOG.assertTrue(myName == null);
-    List<String> variants = StreamEx.of(myBestCandidates).append(myOtherCandidates).distinct().toList();
+    String[] fromType = JavaCodeStyleManager.getInstance(context.getProject())
+      .suggestVariableName(VariableKind.LOCAL_VARIABLE, null, null, myType, true).names;
+    List<String> variants = StreamEx.of(myBestCandidates).append(myOtherCandidates).append(fromType).distinct().toList();
     if (variants.isEmpty()) variants.add("val");
     myName = context.registerVarName(variants);
     myBestCandidates = myOtherCandidates = null;
@@ -123,13 +116,21 @@ class StreamVariable {
     return myName;
   }
 
-  String getType() {
-    LOG.assertTrue(myType != null);
+  @NotNull
+  PsiType getType() {
     return myType;
   }
 
   String getDeclaration() {
-    return getType() + " " + getName();
+    return getType().getCanonicalText() + " " + getName();
+  }
+
+  String getDeclaration(String initializer) {
+    return getType().getCanonicalText() + " " + getName() + "=" + initializer + ";\n";
+  }
+
+  public boolean isFinal() {
+    return myFinal;
   }
 
   @Override

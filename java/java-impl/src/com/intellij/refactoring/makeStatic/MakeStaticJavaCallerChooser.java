@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,13 +21,15 @@ import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiModifier;
+import com.intellij.psi.search.searches.OverridingMethodsSearch;
+import com.intellij.psi.util.ClassUtil;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiUtil;
 import com.intellij.refactoring.changeSignature.MethodNodeBase;
 import com.intellij.refactoring.changeSignature.inCallers.JavaCallerChooser;
 import com.intellij.refactoring.changeSignature.inCallers.JavaMethodNode;
 import com.intellij.usageView.UsageInfo;
 import com.intellij.util.Consumer;
-import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 
 import java.util.ArrayList;
@@ -49,11 +51,11 @@ abstract class MakeStaticJavaCallerChooser extends JavaCallerChooser {
         !containingMethod.hasModifierProperty(PsiModifier.STATIC) &&
         !containingMethod.isConstructor() &&
          containingMethod.findDeepestSuperMethods().length == 0 &&
-        !containingMethod.equals(member)) {
+        !containingMethod.equals(member) &&
+         OverridingMethodsSearch.search(containingMethod).findFirst() == null) {
       final PsiClass containingClass = containingMethod.getContainingClass();
       if (containingClass != null) {
-        final PsiClass gContainingClass = containingClass.getContainingClass();
-        if (gContainingClass == null || gContainingClass.hasModifierProperty(PsiModifier.STATIC)) {
+        if (ClassUtil.isTopLevelClass(containingClass) || containingClass.hasModifierProperty(PsiModifier.STATIC)) {
           final InternalUsageInfo[] refsInMember = MakeStaticUtil.findClassRefsInMember(containingMethod, true);
           for (InternalUsageInfo info : refsInMember) {
             final PsiElement referencedElement = info.getReferencedElement();

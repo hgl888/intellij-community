@@ -29,7 +29,7 @@ public class AlienLocalChangeList extends LocalChangeList {
   private String myName;
   private String myComment;
 
-  public AlienLocalChangeList(final List<Change> changes, final String name) {
+  public AlienLocalChangeList(@NotNull List<Change> changes, @NotNull String name) {
     myChanges = changes;
     myName = name;
     myComment = "";
@@ -78,7 +78,7 @@ public class AlienLocalChangeList extends LocalChangeList {
     throw new UnsupportedOperationException();
   }
 
-  public static final AlienLocalChangeList DEFAULT_ALIEN = new AlienLocalChangeList(Collections.<Change>emptyList(), "Default") {
+  public static final AlienLocalChangeList DEFAULT_ALIEN = new AlienLocalChangeList(Collections.emptyList(), "Default") {
     public boolean isDefault() {
       return true;
     }

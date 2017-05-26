@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,22 @@
 package com.intellij.designer;
 
 import com.intellij.ide.util.PropertiesComponent;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.components.ProjectComponent;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.FileEditorManagerEvent;
 import com.intellij.openapi.fileEditor.FileEditorManagerListener;
 import com.intellij.openapi.project.DumbAwareRunnable;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectUtil;
 import com.intellij.openapi.startup.StartupManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowAnchor;
 import com.intellij.openapi.wm.ex.ToolWindowEx;
-import com.intellij.util.ParameterizedRunnable;
 import com.intellij.util.messages.MessageBusConnection;
 import com.intellij.util.ui.update.MergingUpdateQueue;
 import com.intellij.util.ui.update.Update;
@@ -39,18 +39,18 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.util.function.Consumer;
 
 /**
  * @author Alexander Lobas
  */
-public abstract class LightToolWindowManager implements ProjectComponent {
+public abstract class LightToolWindowManager implements Disposable {
   public static final String EDITOR_MODE = "UI_DESIGNER_EDITOR_MODE.";
 
-  private final MergingUpdateQueue myWindowQueue = new MergingUpdateQueue(getComponentName(), 200, true, null);
+  private final MergingUpdateQueue myWindowQueue = new MergingUpdateQueue(getComponentName(), 200, true, null, this);
   protected final Project myProject;
   protected final FileEditorManager myFileEditorManager;
   protected volatile ToolWindow myToolWindow;
-  private volatile boolean myToolWindowDisposed;
 
   private final PropertiesComponent myPropertiesComponent;
   public final String myEditorModeKey;
@@ -58,62 +58,45 @@ public abstract class LightToolWindowManager implements ProjectComponent {
   private ToggleEditorModeAction myRightEditorModeAction;
 
   private MessageBusConnection myConnection;
-  private final FileEditorManagerListener myListener = new FileEditorManagerListener() {
-    @Override
-    public void fileOpened(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
-      bindToDesigner(getActiveDesigner());
-    }
-
-    @Override
-    public void fileClosed(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
-      ApplicationManager.getApplication().invokeLater(() -> bindToDesigner(getActiveDesigner()));
-    }
-
-    @Override
-    public void selectionChanged(@NotNull FileEditorManagerEvent event) {
-      bindToDesigner(getDesigner(event.getNewEditor()));
-    }
-  };
-
-  //////////////////////////////////////////////////////////////////////////////////////////
-  //
-  // ToolWindow
-  //
-  //////////////////////////////////////////////////////////////////////////////////////////
 
   protected LightToolWindowManager(Project project, FileEditorManager fileEditorManager) {
     myProject = project;
     myFileEditorManager = fileEditorManager;
     myPropertiesComponent = PropertiesComponent.getInstance(myProject);
     myEditorModeKey = EDITOR_MODE + getComponentName() + ".STATE";
+
+    ProjectUtil.runWhenProjectOpened(project, () -> projectOpened());
   }
 
-  @Override
-  public void projectOpened() {
+  protected void projectOpened() {
     initToolWindow();
 
-    StartupManager.getInstance(myProject).runWhenProjectIsInitialized(new DumbAwareRunnable() {
-      public void run() {
-        if (getEditorMode() == null) {
-          initListeners();
-          bindToDesigner(getActiveDesigner());
-        }
+    StartupManager.getInstance(myProject).runWhenProjectIsInitialized((DumbAwareRunnable)() -> {
+      if (getEditorMode() == null) {
+        initListeners();
+        bindToDesigner(getActiveDesigner());
       }
     });
   }
 
-  @Override
-  public void projectClosed() {
-    if (!myToolWindowDisposed) {
-      disposeComponent();
-      myToolWindowDisposed = true;
-      myToolWindow = null;
-    }
-  }
-
   private void initListeners() {
-    myConnection = myProject.getMessageBus().connect(myProject);
-    myConnection.subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, myListener);
+    myConnection = myProject.getMessageBus().connect();
+    myConnection.subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, new FileEditorManagerListener() {
+      @Override
+      public void fileOpened(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
+        bindToDesigner(getActiveDesigner());
+      }
+
+      @Override
+      public void fileClosed(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
+        ApplicationManager.getApplication().invokeLater(() -> bindToDesigner(getActiveDesigner()));
+      }
+
+      @Override
+      public void selectionChanged(@NotNull FileEditorManagerEvent event) {
+        bindToDesigner(getDesigner(event.getNewEditor()));
+      }
+    });
   }
 
   private void removeListeners() {
@@ -141,9 +124,6 @@ public abstract class LightToolWindowManager implements ProjectComponent {
     myWindowQueue.queue(new Update("update") {
       @Override
       public void run() {
-        if (myToolWindowDisposed) {
-          return;
-        }
         if (myToolWindow == null) {
           if (designer == null) {
             return;
@@ -165,14 +145,6 @@ public abstract class LightToolWindowManager implements ProjectComponent {
   }
 
   protected abstract ToolWindowAnchor getAnchor();
-
-  @Override
-  public void initComponent() {
-  }
-
-  @Override
-  public void disposeComponent() {
-  }
 
   //////////////////////////////////////////////////////////////////////////////////////////
   //
@@ -200,7 +172,7 @@ public abstract class LightToolWindowManager implements ProjectComponent {
 
   public final void bind(@NotNull DesignerEditorPanelFacade designer) {
     if (isEditorMode()) {
-      myCreateAction.run(designer);
+      myCreateAction.accept(designer);
     }
   }
 
@@ -247,22 +219,22 @@ public abstract class LightToolWindowManager implements ProjectComponent {
     toolWindow.dispose();
   }
 
-  private final ParameterizedRunnable<DesignerEditorPanelFacade> myCreateAction =
+  private final Consumer<DesignerEditorPanelFacade> myCreateAction =
     designer -> designer.putClientProperty(getComponentName(), createContent(designer));
 
-  private final ParameterizedRunnable<DesignerEditorPanelFacade> myUpdateAnchorAction =
+  private final Consumer<DesignerEditorPanelFacade> myUpdateAnchorAction =
     designer -> {
       LightToolWindow toolWindow = (LightToolWindow)designer.getClientProperty(getComponentName());
       toolWindow.updateAnchor(getEditorMode());
     };
 
-  private final ParameterizedRunnable<DesignerEditorPanelFacade> myDisposeAction = designer -> disposeContent(designer);
+  private final Consumer<DesignerEditorPanelFacade> myDisposeAction = designer -> disposeContent(designer);
 
-  private void runUpdateContent(ParameterizedRunnable<DesignerEditorPanelFacade> action) {
+  private void runUpdateContent(Consumer<DesignerEditorPanelFacade> action) {
     for (FileEditor editor : myFileEditorManager.getAllEditors()) {
       DesignerEditorPanelFacade designer = getDesigner(editor);
       if (designer != null) {
-        action.run(designer);
+        action.accept(designer);
       }
     }
   }
@@ -272,7 +244,7 @@ public abstract class LightToolWindowManager implements ProjectComponent {
   }
 
   @Nullable
-  final ToolWindowAnchor getEditorMode() {
+  public final ToolWindowAnchor getEditorMode() {
     String value = myPropertiesComponent.getValue(myEditorModeKey);
     if (value == null) {
       return getAnchor();
@@ -301,5 +273,15 @@ public abstract class LightToolWindowManager implements ProjectComponent {
 
   final ToolWindow getToolWindow() {
     return myToolWindow;
+  }
+
+  @Override
+  public void dispose() {
+    myToolWindow = null;
+  }
+
+  @NotNull
+  protected String getComponentName() {
+    return getClass().getName();
   }
 }

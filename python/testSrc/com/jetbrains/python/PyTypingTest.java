@@ -31,7 +31,6 @@ import com.jetbrains.python.psi.LanguageLevel;
 import com.jetbrains.python.psi.PyExpression;
 import com.jetbrains.python.psi.types.PyType;
 import com.jetbrains.python.psi.types.TypeEvalContext;
-import org.intellij.lang.annotations.Language;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -184,6 +183,19 @@ public class PyTypingTest extends PyTestCase {
            "expr = C(10)\n");
   }
 
+  public void testParameterizedClassWithConstructorNone() {
+    doTest("C[int]",
+           "from typing import Generic, TypeVar\n" +
+           "\n" +
+           "T = TypeVar('T')\n" +
+           "\n" +
+           "class C(Generic[T]):\n" +
+           "    def __init__(self, x: T) -> None:\n" +
+           "        pass\n" +
+           "\n" +
+           "expr = C(10)\n");
+  }
+
   public void testParameterizedClassMethod() {
     doTest("int",
            "from typing import Generic, TypeVar\n" +
@@ -226,7 +238,7 @@ public class PyTypingTest extends PyTestCase {
   }
 
   public void testAnyStrForUnknown() {
-    doTest("Union[bytes, str]",
+    doTest("Union[str, bytes]",
            "from typing import AnyStr\n" +
            "\n" +
            "def foo(x: AnyStr) -> AnyStr:\n" +
@@ -329,6 +341,28 @@ public class PyTypingTest extends PyTestCase {
            "        pass\n");
   }
 
+  // PY-16585
+  public void testCommentAfterComprehensionInAssignment() {
+    doTest("int",
+           "from typing import List\n" +
+           "\n" +
+           "xs = [expr for expr in range(10)]  # type: List[int]");
+  }
+
+  // PY-16585
+  public void testCommentAfterComprehensionInForLoop() {
+    doTest("int",
+           "for _ in [str(expr) for expr in range(10)]:  # type: str\n" +
+           "    pass");
+  }
+
+  // PY-16585
+  public void testCommentAfterComprehensionInWithStatement() {
+    doTest("int",
+           "with f([expr for expr in range(10)]) as _: # type: str\n" +
+           "    pass");
+  }
+
   public void testStringLiteralInjection() {
     doTestInjectedText("class C:\n" +
                        "    def foo(self, expr: '<caret>C'):\n" +
@@ -350,6 +384,32 @@ public class PyTypingTest extends PyTestCase {
     doTestNoInjectedText("class C:\n" +
                          "    def foo(self, expr: '<caret>foo bar'):\n" +
                          "        pass\n");
+  }
+
+  // PY-22620
+  public void testVariableTypeCommentInjectionTuple() {
+    doTestInjectedText("x, y = undefined()  # type: int,<caret> int", 
+                       "int, int");
+  }
+
+  // PY-22620
+  public void testVariableTypeCommentInjectionParenthesisedTuple() {
+    doTestInjectedText("x, y = undefined()  # type: (int,<caret> int)", 
+                       "(int, int)");
+  }
+
+  // PY-22620
+  public void testForTypeCommentInjectionTuple() {
+    doTestInjectedText("for x, y in undefined():  # type: int,<caret> int\n" +
+                       "    pass", 
+                       "int, int");
+  }
+
+  // PY-22620
+  public void testWithTypeCommentInjectionTuple() {
+    doTestInjectedText("with undefined() as (x, y):  # type: int,<caret> int\n" +
+                       "    pass",
+                       "int, int");
   }
 
   // PY-16125
@@ -375,60 +435,6 @@ public class PyTypingTest extends PyTestCase {
            "    pass\n" +
            "\n" +
            "expr = foo()\n");
-  }
-
-  // PY-16303
-  public void testUnionInDocstring() {
-    doTest("Optional[int]",
-           "from typing import Union\n" +
-           "\n" +
-           "def foo(expr):\n" +
-           "    '''\n" +
-           "    :type expr: Union[int, None]\n" +
-           "    '''\n" +
-           "    pass\n");
-  }
-
-  // PY-16303
-  public void testAssignedTypeInDocstring() {
-    doTest("List[int]",
-           "from typing import List\n" +
-           "\n" +
-           "IntList = List[int]\n" +
-           "\n" +
-           "def foo(expr):\n" +
-           "    '''\n" +
-           "    :type expr: IntList\n" +
-           "    '''\n" +
-           "    pass\n");
-  }
-
-  // PY-16303
-  public void testParameterAssignedTypeInDocstring() {
-    doTest("Union[int, List[int]]",
-           "from typing import List, Union\n" +
-           "\n" +
-           "IntList = List[int]\n" +
-           "\n" +
-           "def foo(expr):\n" +
-           "    '''\n" +
-           "    :type expr: Union[int, IntList]\n" +
-           "    '''\n" +
-           "    pass\n");
-  }
-
-  // PY-16303
-  public void testTypeVarInDocstring() {
-    doTest("TypeVar('TV')",
-           "from typing import TypeVar\n" +
-           "\n" +
-           "TV = TypeVar('TV')\n" +
-           "\n" +
-           "def foo(expr):\n" +
-           "    '''\n" +
-           "    :type expr: TV\n" +
-           "    '''\n" +
-           "    pass\n");
   }
 
   // PY-16267
@@ -525,7 +531,7 @@ public class PyTypingTest extends PyTestCase {
 
   // PY-18726
   public void testFunctionTypeCommentBadCallableParameter2() {
-    doTest("Any",
+    doTest("(bool, int) -> Any",
            "from typing import Callable, Tuple\n" +
            "\n" +
            "def f(cb):\n" +
@@ -736,6 +742,221 @@ public class PyTypingTest extends PyTestCase {
            "expr = (w, x, y, z)\n");
   }
 
+  // PY-19723
+  public void testAnnotatedPositionalArgs() {
+    doTest("Tuple[str, ...]",
+           "def foo(*args: str):\n" +
+           "    expr = args\n");
+  }
+
+  // PY-19723
+  public void testAnnotatedKeywordArgs() {
+    doTest("Dict[str, int]",
+           "def foo(**kwargs: int):\n" +
+           "    expr = kwargs\n");
+  }
+
+  // PY-19723
+  public void testTypeCommentedPositionalArgs() {
+    doTest("Tuple[str, ...]",
+           "def foo(*args  # type: str\n):\n" +
+           "    expr = args\n");
+  }
+
+  // PY-19723
+  public void testTypeCommentedKeywordArgs() {
+    doTest("Dict[str, int]",
+           "def foo(**kwargs  # type: int\n):\n" +
+           "    expr = kwargs\n");
+  }
+
+  public void testGenericInheritedSpecificAndGenericParameters() {
+    doTest("C[float]",
+           "from typing import TypeVar, Generic, Tuple, Iterator, Iterable\n" +
+           "\n" +
+           "T = TypeVar('T')\n" +
+           "\n" +
+           "class B(Generic[T]):\n" +
+           "    pass\n" +
+           "\n" +
+           "class C(B[Tuple[int, T]], Generic[T]):\n" +
+           "    def __init__(self, x: T) -> None:\n" +
+           "        pass\n" +
+           "\n" +
+           "expr = C(3.14)\n");
+  }
+
+  public void testAsyncGeneratorAnnotation() {
+    runWithLanguageLevel(LanguageLevel.PYTHON36, () -> {
+      doTest("AsyncGenerator[int, str]",
+             "from typing import AsyncGenerator\n" +
+             "\n" +
+             "async def g() -> AsyncGenerator[int, str]:\n" +
+             "    s = (yield 42)\n" +
+             "    \n" +
+             "expr = g()");
+    });
+  }
+
+  public void testCoroutineReturnsGenerator() {
+    runWithLanguageLevel(LanguageLevel.PYTHON36, () -> {
+      doTest("Coroutine[Any, Any, Generator[int, Any, Any]]",
+             "from typing import Generator\n" +
+             "\n" +
+             "async def coroutine() -> Generator[int, Any, Any]:\n" +
+             "    def gen():\n" +
+             "        yield 42\n" +
+             "    \n" +
+             "    return gen()\n" +
+             "    \n" +
+             "expr = coroutine()");
+    });
+  }
+
+  public void testGenericRenamedParameter() {
+    doTest("int",
+           "from typing import TypeVar, Generic\n" +
+           "\n" +
+           "T = TypeVar('T')\n" +
+           "V = TypeVar('V')\n" +
+           "\n" +
+           "class B(Generic[V]):\n" +
+           "    def get() -> V:\n" +
+           "        pass\n" +
+           "\n" +
+           "class C(B[T]):\n" +
+           "    def __init__(self, x: T) -> None:\n" +
+           "        pass\n" +
+           "\n" +
+           "expr = C(0).get()\n");
+  }
+
+  // PY-20057
+  public void testClassObjectType() {
+    doTest("Type[MyClass]",
+           "from typing import Type\n" +
+           "\n" +
+           "class MyClass:\n" +
+           "    pass\n" +
+           "\n" +
+           "def f(x: Type[MyClass]): \n" +
+           "    expr = x");
+  }
+  
+  // PY-20057
+  public void testConstrainedClassObjectTypeOfParam() {
+    doTest("Type[TypeVar('T', int)]",
+           "from typing import Type, TypeVar\n" +
+           "\n" +
+           "T = TypeVar('T', bound=int)\n" +
+           "\n" +
+           "def f(x: Type[T]):\n" +
+           "    expr = x");
+  }
+  
+  // PY-20057
+  public void testFunctionCreatesInstanceFromType() {
+    doTest("int",
+           "from typing import Type, TypeVar\n" +
+           "\n" +
+           "T = TypeVar('T')\n" +
+           "\n" +
+           "def f(x: Type[T]) -> T:\n" +
+           "    return x()\n" +
+           "\n" +
+           "expr = f(int)");
+  }
+
+  // PY-20057
+  public void testFunctionReturnsTypeOfInstance() {
+    doTest("Type[int]",
+           "from typing import Type, TypeVar\n" +
+           "\n" +
+           "T = TypeVar('T')\n" +
+           "\n" +
+           "def f(x: T) -> Type[T]:\n" +
+           "    return type(T)\n" +
+           "    \n" +
+           "expr = f(42)");
+  }
+
+  // PY-20057
+  public void testNonParametrizedTypingTypeMapsToBuiltinType() {
+    doTest("type",
+           "from typing import Type\n" +
+           "\n" +
+           "def f(x: Type):\n" +
+           "    expr = x");
+  }
+  
+  // PY-20057
+  public void testTypingTypeOfAnyMapsToBuiltinType() {
+    doTest("type",
+           "from typing import Type, Any\n" +
+           "\n" +
+           "def f(x: Type[Any]):\n" +
+           "    expr = x");
+  }
+
+  // PY-20057
+  public void testIllegalTypingTypeFormat() {
+    doTest("Tuple[Any, Any, Any]",
+           "from typing import Type, Tuple\n" +
+           "\n" +
+           "def f(x: Tuple[Type[42], Type[], Type[unresolved]]):\n" +
+           "    expr = x");
+  }
+  
+  // PY-20057
+  public void testUnionOfClassObjectTypes() {
+    doTest("Type[Union[int, str]]",
+           "from typing import Type, Union\n" +
+           "\n" +
+           "def f(x: Type[Union[int, str]]):\n" +
+           "    expr = x");
+  }
+
+  // PY-23053
+  public void testUnboundGenericMatchesClassObjectTypes() {
+    doTest("Type[str]",
+           "from typing import Generic, TypeVar\n" +
+           "\n" +
+           "T = TypeVar('T')\n" +
+           "\n" +
+           "class Holder(Generic[T]):\n" +
+           "    def __init__(self, value: T):\n" +
+           "        self._value = value\n" +
+           "\n" +
+           "    def get(self) -> T:\n" +
+           "        return self._value\n" +
+           "\n" +
+           "expr = Holder(str).get()\n");
+  }
+
+  // PY-23053
+  public void testListContainingClasses() {
+    doTest("Type[str]", 
+           "xs = [str]\n" +
+           "expr = xs.pop()");
+  }
+
+  public void testGenericUserFunctionWithManyParamsAndNestedCall() {
+    doTest("Tuple[bool, int, str]",
+           "from typing import TypeVar\n" +
+           "\n" +
+           "T = TypeVar('T')\n" +
+           "U = TypeVar('U')\n" +
+           "V = TypeVar('V')\n" +
+           "\n" +
+           "def myid(x: T) -> T:\n" +
+           "    pass\n" +
+           "\n" +
+           "def f(x: T, y: U, z: V):\n" +
+           "    return myid(x), myid(y), myid(z)\n" +
+           "\n" +
+           "expr = f(True, 1, 'foo')\n");
+  }
+
   private void doTestNoInjectedText(@NotNull String text) {
     myFixture.configureByText(PythonFileType.INSTANCE, text);
     final InjectedLanguageManager languageManager = InjectedLanguageManager.getInstance(myFixture.getProject());
@@ -753,17 +974,6 @@ public class PyTypingTest extends PyTestCase {
     assertFalse(files.isEmpty());
     final PsiElement injected = files.get(0).getFirst();
     assertEquals(expected, injected.getText());
-  }
-
-  @NotNull
-  private PsiElement getElementAtCaret() {
-    final Editor editor = myFixture.getEditor();
-    final Document document = editor.getDocument();
-    final PsiFile file = PsiDocumentManager.getInstance(myFixture.getProject()).getPsiFile(document);
-    assertNotNull(file);
-    final PsiElement element = file.findElementAt(myFixture.getCaretOffset());
-    assertNotNull(element);
-    return element;
   }
 
   private void doTest(@NotNull String expectedType, @NotNull String text) {

@@ -17,6 +17,7 @@ package com.intellij.openapi.ui.impl;
 
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.wm.IdeFocusManager;
+import com.intellij.openapi.wm.impl.IdeFocusManagerHeadless;
 import com.intellij.ui.FocusTrackback;
 import org.jetbrains.annotations.NotNull;
 
@@ -32,6 +33,7 @@ import java.awt.event.MouseMotionListener;
 @SuppressWarnings("ConstantConditions")
 class HeadlessDialog implements AbstractDialog {
   @NotNull private final DialogWrapper myWrapper;
+  private String myTitle;
 
   HeadlessDialog(@NotNull DialogWrapper wrapper) {
     myWrapper = wrapper;
@@ -112,7 +114,7 @@ class HeadlessDialog implements AbstractDialog {
 
   @Override
   public String getTitle() {
-    return null;
+    return myTitle;
   }
 
   @Override
@@ -140,6 +142,7 @@ class HeadlessDialog implements AbstractDialog {
 
   @Override
   public void setTitle(String title) {
+    myTitle = title;
   }
 
   @Override
@@ -184,9 +187,10 @@ class HeadlessDialog implements AbstractDialog {
     myWrapper.close(DialogWrapper.OK_EXIT_CODE);
   }
 
+  @NotNull
   @Override
   public IdeFocusManager getFocusManager() {
-    return null;
+    return new IdeFocusManagerHeadless();
   }
 
   @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,8 +41,14 @@ public interface IdeaPlugin extends DomElement {
   @Stubbed
   GenericDomValue<String> getId();
 
+  /**
+   * @deprecated Unused.
+   */
+  @SuppressWarnings("DeprecatedIsStillUsed")
   @NotNull
-  GenericAttributeValue<String> getVersion();
+  @Attribute("version")
+  @Deprecated
+  GenericAttributeValue<Integer> getIdeaPluginVersion();
 
   @NotNull
   GenericAttributeValue<String> getUrl();
@@ -51,50 +57,46 @@ public interface IdeaPlugin extends DomElement {
   GenericAttributeValue<Boolean> getUseIdeaClassloader();
 
   @NotNull
+  GenericAttributeValue<Boolean> getAllowBundledUpdate();
+
+  @NotNull
   @Stubbed
   GenericDomValue<String> getName();
 
 
   @NotNull
-  List<GenericDomValue<String>> getDescriptions();
-  GenericDomValue<String> addDescription();
+  GenericDomValue<String> getDescription();
 
 
   @NotNull
-  List<GenericDomValue<String>> getVersions();
-  GenericDomValue<String> addVersion();
+  GenericDomValue<String> getVersion();
 
 
   @NotNull
-  List<Vendor> getVendors();
-  Vendor addVendor();
+  Vendor getVendor();
 
 
   @NotNull
-  List<GenericDomValue<String>> getChangeNotess();
-  GenericDomValue<String> addChangeNotes();
+  GenericDomValue<String> getChangeNotes();
 
 
   @NotNull
-  List<IdeaVersion> getIdeaVersions();
-  IdeaVersion addIdeaVersion();
+  IdeaVersion getIdeaVersion();
 
 
   @NotNull
-  List<GenericDomValue<String>> getCategories();
-  GenericDomValue<String> addCategory();
+  GenericDomValue<String> getCategory();
 
 
   @NotNull
-  @SubTagList("resource-bundle")
-  List<GenericDomValue<String>> getResourceBundles();
-  GenericDomValue<String> addResourceBundle();
+  GenericDomValue<String> getResourceBundle();
 
 
   @NotNull
   @Stubbed
   @SubTagList("depends")
   List<Dependency> getDependencies();
+
   @SubTagList("depends")
   Dependency addDependency();
 
@@ -107,12 +109,14 @@ public interface IdeaPlugin extends DomElement {
   @SubTagList("extensions")
   @Stubbed
   List<Extensions> getExtensions();
+
   Extensions addExtensions();
 
   @NotNull
   @Stubbed
   @SubTagList("extensionPoints")
   List<ExtensionPoints> getExtensionPoints();
+
   ExtensionPoints addExtensionPoints();
 
 
@@ -120,22 +124,26 @@ public interface IdeaPlugin extends DomElement {
   @SubTagList("application-components")
   List<ApplicationComponents> getApplicationComponents();
 
-  ApplicationComponents addApplicationComponent();
+  ApplicationComponents addApplicationComponents();
 
   @NotNull
   @SubTagList("project-components")
   List<ProjectComponents> getProjectComponents();
 
-  ProjectComponents addProjectComponent();
+  ProjectComponents addProjectComponents();
 
   @NotNull
-  ModuleComponents getModuleComponents();
+  @SubTagList("module-components")
+  List<ModuleComponents> getModuleComponents();
+
+  ModuleComponents addModuleComponents();
 
 
   @NotNull
   @SubTagList("actions")
   @Stubbed
   List<Actions> getActions();
+
   Actions addActions();
 
 

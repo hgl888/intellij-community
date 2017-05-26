@@ -21,23 +21,17 @@ def log_error_once(msg):
 
 pydev_src_dir = os.path.dirname(os.path.dirname(__file__))
 
-def _get_pydevd_args():
-    new_args = []
-    for x in sys.original_argv:
-        new_args.append(x)
-        if x == '--file':
-            break
-    return new_args
 
-def _get_python_c_args(host, port, indC, args):
+def _get_python_c_args(host, port, indC, args, setup):
+    host_literal = "'" + host + "'" if host is not None else 'None'
     return ("import sys; sys.path.append(r'%s'); import pydevd; "
-            "pydevd.settrace(host='%s', port=%s, suspend=False, trace_only_current_thread=False, patch_multiprocessing=True); "
-            "sys.original_argv = %s; %s"
+            "pydevd.settrace(host=%s, port=%s, suspend=False, trace_only_current_thread=False, patch_multiprocessing=True); "
+            "from pydevd import SetupHolder; SetupHolder.setup = %s; %s"
             ) % (
                pydev_src_dir,
-               host,
+               host_literal,
                port,
-               _get_pydevd_args(),
+               setup,
                args[indC + 1])
 
 def _get_host_port():
@@ -57,7 +51,7 @@ def _on_forked_process():
 
 def _on_set_trace_for_new_thread(global_debugger):
     if global_debugger is not None:
-        global_debugger.SetTrace(global_debugger.trace_dispatch)
+        global_debugger.SetTrace(global_debugger.trace_dispatch, global_debugger.frame_eval_func)
 
 #===============================================================================
 # Things related to monkey-patching
@@ -104,6 +98,7 @@ def patch_args(args):
         log_debug("Patching args: %s"% str(args))
         args = remove_quotes_from_args(args)
 
+        from pydevd import SetupHolder
         import sys
         new_args = []
         i = 0
@@ -121,7 +116,7 @@ def patch_args(args):
 
                 if port is not None:
                     new_args.extend(args)
-                    new_args[indC + 1] = _get_python_c_args(host, port, indC, args)
+                    new_args[indC + 1] = _get_python_c_args(host, port, indC, args, SetupHolder.setup)
                     return quote_args(new_args)
             else:
                 # Check for Python ZIP Applications and don't patch the args for them.
@@ -154,7 +149,8 @@ def patch_args(args):
         # Original args should be something as:
         # ['X:\\pysrc\\pydevd.py', '--multiprocess', '--print-in-debugger-startup',
         #  '--vm_type', 'python', '--client', '127.0.0.1', '--port', '56352', '--file', 'x:\\snippet1.py']
-        original = sys.original_argv[:]
+        from _pydevd_bundle.pydevd_command_line_handling import setup_to_argv
+        original = setup_to_argv(SetupHolder.setup) + ['--file']
         while i < len(args):
             if args[i] == '-m':
                 # Always insert at pos == 1 (i.e.: pydevd "--module" --multiprocess ...)
@@ -319,6 +315,7 @@ def create_execl(original_name):
         """
         import os
         args = patch_args(args)
+        send_process_created_message()
         return getattr(os, original_name)(path, *args)
     return new_execl
 
@@ -330,6 +327,7 @@ def create_execv(original_name):
         os.execvp(file, args)
         """
         import os
+        send_process_created_message()
         return getattr(os, original_name)(path, patch_args(args))
     return new_execv
 
@@ -341,6 +339,7 @@ def create_execve(original_name):
     """
     def new_execve(path, args, env):
         import os
+        send_process_created_message()
         return getattr(os, original_name)(path, patch_args(args), env)
     return new_execve
 
@@ -353,6 +352,7 @@ def create_spawnl(original_name):
         """
         import os
         args = patch_args(args)
+        send_process_created_message()
         return getattr(os, original_name)(mode, path, *args)
     return new_spawnl
 
@@ -364,6 +364,7 @@ def create_spawnv(original_name):
         os.spawnvp(mode, file, args)
         """
         import os
+        send_process_created_message()
         return getattr(os, original_name)(mode, path, patch_args(args))
     return new_spawnv
 
@@ -375,6 +376,7 @@ def create_spawnve(original_name):
     """
     def new_spawnve(mode, path, args, env):
         import os
+        send_process_created_message()
         return getattr(os, original_name)(mode, path, patch_args(args), env)
     return new_spawnve
 
@@ -386,6 +388,7 @@ def create_fork_exec(original_name):
     def new_fork_exec(args, *other_args):
         import _posixsubprocess  # @UnresolvedImport
         args = patch_args(args)
+        send_process_created_message()
         return getattr(_posixsubprocess, original_name)(args, *other_args)
     return new_fork_exec
 
@@ -413,6 +416,7 @@ def create_CreateProcess(original_name):
             import _subprocess
         except ImportError:
             import _winapi as _subprocess
+        send_process_created_message()
         return getattr(_subprocess, original_name)(app_name, patch_arg_str_win(cmd_line), *args)
     return new_CreateProcess
 
@@ -460,12 +464,16 @@ def create_fork(original_name):
                 _on_forked_process()
         else:
             if is_new_python_process:
-                from _pydevd_bundle.pydevd_comm import get_global_debugger
-                debugger = get_global_debugger()
-                if debugger is not None:
-                    debugger.send_process_created_message()
+                send_process_created_message()
         return child_process
     return new_fork
+
+
+def send_process_created_message():
+    from _pydevd_bundle.pydevd_comm import get_global_debugger
+    debugger = get_global_debugger()
+    if debugger is not None:
+        debugger.send_process_created_message()
 
 
 def patch_new_process_functions():

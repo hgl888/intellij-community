@@ -21,6 +21,7 @@ import com.intellij.codeInsight.completion.JavaCompletionUtil;
 import com.intellij.codeInsight.completion.PrefixMatcher;
 import com.intellij.lang.Language;
 import com.intellij.lang.StdLanguages;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
@@ -46,6 +47,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 
 public class CodeInsightUtil {
+  private static final Logger LOG = Logger.getInstance(CodeInsightUtil.class);
+
   @Nullable
   public static PsiExpression findExpressionInRange(PsiFile file, int startOffset, int endOffset) {
     if (!file.getViewProvider().getLanguages().contains(StdLanguages.JAVA)) return null;
@@ -199,6 +202,7 @@ public class CodeInsightUtil {
     };
   }
 
+  @NotNull
   public static PsiExpression[] findExpressionOccurrences(PsiElement scope, PsiExpression expr) {
     List<PsiExpression> array = new ArrayList<>();
     addExpressionOccurrences(RefactoringUtil.unparenthesizeExpression(expr), array, scope);
@@ -228,6 +232,7 @@ public class CodeInsightUtil {
     }
   }
 
+  @NotNull
   public static PsiExpression[] findReferenceExpressions(PsiElement scope, PsiElement referee) {
     ArrayList<PsiElement> array = new ArrayList<>();
     if (scope != null) {
@@ -256,6 +261,7 @@ public class CodeInsightUtil {
   
   public static Editor positionCursor(final Project project, PsiFile targetFile, @NotNull PsiElement element) {
     TextRange range = element.getTextRange();
+    LOG.assertTrue(range != null, "element: " + element + "; valid: " + element.isValid());
     int textOffset = range.getStartOffset();
 
     OpenFileDescriptor descriptor = new OpenFileDescriptor(project, targetFile.getVirtualFile(), textOffset);
@@ -360,6 +366,12 @@ public class CodeInsightUtil {
       for (PsiTypeParameter inheritorParameter : PsiUtil.typeParametersIterable(inheritor)) {
         for (PsiTypeParameter baseParameter : PsiUtil.typeParametersIterable(baseClass)) {
           final PsiType substituted = superSubstitutor.substitute(baseParameter);
+          PsiClass inheritorCandidateParameter = PsiUtil.resolveClassInType(substituted);
+          if (inheritorCandidateParameter instanceof PsiTypeParameter &&
+              ((PsiTypeParameter)inheritorCandidateParameter).getOwner() == inheritor &&
+               inheritorCandidateParameter != inheritorParameter) {
+            continue;
+          }
           PsiType arg = baseSubstitutor.substitute(baseParameter);
           if (arg instanceof PsiWildcardType) {
             PsiType bound = ((PsiWildcardType)arg).getBound();
@@ -370,7 +382,7 @@ public class CodeInsightUtil {
                                                                                arg,
                                                                                true,
                                                                                PsiUtil.getLanguageLevel(context));
-          if (PsiType.NULL.equals(substitution) || substitution != null && substitution.equalsToText(CommonClassNames.JAVA_LANG_OBJECT) || substitution instanceof PsiWildcardType) continue;
+          if (PsiType.NULL.equals(substitution) || substitution instanceof PsiWildcardType) continue;
           if (substitution == null) {
             result.consume(createType(inheritor, facade.getElementFactory().createRawSubstitutor(inheritor), arrayDim));
             return true;
